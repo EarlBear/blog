@@ -9,6 +9,16 @@ Every post in src/content/blog/ must have:
   - a kebab-case filename (it is the URL slug)
   - no emoji and no exclamation points in title/description (brand voice)
 
+Citation rules (numbers must be sourced):
+  - every footnote reference [^id] has a definition and vice versa
+  - any prose paragraph containing a dollar amount or percentage must carry a
+    footnote reference — either an MLA citation or an explanatory note (e.g.
+    marking a figure as derived from the post's own model)
+  - a footnote definition containing a URL must be an MLA-style citation:
+    a quoted "Title," an italic *Container*, a year (or n.d.), ending with a
+    period. Definitions without URLs are explanatory notes and exempt.
+  (Code fences and raw-HTML blocks are skipped.)
+
 Two modes (same contract as check-task-files.py):
   1. Hook mode (stdin = PostToolUse JSON): if the tool touched a blog post,
      validate that file; on violation exit 2 with an explanation so Claude
@@ -69,6 +79,83 @@ def parse_frontmatter(text: str):
     return None, "frontmatter never closed (no trailing ---)"
 
 
+FOOTNOTE_DEF_RE = re.compile(r"^\[\^([\w-]+)\]:\s*(.+)$")
+FOOTNOTE_REF_RE = re.compile(r"\[\^([\w-]+)\]")
+URL_RE = re.compile(r"https?://\S+")
+MONEY_RE = re.compile(r"\$\d")
+PERCENT_RE = re.compile(r"\d+(?:\.\d+)?\s?%")
+
+
+def mla_ok(definition: str) -> bool:
+    """A footnote definition with a URL must read as an MLA citation:
+    "Title." *Container*, year (or n.d.), URL — ending with a period."""
+    if not URL_RE.search(definition):
+        return True  # explanatory note, not a citation
+    return bool(
+        re.search(r'["“][^"”]+["”]', definition)
+        and re.search(r"\*[^*]+\*", definition)
+        and re.search(r"\b\d{4}\b|n\.d\.", definition)
+        and definition.rstrip().endswith(".")
+    )
+
+
+def check_citations(body: str, rel) -> list:
+    """Footnote/citation invariants over the post body (frontmatter removed)."""
+    errs = []
+    defs, prose_lines, in_fence = {}, [], False
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = FOOTNOTE_DEF_RE.match(line)
+        if m:
+            defs[m.group(1)] = m.group(2)
+            continue
+        prose_lines.append(line)
+
+    prose = "\n".join(prose_lines)
+    refs = set(FOOTNOTE_REF_RE.findall(prose))
+    for r in sorted(refs - set(defs)):
+        errs.append(f"{rel}: footnote [^{r}] is referenced but never defined")
+    for d in sorted(set(defs) - refs):
+        errs.append(f"{rel}: footnote [^{d}] is defined but never referenced")
+    for fid, definition in defs.items():
+        if not mla_ok(definition):
+            errs.append(
+                f"{rel}: footnote [^{fid}] has a URL but is not an MLA citation "
+                '(need: "Title." *Container*, year or n.d., URL, trailing period)'
+            )
+
+    # Paragraph blocks: split on blank lines. A block starting with a block-level
+    # HTML tag is a CommonMark raw-HTML block — markdown does NOT process `[^id]`
+    # refs inside it, so they'd render as literal "[^id]" text. Flag that; and
+    # for prose paragraphs, require a citation on any dollar/percent figure.
+    for block in re.split(r"\n\s*\n", prose):
+        stripped = block.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("<"):
+            trapped = FOOTNOTE_REF_RE.findall(block)
+            if trapped:
+                errs.append(
+                    f"{rel}: footnote ref(s) {', '.join('[^'+t+']' for t in trapped)} "
+                    "are inside a raw-HTML block and will render as literal text, not "
+                    "a citation. Move them into the markdown prose that introduces the "
+                    "HTML block (e.g. the sentence before a chart)."
+                )
+            continue
+        if (MONEY_RE.search(block) or PERCENT_RE.search(block)) and "[^" not in block:
+            snippet = " ".join(stripped.split())[:70]
+            errs.append(
+                f"{rel}: paragraph has a dollar/percent figure but no footnote "
+                f"citation: {snippet!r}… — cite a source (MLA footnote) or mark "
+                "it as derived with an explanatory footnote"
+            )
+    return errs
+
+
 def author_ids(root: Path):
     d = root / AUTHORS_DIR
     return {p.stem for p in d.glob("*.md")} if d.is_dir() else set()
@@ -79,9 +166,12 @@ def check_post(path: Path, root: Path):
     rel = path.relative_to(root)
     if not SLUG_RE.match(path.name):
         errs.append(f"{rel}: filename must be a kebab-case slug (it becomes the URL)")
-    fm, perr = parse_frontmatter(path.read_text(encoding="utf-8", errors="ignore"))
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    fm, perr = parse_frontmatter(text)
     if perr:
         return errs + [f"{rel}: {perr}"]
+    body = re.match(r"^---\n.*?\n---\n?(.*)$", text, re.S).group(1)
+    errs.extend(check_citations(body, rel))
 
     for field in ("title", "description", "pubDate"):
         if not fm.get(field):

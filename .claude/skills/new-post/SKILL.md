@@ -1,6 +1,6 @@
 ---
 name: new-post
-description: Scaffold a new blog post for the EarlBear blog. Use when the user says "new post", "write a blog post", "start a draft", "add a post about X", or wants to create content under src/content/blog/. Generates the slug + frontmatter (including the required "questions this post answers"), drops the file in place, enforces house voice, and verifies the build.
+description: Scaffold a new blog post for the EarlBear blog. Use when the user says "new post", "write a blog post", "start a draft", "add a post about X", or wants to create content under src/content/blog/. Generates the slug + frontmatter (including the required "questions this post answers"), infers the author from the machine username, web-verifies factual claims and cites them as MLA footnotes, enforces house voice, and verifies the build.
 ---
 
 # New blog post
@@ -30,12 +30,17 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
      ```bash
      grep -h '^tags:' src/content/blog/*.md | sort -u
      ```
-   - **Author(s)** — one or more author ids. List valid ids and confirm each one
-     the user names exists:
+   - **Author(s)** — one or more author ids. If the user doesn't name an author,
+     infer the default from the machine username and match it against the known
+     authors:
      ```bash
+     whoami                         # e.g. omareid → author id "omar"
      ls src/content/authors/        # each file stem is a valid author id
      ```
-     If a named author has no file, use the `manage-authors` skill first.
+     Match on the id, the `name:` field, or git's `user.name`. If the username
+     matches no known author, do NOT guess — use the AskUserQuestion tool to ask
+     whether to add a new author (via the `manage-authors` skill) or attribute
+     the post to an existing one.
    - **Draft?** — default `true` for a fresh draft (visible in `npm run dev`,
      excluded from production builds) unless the user wants it published now.
 
@@ -85,17 +90,109 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
    Section `##` headings render as uppercase accent kickers (see
    `src/styles/global.css` `.prose h2`), so keep them short.
 
-5. **Voice check**: sentence case throughout, no emoji, no exclamation points,
+5. **Verify and cite every claim — numbers require footnotes.** Facts must not
+   come from memory: WebSearch each factual claim (prices, salaries, benchmarks,
+   statistics, dates) and cite what you verified. The rules, enforced by
+   `check-posts.py`:
+   - Any paragraph (or table) containing a **dollar amount or percentage** must
+     carry a footnote reference (`[^id]`).
+   - Externally sourced figures get a **true MLA citation** as the footnote
+     definition: `[^id]: Author Last, First. "Title of Page." *Site Name*,
+     year (or n.d.), URL.` — quoted title, italic container, year or `n.d.`,
+     trailing period. The validator checks this shape on any definition that
+     contains a URL.
+   - Figures **computed inside the post** (a worked example, calculator
+     defaults) get an explanatory footnote instead — e.g. `[^derived]: Derived
+     figure — computed from the cited inputs above.` (no URL → MLA shape not
+     required). Never dress a derived number up as a sourced one.
+   - Every reference needs a definition and vice versa. Footnotes are GFM
+     syntax and render automatically as a footnotes section at the end.
+
+6. **Voice check**: sentence case throughout, no emoji, no exclamation points,
    specific over vague, tabular numerics for figures.
 
-6. **Validate, then build** before finishing:
+7. **Validate, then build** before finishing:
    ```bash
-   npm run posts-check   # fast frontmatter + voice check (questions end in ?, authors exist, lowercase tags, no emoji/!)
+   npm run posts-check   # fast frontmatter + voice + citation check
    npm run build         # authoritative: zod schema in src/content.config.ts
    ```
    Then preview: `npm run dev` and open `/blog/<slug>/`. Confirm the byline, the
    "Questions this post answers" block, and any code blocks render. Drafts show a
    "draft" marker in listings and are excluded from the production build.
+
+## When the validation hook blocks
+
+`check-posts.py` runs automatically after every Write/Edit to a post (PostToolUse
+hook) and blocks with a `BLOCKED: post validation failed` message listing each
+violation with its fix. When that happens:
+
+1. Read the violations — they name the file, the rule, and the offending value.
+2. Fix the post (frontmatter, voice, or citations), don't fight the hook: never
+   bypass it by editing `.claude/settings.json`, weakening `check-posts.py`, or
+   moving the file out of `src/content/blog/`.
+3. Re-save; the hook re-runs on the next edit. Confirm clean with
+   `npm run posts-check`.
+4. Mid-refactor noise is normal — e.g. adding `[^ref]`s before their definitions
+   exist will block until the definitions land. Finish the edit sequence, then
+   verify.
+5. If a rule itself is wrong (false positive), stop and raise it with the user
+   instead of working around it.
+
+## Interactive widgets and charts
+
+Posts may embed plain HTML/CSS/JS directly in the markdown (calculators, charts —
+see `life-without-earlbear.md` for a worked example: a CSS gantt + a cost
+calculator). Rules:
+
+- Keep each raw-HTML block **free of blank lines** (a blank line ends the HTML
+  block and markdown parsing resumes), including `<style>`/`<script>` contents.
+- **Footnote refs do not render inside a raw-HTML block.** A `[^id]` placed
+  inside `<figure>`, `<div>`, `<table>`, etc. renders as literal `[^id]` text,
+  not a citation — markdown skips its inline processing inside HTML blocks. Put
+  the citation on the **markdown sentence that introduces** the component (e.g.
+  the paragraph before a chart), not on the values inside it. `check-posts.py`
+  now flags trapped refs, but the fix is always "move the ref into the prose."
+- Style with **semantic design-system tokens only** — never raw hex. Single
+  light theme.
+- Charts: load the `dataviz` skill before writing chart markup. Use the vendored
+  categorical palette `--eb-data-1..8` in fixed order; validate the exact combo
+  with the skill's `validate_palette.js` against the ivory surface `#FBF9F5`.
+  (Known-good trio: `--eb-data-1`, `--eb-data-3`, `--eb-data-4`.)
+- Figures in widgets use `.num` (tabular numerics); text never wears the data
+  color.
+- Scope all selectors under one wrapper class so post styles can't leak (styles
+  in markdown are global).
+
+## Tables vs. HTML components
+
+Markdown tables (`| … | … |`) are styled globally (`src/styles/global.css`
+`.prose table`: cell padding, header rule, row separators, horizontal scroll).
+They are right for **plain tabular facts** — a few columns of short text or
+numbers. Reach past them when:
+
+- **A column encodes a quantity you could show as a bar or range.** A salary
+  band like `$130k–$185k` is a range on a shared axis — a bar with a median dot
+  reads far better than text, and text ranges wrap mid-value. Build an HTML
+  component instead (see the salary chart in `life-without-earlbear.md`).
+- **A cell is a small enumerated state** (RACI R/A/C/I, status, yes/no). Use
+  distinct badges, not bare letters — colour + shape carries the state at a
+  glance and the columns stay aligned. (RACI grid, same post.)
+- **Long text in a cell forces awkward wrapping.** Move it out of the table
+  (a caption, a definition list, or a component with a dedicated text column).
+
+One thing a table must never do: mix distinct kinds of data in one column (e.g.
+the hiring bar *and* the responsibilities of a role). Split them into separate
+tables or a table plus a component — one concept per column.
+
+## Verify the render, not just the source
+
+`check-posts.py` reads the markdown **source**; it cannot see the rendered
+pixels. Spacing, column crowding, wrapping, a bar overrunning its label, a
+footnote that rendered literally — these only show up in the browser. So after
+any post with a table, chart, or widget: run `npm run dev`, open the post, and
+**look at it** (or screenshot it — the `visual-site-review` skill is built for
+this). Fix visual issues in the component's CSS or the global table styles, not
+by contorting the content. The hook and the build are necessary, not sufficient.
 
 ## Notes
 

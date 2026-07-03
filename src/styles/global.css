@@ -102,3 +102,40 @@ a:focus:not(:focus-visible) {
   color: var(--color-text-secondary);
   font-style: italic;
 }
+
+/*
+ * Markdown tables. The tokens CSS leaves <table> at browser defaults (no cell
+ * padding, no header rule), so columns crowd together. Give every prose table
+ * comfortable cell spacing, a header underline, and horizontal scroll rather
+ * than letting a wide table overflow the reading column.
+ */
+.prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+  margin: var(--space-6) 0;
+}
+
+.prose thead th {
+  font-weight: var(--fw-semibold);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prose th,
+.prose td {
+  padding: var(--space-2) var(--space-5) var(--space-2) 0;
+  vertical-align: top;
+}
+
+.prose tbody tr + tr th,
+.prose tbody tr + tr td {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.prose td .num,
+.prose th .num {
+  white-space: nowrap;
+}

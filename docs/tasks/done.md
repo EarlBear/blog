@@ -21,4 +21,15 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] [MANUAL] Cloudflare DNS: CNAME `blog` → `earlbear.github.io`, DNS only — verified resolving to GitHub Pages IPs 185.199.108-111.153 @done(2026-07-03T00:00:00Z) #git:c825b684
 - [x] Push main + first deploy to gh-pages branch (branch published, ready for Pages source config) @done(2026-07-03T00:00:00Z) #git:57fee15c
 - [x] Set up gitleaks secret-scanning hooks (.githooks pre-commit + pre-push, make install-hooks, .gitleaks.toml) — verified blocks a real PAT @done(2026-07-03T00:00:00Z) #git:1dadf345
-- [x] Polish new-post skill (concrete verify commands, required questions field, body scaffold, build check) + posts-check hook @done(2026-07-03T00:00:00Z) #git:d67c6153
+- [x] Polish new-post skill (concrete verify commands, required questions field, body scaffold, build check) + posts-check hook @done(2026-07-03T00:00:00Z) #git:5c268695
+- [x] Write "Life without EarlBear" post: growth-team roles, 2026 salary bands, A/B-test math, CSS gantt hiring timeline, interactive cost calculator (draft) @done(2026-07-03T17:00:00Z) #git:7f3e05d9
+- [x] Require MLA footnote citations for dollar/percent figures: citation checks in check-posts.py (ref↔def match, MLA shape on URL definitions, uncited-figure detection) @done(2026-07-03T17:00:00Z) #git:7f3e05d9
+- [x] new-post skill: infer author from machine username (AskUserQuestion fallback), websearch-verify claims, citation rules, widget/chart guidance, hook-failure recovery @done(2026-07-03T17:00:00Z) #git:7f3e05d9
+- [x] Investigate per-kind post frontmatter: single zod schema today; z.discriminatedUnion on a `kind` field is the supported path when a second post type appears @done(2026-07-03T17:00:00Z) #git:7f3e05d9
+- [x] Add support/operations engineer as sixth role (roles chart, gantt, calculator); recompute defaults to $102k/mo @done(2026-07-03T18:00:00Z) #git:7f3e05d9
+- [x] Split RACI out of the roles table into its own badge grid (distinct R/A/C/I badges, legend, scrollable) @done(2026-07-03T18:00:00Z) #git:7f3e05d9
+- [x] Replace salary text ranges with a bar+median-dot chart (shared axis, right-aligned value column, mobile stack) @done(2026-07-03T18:00:00Z) #git:7f3e05d9
+- [x] Add researched top-of-market talent premium (60–85% over median, cited) + talent-tier slider to calculator @done(2026-07-03T18:00:00Z) #git:7f3e05d9
+- [x] check-posts.py: detect footnote refs trapped inside raw-HTML blocks (they render literally) @done(2026-07-03T18:00:00Z) #git:7f3e05d9
+- [x] Add global .prose table styling (cell padding, header rule, row separators, horizontal scroll) — fixes column crowding site-wide @done(2026-07-03T18:00:00Z) #git:7f3e05d9
+- [x] new-post skill: tables-vs-HTML-components guidance, footnotes-in-raw-HTML caveat, verify-the-render (visual-review) step @done(2026-07-03T18:00:00Z) #git:7f3e05d9
