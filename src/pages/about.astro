@@ -1,35 +1,52 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import EarlMark from '../components/EarlMark.astro';
 ---
 
 <BaseLayout
   title="About"
-  description="What this blog is, and who is behind it."
+  description="What EarlBear is, and what this blog is for."
 >
   <div class="container">
     <header class="page-head">
+      <span class="mark"><EarlMark size={56} /></span>
       <p class="eyebrow">About</p>
-      <h1>The EarlBear blog</h1>
+      <h1>Websites that build, host, and heal themselves.</h1>
     </header>
 
     <div class="prose">
       <p class="lede">
-        EarlBear builds self-healing ecommerce, powered by Earl and Watson. This
-        is where we write about how it works.
-      </p>
-      <p>
-        Expect engineering notes, product thinking, and field reports from
-        running thousands of experiments on live storefronts. Some posts go deep
-        on the systems behind auto-heals and A/B tests; others step back to talk
-        about what we are learning along the way.
+        EarlBear runs a storefront the way a senior web team would — building,
+        hosting, testing, and fixing it around the clock — except it never clocks
+        out. This blog is where we write about how that works.
       </p>
 
-      <img
-        src="/vendor/earl-analyst.svg"
-        alt="Earl inspecting a rising growth chart"
-        width="520"
-        height="360"
-      />
+      <h2>The idea</h2>
+      <p>
+        A senior web team — architect, design lead, optimization lead, AI
+        engineer, growth — is expensive and works about forty hours a week.
+        EarlBear encodes that same expertise and works every hour of every day:
+        running A/B tests, watching KPIs, making decisions, and rolling back
+        anything that regresses. Same job, without the gaps.
+      </p>
+
+      <h2>What self-healing means</h2>
+      <p>
+        Most sites break quietly — a dead link, a stale stock badge, a slow
+        checkout — and stay broken until someone notices. EarlBear scans
+        continuously, catches those failures, and repairs them before customers
+        feel them. Every change is logged, and any change can be rolled back
+        instantly. The result is infrastructure that runs itself, with a full
+        audit trail.
+      </p>
+
+      <h2>What you'll read here</h2>
+      <p>
+        Engineering notes on the systems behind auto-heals and experiments,
+        product thinking, and honest field reports from running thousands of
+        tests on live storefronts. Some posts go deep; others step back to talk
+        about what we're learning.
+      </p>
 
       <h2>Who writes here</h2>
       <p>
@@ -48,18 +65,18 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
 <style>
   .page-head {
-    margin-bottom: var(--space-6);
+    margin-bottom: var(--space-8);
+  }
+  .page-head .mark {
+    color: var(--color-accent);
+    display: inline-flex;
+    margin-bottom: var(--space-4);
   }
   .page-head .eyebrow {
     color: var(--color-accent);
   }
   .page-head h1 {
     margin-top: var(--space-2);
-  }
-  .prose img {
-    display: block;
-    margin: var(--space-8) auto;
-    max-width: 100%;
-    height: auto;
+    max-width: 18ch;
   }
 </style>

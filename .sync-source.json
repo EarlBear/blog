@@ -4,7 +4,6 @@
   "files": [
     "colors_and_type.css -> src/styles/tokens.css",
     "assets/icons.svg -> public/vendor/icons.svg",
-    "assets/earl-analyst.svg -> public/vendor/earl-analyst.svg",
     "assets/earl-mark.svg -> public/vendor/earl-mark.svg"
   ],
   "last_synced_sha": "a4418064c2fe74c518e598aec6cf2453545651b7",

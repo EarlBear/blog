@@ -39,7 +39,7 @@ console.log('[sync] colors_and_type.css -> src/styles/tokens.css');
 // URL-referenced SVGs → public/vendor/ (footer sprite, about illustration)
 const vendorDir = resolve(root, 'public/vendor');
 mkdirSync(vendorDir, { recursive: true });
-for (const f of ['icons.svg', 'earl-analyst.svg', 'earl-mark.svg']) {
+for (const f of ['icons.svg', 'earl-mark.svg']) {
   copyFileSync(resolve(src, 'assets', f), resolve(vendorDir, f));
   console.log(`[sync] assets/${f} -> public/vendor/${f}`);
 }
