@@ -15,7 +15,10 @@ function byOrderThenName(a: Author, b: Author): number {
 }
 
 /**
- * Resolve a post's author ids to author entries, preserving byline order.
+ * Resolve a post's author ids to author entries, ordered by the authors'
+ * `order` field (then name) — the same ordering the authors index uses, so a
+ * byline reads in the same sequence everywhere regardless of the order the ids
+ * happen to be listed in the post frontmatter.
  * Unknown ids are dropped after a build-time warning so a typo never crashes
  * the build but also never renders a broken byline.
  */
@@ -31,7 +34,7 @@ export async function resolveAuthors(ids: string[]): Promise<Author[]> {
       return entry;
     })
   );
-  return resolved.filter((a): a is Author => Boolean(a));
+  return resolved.filter((a): a is Author => Boolean(a)).sort(byOrderThenName);
 }
 
 /** Authors that have at least one published post, each with a post count. */
