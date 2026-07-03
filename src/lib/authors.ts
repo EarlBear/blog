@@ -3,10 +3,15 @@ import { getPublishedPosts } from './posts';
 
 export type Author = CollectionEntry<'authors'>;
 
-/** All author profiles, sorted by name. */
+/** All author profiles, sorted by explicit `order` then name. */
 export async function getAuthors(): Promise<Author[]> {
   const authors = await getCollection('authors');
-  return authors.sort((a, b) => a.data.name.localeCompare(b.data.name));
+  return authors.sort(byOrderThenName);
+}
+
+/** Sort authors by their `order` field (lower first), breaking ties by name. */
+function byOrderThenName(a: Author, b: Author): number {
+  return a.data.order - b.data.order || a.data.name.localeCompare(b.data.name);
 }
 
 /**
@@ -43,7 +48,7 @@ export async function getAuthorsWithCounts(): Promise<
       count: posts.filter((p) => p.data.authors.includes(author.id)).length,
     }))
     .filter((a) => a.count > 0)
-    .sort((a, b) => b.count - a.count || a.author.data.name.localeCompare(b.author.data.name));
+    .sort((a, b) => byOrderThenName(a.author, b.author));
 }
 
 /** Format a byline: "Earl", "Earl and Sarah", "Earl, Sarah, and Ken". */

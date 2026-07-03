@@ -1,6 +1,7 @@
 ---
 name: Sa'd
 role: Chief Business Bear
+order: 1
 avatar: /vendor/earl-mark.svg
 socials:
   github: '#'

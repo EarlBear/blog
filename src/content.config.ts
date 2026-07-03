@@ -23,6 +23,8 @@ const authors = defineCollection({
   schema: z.object({
     name: z.string(),
     role: z.string().optional(),
+    // Lower sorts first on the authors index; ties fall back to name.
+    order: z.number().default(100),
     avatar: z.string().optional(), // URL/path, e.g. /vendor/earl-mark.svg
     socials: z
       .object({
