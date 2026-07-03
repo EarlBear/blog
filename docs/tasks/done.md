@@ -18,3 +18,4 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] Multi-author support: authors collection, co-author bylines, /authors/ + /authors/<id>/, RSS author @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Order authors index by explicit `order` field (Sa'd before Omar) @done(2026-07-03T00:00:00Z) #git:e50a090c
 - [x] Replace outdated About illustration; distill landing narrative into About page, drop deprecated earl-analyst.svg @done(2026-07-03T00:00:00Z) #git:f2c79b52
+- [x] [MANUAL] Cloudflare DNS: CNAME `blog` → `earlbear.github.io`, DNS only — verified resolving to GitHub Pages IPs 185.199.108-111.153 @done(2026-07-03T00:00:00Z) #git:c825b684
