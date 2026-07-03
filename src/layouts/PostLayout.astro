@@ -12,11 +12,20 @@ interface Props {
   updatedDate?: Date;
   tags: string[];
   authors: string[];
+  questions: string[];
   readingTime: number;
 }
 
-const { title, description, pubDate, updatedDate, tags, authors, readingTime } =
-  Astro.props;
+const {
+  title,
+  description,
+  pubDate,
+  updatedDate,
+  tags,
+  authors,
+  questions,
+  readingTime,
+} = Astro.props;
 const kicker = tags[0] ?? 'Blog post';
 ---
 
@@ -52,6 +61,13 @@ const kicker = tags[0] ?? 'Blog post';
         }
       </div>
     </header>
+
+    <aside class="questions" aria-label="Questions this post answers">
+      <h2>Questions this post answers</h2>
+      <ul>
+        {questions.map((q) => <li>{q}</li>)}
+      </ul>
+    </aside>
 
     <div class="prose">
       <slot />
@@ -115,6 +131,30 @@ const kicker = tags[0] ?? 'Blog post';
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
     color: var(--color-text-muted);
+  }
+  .questions {
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) var(--space-6);
+    margin-bottom: var(--space-10);
+  }
+  .questions h2 {
+    font-size: var(--fs-eyebrow);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-eyebrow);
+    text-transform: uppercase;
+    color: var(--color-accent);
+    margin: 0 0 var(--space-3);
+  }
+  .questions ul {
+    margin: 0;
+    padding-left: var(--space-5);
+    color: var(--color-text-secondary);
+    line-height: var(--lh-body);
+  }
+  .questions li + li {
+    margin-top: var(--space-2);
   }
   .post-footer {
     margin-top: var(--space-14);

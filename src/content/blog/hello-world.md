@@ -4,6 +4,10 @@ description: The first post on the EarlBear blog, and a quick tour of how it is 
 pubDate: 2026-07-03
 tags: [meta, engineering]
 authors: [omar, sad]
+questions:
+  - What is the EarlBear blog for, and what will it cover?
+  - How is the blog built and styled?
+  - How do code samples render in posts?
 ---
 
 Welcome to the EarlBear blog. This is where we write about the systems behind

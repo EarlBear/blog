@@ -33,6 +33,10 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-feature-docs.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-posts.py"
           }
         ]
       }

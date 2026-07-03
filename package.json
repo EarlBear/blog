@@ -10,6 +10,7 @@
     "preview": "astro preview",
     "deploy": "npm run build && gh-pages -d dist --dotfiles --nojekyll -m \"Deploy blog\"",
     "tasks-check": "python3 .claude/hooks/check-task-files.py --check",
+    "posts-check": "python3 .claude/hooks/check-posts.py --check",
     "features:check": "python3 scripts/features_check.py",
     "features:seed": "python3 scripts/features_check.py --seed",
     "regen-favicon": "node scripts/gen-favicon.mjs"

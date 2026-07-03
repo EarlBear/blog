@@ -20,11 +20,20 @@ description: One or two sentences shown in listings, RSS, and social previews.
 pubDate: 2026-07-03
 # updatedDate: 2026-07-10   # optional
 tags: [engineering, experiments]
-draft: false                 # drafts show in `npm run dev`, never in production
+authors: [omar]             # author ids = file stems in src/content/authors/
+questions:                  # required: what this post answers (from the ask that prompted it)
+  - What problem does this solve?
+  - How does it work?
+draft: false                # drafts show in `npm run dev`, never in production
 ---
 
 Body in markdown. Fenced code blocks are syntax-highlighted at build time.
 ```
+
+`questions` is required (at least one): the questions the post answers, usually
+taken from the request that prompted it. They render in a block at the top of the
+post. The easiest way to scaffold all of this correctly is the **`new-post`**
+skill (`/new-post`), which prompts for each field and verifies the build.
 
 House style: sentence case, no emoji, no exclamation points.
 

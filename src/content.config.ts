@@ -10,6 +10,10 @@ const blog = defineCollection({
     pubDate: z.coerce.date(),
     updatedDate: z.coerce.date().optional(),
     tags: z.array(z.string()).default([]),
+    // The questions this post was written to answer — usually taken from the
+    // request that prompted it (the "why" behind the post). Rendered as a
+    // block at the top of every post; required so it can't be skipped.
+    questions: z.array(z.string()).min(1),
     // Author ids (file stems in src/content/authors/), in byline order.
     // Validated against the authors collection in src/lib/authors.ts.
     authors: z.array(z.string()).default([]),

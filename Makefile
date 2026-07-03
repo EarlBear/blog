@@ -7,7 +7,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan dev build preview deploy sync-assets \
-        regen-favicon tasks-check features-check features-seed check clean
+        regen-favicon tasks-check features-check features-seed posts-check check clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -56,7 +56,10 @@ features-check: ## Check docs/features/ why-docs for drift (auto-heals moves)
 features-seed: ## Seed hashes for any uncached feature anchors
 	npm run features:seed
 
-check: tasks-check features-check ## Run all governance checks
+posts-check: ## Validate blog-post frontmatter + voice rules
+	npm run posts-check
+
+check: tasks-check features-check posts-check ## Run all governance checks
 
 ## --- ship ----------------------------------------------------------------
 

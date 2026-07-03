@@ -7,7 +7,10 @@ The EarlBear blog — a static Astro site served via GitHub Pages at
 
 - **Astro v5** static site. Posts are markdown in `src/content/blog/`; the
   filename is the URL slug (`/blog/<slug>/`). Content schema is in
-  `src/content.config.ts`.
+  `src/content.config.ts`. Every post requires a `questions` list (the questions
+  it answers, from the request that prompted it) — rendered at the top of the
+  post and enforced by `check-posts.py` (a PostToolUse hook + `make posts-check`)
+  in addition to the zod schema. Use the `new-post` skill to scaffold posts.
 - **Design system**: styling comes from the EarlBear design system, **vendored**
   into this repo — `src/styles/tokens.css` (the tokens CSS) and
   `public/vendor/*.svg` (assets), both committed. We import the tokens once in
