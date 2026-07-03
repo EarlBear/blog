@@ -34,4 +34,5 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] Add global .prose table styling (cell padding, header rule, row separators, horizontal scroll) — fixes column crowding site-wide @done(2026-07-03T18:00:00Z) #git:5dc35da2
 - [x] new-post skill: tables-vs-HTML-components guidance, footnotes-in-raw-HTML caveat, verify-the-render (visual-review) step @done(2026-07-03T18:00:00Z) #git:5dc35da2
 - [x] Investigate failed Pages deploy: auto pages-build-deployment deploy step failed server-side ("try again later"); site still served prior build @done(2026-07-03T19:00:00Z) #git:pending
-- [x] Order post byline + RSS authors by author `order` field (then name) to match the authors index, not post frontmatter order @done(2026-07-03T19:00:00Z) #git:pending
+- [x] Order post byline + RSS authors by author `order` field (then name) to match the authors index, not post frontmatter order @done(2026-07-03T19:00:00Z) #git:c6db727b
+- [x] Harden deploy skill: watch pages-build-deployment run to completion via gh CLI, verify NEW content (not site-up), document gh debugging + deploy-failure recovery @done(2026-07-03T19:00:00Z) #git:7dcc7b30
