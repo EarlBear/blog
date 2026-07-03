@@ -1,0 +1,104 @@
+/*
+ * Site-specific styles. The design-system tokens CSS (@earlbear/ui/tokens,
+ * imported in BaseLayout) already sets body / heading / link / inline-code
+ * element defaults, so this file only adds layout scaffolding and the code-block
+ * overrides. Use semantic tokens only — never raw hex.
+ */
+
+/* Sticky footer: page fills the viewport, main grows to push footer down. */
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1 0 auto;
+}
+
+/* Shared content column for list/tag/about pages. */
+.container {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-16) var(--space-6) var(--space-20);
+}
+
+/* Skip visible focus ring for mouse users, keep it for keyboard nav. */
+a:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+/*
+ * Code blocks. Shiki emits <pre class="astro-code" style="background:#fff…">
+ * with the github-light background inlined, so the container background needs
+ * !important to win. And the tokens CSS styles every inline `code` with a
+ * sunken background + border + padding — that must be reset inside <pre>, or
+ * every token in a fenced block gets its own box.
+ */
+.astro-code {
+  background-color: var(--color-surface-sunken) !important;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  overflow-x: auto;
+  margin: var(--space-6) 0;
+}
+
+.astro-code code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Prose rhythm inside rendered markdown. */
+.prose {
+  font-size: var(--fs-lg);
+  line-height: var(--lh-loose);
+  color: var(--color-text);
+}
+
+.prose > * + * {
+  margin-top: var(--space-5);
+}
+
+.prose h2 {
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-top: var(--space-10);
+  margin-bottom: var(--space-1);
+}
+
+.prose h3 {
+  font-size: var(--fs-h4);
+  margin-top: var(--space-8);
+}
+
+.prose ul,
+.prose ol {
+  padding-left: var(--space-6);
+}
+
+.prose li + li {
+  margin-top: var(--space-2);
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+}
+
+.prose blockquote {
+  border-left: 3px solid var(--color-accent-soft);
+  padding-left: var(--space-5);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}

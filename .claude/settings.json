@@ -1,0 +1,41 @@
+{
+  "plansDirectory": ".claude/plans",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/remind-track-tasks.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/guard-task-deletion.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-task-files.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-feature-docs.py"
+          }
+        ]
+      }
+    ]
+  }
+}

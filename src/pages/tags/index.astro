@@ -1,0 +1,48 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TagPill from '../../components/TagPill.astro';
+import { getTagsWithCounts } from '../../lib/posts';
+
+const tags = await getTagsWithCounts();
+---
+
+<BaseLayout title="Tags" description="Browse EarlBear blog posts by tag.">
+  <div class="container">
+    <header class="page-head">
+      <p class="eyebrow">Browse</p>
+      <h1>Tags</h1>
+    </header>
+
+    {
+      tags.length === 0 ? (
+        <p class="empty">No tags yet.</p>
+      ) : (
+        <div class="tag-cloud">
+          {tags.map(({ tag, count }) => (
+            <TagPill tag={tag} count={count} />
+          ))}
+        </div>
+      )
+    }
+  </div>
+</BaseLayout>
+
+<style>
+  .page-head {
+    margin-bottom: var(--space-6);
+  }
+  .page-head .eyebrow {
+    color: var(--color-accent);
+  }
+  .page-head h1 {
+    margin-top: var(--space-2);
+  }
+  .tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .empty {
+    color: var(--color-text-muted);
+  }
+</style>

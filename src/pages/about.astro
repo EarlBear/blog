@@ -1,0 +1,65 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="About"
+  description="What this blog is, and who is behind it."
+>
+  <div class="container">
+    <header class="page-head">
+      <p class="eyebrow">About</p>
+      <h1>The EarlBear blog</h1>
+    </header>
+
+    <div class="prose">
+      <p class="lede">
+        EarlBear builds self-healing ecommerce, powered by Earl and Watson. This
+        is where we write about how it works.
+      </p>
+      <p>
+        Expect engineering notes, product thinking, and field reports from
+        running thousands of experiments on live storefronts. Some posts go deep
+        on the systems behind auto-heals and A/B tests; others step back to talk
+        about what we are learning along the way.
+      </p>
+
+      <img
+        src="/vendor/earl-analyst.svg"
+        alt="Earl inspecting a rising growth chart"
+        width="520"
+        height="360"
+      />
+
+      <h2>Who writes here</h2>
+      <p>
+        Posts come from the EarlBear team — meet them on the
+        <a href="/authors/">authors page</a>.
+      </p>
+
+      <h2>Stay in the loop</h2>
+      <p>
+        Subscribe via <a href="/rss.xml">RSS</a>, or browse everything from the
+        <a href="/">posts index</a>.
+      </p>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-head {
+    margin-bottom: var(--space-6);
+  }
+  .page-head .eyebrow {
+    color: var(--color-accent);
+  }
+  .page-head h1 {
+    margin-top: var(--space-2);
+  }
+  .prose img {
+    display: block;
+    margin: var(--space-8) auto;
+    max-width: 100%;
+    height: auto;
+  }
+</style>

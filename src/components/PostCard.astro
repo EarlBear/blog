@@ -1,0 +1,98 @@
+---
+import FormattedDate from './FormattedDate.astro';
+import TagPill from './TagPill.astro';
+import Byline from './Byline.astro';
+import type { Post } from '../lib/posts';
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const { title, description, pubDate, tags, authors, draft } = post.data;
+---
+
+<article class="card">
+  <div class="row-meta">
+    <FormattedDate date={pubDate} class="date" />
+    {authors.length > 0 && (
+      <span class="dot">·</span>
+      <span class="by"><Byline authorIds={authors} /></span>
+    )}
+    {draft && <span class="draft">draft</span>}
+  </div>
+  <h2>
+    <a href={`/blog/${post.id}/`}>{title}</a>
+  </h2>
+  <p class="desc">{description}</p>
+  {
+    tags.length > 0 && (
+      <div class="tags">
+        {tags.map((tag) => (
+          <TagPill tag={tag} />
+        ))}
+      </div>
+    )
+  }
+</article>
+
+<style>
+  .card {
+    padding: var(--space-6) 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  .row-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+  }
+  .date {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+  .dot {
+    color: var(--color-text-muted);
+    font-size: var(--fs-xs);
+  }
+  .by {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+  .draft {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-warning);
+    background: var(--color-warning-bg, var(--eb-warning-bg));
+    border-radius: var(--radius-xs);
+    padding: 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  h2 {
+    font-size: var(--fs-h3);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-snug);
+    margin: 0 0 var(--space-2);
+  }
+  h2 a {
+    color: var(--color-text);
+    text-decoration: none;
+    border: none;
+  }
+  h2 a:hover {
+    color: var(--color-text-accent);
+  }
+  .desc {
+    color: var(--color-text-secondary);
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+    margin: 0 0 var(--space-3);
+  }
+  .tags {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+</style>

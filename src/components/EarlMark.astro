@@ -1,0 +1,30 @@
+---
+// Inline the Earl monogram at build time so `currentColor` tinting works.
+// The package asset hardcodes color="#B84A2E" on the root <svg>; we strip that
+// attribute so the color comes from the surrounding CSS (`color:` on a parent).
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+interface Props {
+  size?: number;
+  class?: string;
+}
+const { size = 28, class: className } = Astro.props;
+
+const markPath = fileURLToPath(
+  new URL('../../public/vendor/earl-mark.svg', import.meta.url)
+);
+
+let svg = readFileSync(markPath, 'utf8');
+// Drop the hardcoded color attribute and any fixed width/height so our props win.
+svg = svg
+  .replace(/\scolor="[^"]*"/, '')
+  .replace(/\swidth="[^"]*"/, '')
+  .replace(/\sheight="[^"]*"/, '')
+  .replace(
+    '<svg',
+    `<svg width="${size}" height="${size}"${className ? ` class="${className}"` : ''}`
+  );
+---
+
+<Fragment set:html={svg} />

@@ -1,0 +1,37 @@
+---
+interface Props {
+  tag: string;
+  count?: number;
+}
+const { tag, count } = Astro.props;
+---
+
+<a class="tag-pill" href={`/tags/${tag}/`}>
+  {tag}{count !== undefined && <span class="tag-count num">{count}</span>}
+</a>
+
+<style>
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--color-accent-soft);
+    color: var(--color-text-accent);
+    border: none;
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-eyebrow);
+    font-weight: var(--fw-medium);
+    line-height: 1;
+    padding: 4px 10px;
+    text-decoration: none;
+    transition: background var(--dur-fast) var(--ease-standard);
+  }
+  .tag-pill:hover {
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
+  }
+  .tag-count {
+    opacity: 0.7;
+    font-size: var(--fs-xs);
+  }
+</style>

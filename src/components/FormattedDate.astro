@@ -1,0 +1,18 @@
+---
+interface Props {
+  date: Date;
+  class?: string;
+}
+const { date, class: className } = Astro.props;
+
+// Format in UTC: `pubDate: 2026-07-03` parses to UTC midnight, and formatting
+// in local time would render the previous day west of Greenwich.
+const formatted = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+}).format(date);
+---
+
+<time datetime={date.toISOString()} class:list={['num', className]}>{formatted}</time>

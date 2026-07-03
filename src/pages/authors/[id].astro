@@ -1,0 +1,152 @@
+---
+import { render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import EarlMark from '../../components/EarlMark.astro';
+import { getAuthors } from '../../lib/authors';
+import { getPublishedPosts } from '../../lib/posts';
+
+export async function getStaticPaths() {
+  const [authors, posts] = await Promise.all([
+    getAuthors(),
+    getPublishedPosts(),
+  ]);
+  return authors.map((author) => ({
+    params: { id: author.id },
+    props: {
+      author,
+      posts: posts.filter((p) => p.data.authors.includes(author.id)),
+    },
+  }));
+}
+
+const { author, posts } = Astro.props;
+const { name, role, avatar, socials } = author.data;
+const { Content } = await render(author);
+
+const socialLinks = Object.entries(socials ?? {}).filter(
+  ([, href]) => href && href !== '#'
+);
+---
+
+<BaseLayout
+  title={name}
+  description={`Posts and profile for ${name} on the EarlBear blog.`}
+>
+  <div class="container">
+    <header class="author-head">
+      {
+        avatar ? (
+          <img class="avatar" src={avatar} alt="" width="64" height="64" />
+        ) : (
+          <span class="avatar mark"><EarlMark size={40} /></span>
+        )
+      }
+      <div>
+        <p class="eyebrow">Author</p>
+        <h1>{name}</h1>
+        {role && <p class="role">{role}</p>}
+      </div>
+    </header>
+
+    <div class="bio prose">
+      <Content />
+    </div>
+
+    {
+      socialLinks.length > 0 && (
+        <div class="socials">
+          {socialLinks.map(([k, href]) => (
+            <a href={href}>{k}</a>
+          ))}
+        </div>
+      )
+    }
+
+    <h2 class="posts-head eyebrow">Posts</h2>
+    {
+      posts.length === 0 ? (
+        <p class="empty">No published posts yet.</p>
+      ) : (
+        <div class="post-list">
+          {posts.map((post) => (
+            <PostCard post={post} />
+          ))}
+        </div>
+      )
+    }
+
+    <a class="back" href="/authors/">← All authors</a>
+  </div>
+</BaseLayout>
+
+<style>
+  .author-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    margin-bottom: var(--space-6);
+  }
+  .avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-pill);
+    background: var(--color-accent-soft);
+    padding: 8px;
+    color: var(--color-accent);
+    flex-shrink: 0;
+  }
+  .avatar.mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .eyebrow {
+    color: var(--color-accent);
+  }
+  .author-head h1 {
+    margin: var(--space-2) 0 0;
+  }
+  .role {
+    color: var(--color-text-secondary);
+    margin: var(--space-1) 0 0;
+  }
+  .bio {
+    max-width: var(--space-reading);
+    margin-bottom: var(--space-6);
+  }
+  .socials {
+    display: flex;
+    gap: var(--space-4);
+    margin-bottom: var(--space-10);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+  .socials a {
+    color: var(--color-text-secondary);
+    border: none;
+    text-transform: lowercase;
+  }
+  .socials a:hover {
+    color: var(--color-text-accent);
+  }
+  .posts-head {
+    margin: var(--space-8) 0 var(--space-2);
+  }
+  .post-list {
+    border-top: 1px solid var(--color-border-subtle);
+    margin-bottom: var(--space-8);
+  }
+  .empty {
+    color: var(--color-text-muted);
+  }
+  .back {
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+    border: none;
+    text-decoration: none;
+  }
+  .back:hover {
+    color: var(--color-text-accent);
+  }
+</style>

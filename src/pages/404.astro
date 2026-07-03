@@ -1,0 +1,45 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import EarlMark from '../components/EarlMark.astro';
+---
+
+<BaseLayout title="Page not found" description="That page does not exist.">
+  <div class="container notfound">
+    <span class="mark"><EarlMark size={48} /></span>
+    <p class="code num">404</p>
+    <h1>Page not found</h1>
+    <p class="msg">Earl looked everywhere. That page is not here.</p>
+    <a class="home" href="/">← Back to the blog</a>
+  </div>
+</BaseLayout>
+
+<style>
+  .notfound {
+    text-align: center;
+    padding-top: var(--space-20);
+    padding-bottom: var(--space-20);
+  }
+  .mark {
+    color: var(--color-accent);
+    display: inline-flex;
+  }
+  .code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-h3);
+    color: var(--color-text-muted);
+    margin: var(--space-4) 0 0;
+  }
+  h1 {
+    margin: var(--space-2) 0 var(--space-3);
+  }
+  .msg {
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--space-6);
+  }
+  .home {
+    font-size: var(--fs-body);
+    color: var(--color-text-accent);
+    border: none;
+    text-decoration: none;
+  }
+</style>

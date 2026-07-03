@@ -1,0 +1,25 @@
+{
+  "name": "earlbear-blog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync-assets": "node scripts/sync-ui-assets.mjs",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "deploy": "npm run build && gh-pages -d dist --dotfiles --nojekyll -m \"Deploy blog\"",
+    "tasks-check": "python3 .claude/hooks/check-task-files.py --check",
+    "features:check": "python3 scripts/features_check.py",
+    "features:seed": "python3 scripts/features_check.py --seed",
+    "regen-favicon": "node scripts/gen-favicon.mjs"
+  },
+  "dependencies": {
+    "@astrojs/rss": "^4.0.11",
+    "@astrojs/sitemap": "^3.2.1",
+    "astro": "^5.1.1"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.2.0"
+  }
+}

@@ -1,0 +1,85 @@
+---
+import EarlMark from './EarlMark.astro';
+
+const links = [
+  { href: '/', label: 'Posts' },
+  { href: '/tags/', label: 'Tags' },
+  { href: '/authors/', label: 'Authors' },
+  { href: '/about/', label: 'About' },
+  { href: '/rss.xml', label: 'RSS' },
+];
+---
+
+<nav class="nav">
+  <a class="brand" href="/" aria-label="EarlBear blog home">
+    <span class="mark"><EarlMark size={24} /></span>
+    <span class="brand-text">EarlBear</span>
+    <span class="brand-sub">blog</span>
+  </a>
+  <div class="links">
+    {links.map((l) => <a href={l.href}>{l.label}</a>)}
+  </div>
+</nav>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(251, 249, 245, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--color-border-subtle);
+    height: 64px;
+    padding: 0 var(--space-6);
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+  }
+  .brand {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    text-decoration: none;
+    border: none;
+  }
+  .mark {
+    color: var(--color-accent);
+    display: inline-flex;
+    align-self: center;
+  }
+  .brand-text {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-tight);
+    color: var(--color-text);
+  }
+  .brand-sub {
+    font-size: var(--fs-sm);
+    color: var(--color-text-muted);
+    font-weight: var(--fw-regular);
+  }
+  .links {
+    margin-left: auto;
+    display: flex;
+    gap: var(--space-5);
+  }
+  .links a {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    border: none;
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+  .links a:hover {
+    color: var(--color-text-accent);
+  }
+  @media (max-width: 480px) {
+    .brand-sub {
+      display: none;
+    }
+    .links {
+      gap: var(--space-4);
+    }
+  }
+</style>

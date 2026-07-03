@@ -1,0 +1,144 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import EarlMark from '../components/EarlMark.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import TagPill from '../components/TagPill.astro';
+import Byline from '../components/Byline.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  pubDate: Date;
+  updatedDate?: Date;
+  tags: string[];
+  authors: string[];
+  readingTime: number;
+}
+
+const { title, description, pubDate, updatedDate, tags, authors, readingTime } =
+  Astro.props;
+const kicker = tags[0] ?? 'Blog post';
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  ogType="article"
+  publishedTime={pubDate}
+>
+  <article class="article">
+    <header class="post-header">
+      <div class="brand-row">
+        <span class="mark"><EarlMark size={24} /></span>
+        <span class="brand-name">EarlBear</span>
+        <span class="divider"></span>
+        <span class="eyebrow">{kicker}</span>
+      </div>
+      <h1>{title}</h1>
+      <div class="meta">
+        {authors.length > 0 && (
+          <>
+            <Byline authorIds={authors} /> ·{' '}
+          </>
+        )}
+        <FormattedDate date={pubDate} /> · {readingTime} min read
+        {
+          updatedDate && (
+            <>
+              {' · updated '}
+              <FormattedDate date={updatedDate} />
+            </>
+          )
+        }
+      </div>
+    </header>
+
+    <div class="prose">
+      <slot />
+    </div>
+
+    <footer class="post-footer">
+      <div class="tags">
+        {tags.map((tag) => <TagPill tag={tag} />)}
+      </div>
+      <a class="back" href="/">← All posts</a>
+    </footer>
+  </article>
+</BaseLayout>
+
+<style>
+  .article {
+    max-width: min(720px, var(--space-reading));
+    margin: 0 auto;
+    padding: var(--space-16) var(--space-6) var(--space-24);
+  }
+  .post-header {
+    border-bottom: 1px solid var(--color-border-subtle);
+    padding-bottom: var(--space-8);
+    margin-bottom: var(--space-10);
+  }
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+  .mark {
+    color: var(--color-accent);
+    display: inline-flex;
+  }
+  .brand-name {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-tight);
+  }
+  .divider {
+    width: 1px;
+    height: 14px;
+    background: var(--color-border);
+  }
+  .brand-row .eyebrow {
+    font-size: var(--fs-eyebrow);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-eyebrow);
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+  h1 {
+    font-size: 40px;
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-tight);
+    margin: 0 0 var(--space-4);
+  }
+  .meta {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+  .post-footer {
+    margin-top: var(--space-14);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+  }
+  .tags {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .back {
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+    border: none;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .back:hover {
+    color: var(--color-text-accent);
+  }
+</style>
