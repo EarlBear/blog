@@ -6,12 +6,22 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev build preview deploy sync-assets regen-favicon \
-        tasks-check features-check features-seed check clean
+.PHONY: help install install-hooks scan dev build preview deploy sync-assets \
+        regen-favicon tasks-check features-check features-seed check clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+## --- secrets -------------------------------------------------------------
+
+install-hooks: ## Wire the gitleaks pre-commit/pre-push secret scan (run once after clone)
+	@git config core.hooksPath .githooks
+	@command -v gitleaks >/dev/null 2>&1 || echo "  warn: gitleaks not installed — brew install gitleaks"
+	@echo "  core.hooksPath -> .githooks (secret scan active on commit + push)"
+
+scan: ## Full gitleaks secret scan of the working tree + history
+	gitleaks detect --source . --verbose
 
 ## --- develop -------------------------------------------------------------
 

@@ -35,6 +35,7 @@ tokens or private-registry auth are needed:
 
 ```bash
 npm install
+make install-hooks   # wire the gitleaks secret-scan hooks (once; needs brew install gitleaks)
 npm run dev          # http://localhost:4321
 ```
 

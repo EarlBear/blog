@@ -1,0 +1,10 @@
+# gitleaks configuration for the EarlBear blog.
+# See: https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+# Use the gitleaks default ruleset.
+useDefault = true
+
+[[allowlists]]
+description = "Env-var references (not secrets) — e.g. ${GITHUB_PACKAGES_TOKEN} in docs describing the old .npmrc pattern"
+regexes = ['''\$\{[A-Z_][A-Z0-9_]*\}''']

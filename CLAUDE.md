@@ -51,6 +51,18 @@ npm run deploy   # runs `astro build`, then pushes dist/ to gh-pages
 `main` stays source-only. The `public/CNAME` and `public/.nojekyll` files ride
 along in every deploy so the custom domain and raw-file serving survive.
 
+## Secret scanning
+
+A gitleaks scan runs on every commit and push via git hooks in `.githooks/`
+(pre-commit scans staged changes; pre-push scans the tree). Wire them once after
+cloning:
+
+```bash
+make install-hooks   # sets core.hooksPath to .githooks (needs: brew install gitleaks)
+```
+
+`make scan` runs a full scan on demand. Config + allowlist live in `.gitleaks.toml`.
+
 ## Common tasks (`make help`)
 
 A `Makefile` wraps the everyday commands: `make dev|build|preview|deploy`,

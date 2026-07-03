@@ -19,3 +19,5 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] Order authors index by explicit `order` field (Sa'd before Omar) @done(2026-07-03T00:00:00Z) #git:e50a090c
 - [x] Replace outdated About illustration; distill landing narrative into About page, drop deprecated earl-analyst.svg @done(2026-07-03T00:00:00Z) #git:f2c79b52
 - [x] [MANUAL] Cloudflare DNS: CNAME `blog` → `earlbear.github.io`, DNS only — verified resolving to GitHub Pages IPs 185.199.108-111.153 @done(2026-07-03T00:00:00Z) #git:c825b684
+- [x] Push main + first deploy to gh-pages branch (branch published, ready for Pages source config) @done(2026-07-03T00:00:00Z) #git:57fee15c
+- [x] Set up gitleaks secret-scanning hooks (.githooks pre-commit + pre-push, make install-hooks, .gitleaks.toml) — verified blocks a real PAT @done(2026-07-03T00:00:00Z) #git:1dadf345
