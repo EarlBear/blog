@@ -7,7 +7,8 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan dev build preview deploy sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check check clean
+        regen-favicon tasks-check features-check features-seed posts-check check \
+        bench-diagram clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -15,10 +16,11 @@ help: ## List available targets
 
 ## --- secrets -------------------------------------------------------------
 
-install-hooks: ## Wire the gitleaks pre-commit/pre-push secret scan (run once after clone)
+install-hooks: ## Wire git hooks (secret scan + concurrent-change capture) — run once after clone
 	@git config core.hooksPath .githooks
 	@command -v gitleaks >/dev/null 2>&1 || echo "  warn: gitleaks not installed — brew install gitleaks"
-	@echo "  core.hooksPath -> .githooks (secret scan active on commit + push)"
+	@sh scripts/setup-concurrency.sh
+	@echo "  core.hooksPath -> .githooks (secret scan + concurrent-capture active)"
 
 scan: ## Full gitleaks secret scan of the working tree + history
 	gitleaks detect --source . --verbose
@@ -28,7 +30,7 @@ scan: ## Full gitleaks secret scan of the working tree + history
 install: ## Install dependencies (all public — no token needed)
 	npm install
 
-dev: ## Run the local dev server (drafts visible) at localhost:4321
+dev: ## Run the local dev server (drafts visible) at localhost:4343
 	npm run dev
 
 build: ## Production build to dist/ (drafts excluded)
@@ -60,6 +62,11 @@ posts-check: ## Validate blog-post frontmatter + voice rules
 	npm run posts-check
 
 check: tasks-check features-check posts-check ## Run all governance checks
+
+## --- measure --------------------------------------------------------------
+
+bench-diagram: ## A/B + perf harness for the use-case diagram → docs/diagram-bench.md
+	npm run bench:diagram
 
 ## --- ship ----------------------------------------------------------------
 

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Guard rebases in the shared working dir. A rebase rewrites history — in a repo
+# where several sessions share one branch, that can silently drop another
+# session's commits. Allow the automatic replay path (pull.rebase, which sets
+# GIT_REFLOG_ACTION=pull) and explicit opt-in; block ad-hoc interactive rebases.
+#
+# Override for a deliberate, coordinated rebase:  EB_ALLOW_REWRITE=1 git rebase ...
+if [ "${EB_ALLOW_REWRITE:-}" = "1" ]; then
+    exit 0
+fi
+
+case "${GIT_REFLOG_ACTION:-}" in
+    pull*|rebase*) exit 0 ;;  # the auto-replay-on-top path — expected and safe
+esac
+
+echo "" >&2
+echo "BLOCKED: manual 'git rebase' in a shared working dir can drop another" >&2
+echo "session's commits. If you really mean to rewrite history and know no other" >&2
+echo "session is active, re-run with:  EB_ALLOW_REWRITE=1 git rebase ..." >&2
+echo "To recover work instead, see the concurrent-commit skill (reflog + backup/ tags)." >&2
+exit 1

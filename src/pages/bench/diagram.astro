@@ -1,0 +1,71 @@
+---
+/**
+ * Diagram benchmark harness page — DEV ONLY.
+ *
+ * Renders the same use-case diagram three ways so scripts/diagram-bench.mjs can
+ * measure them head-to-head (see docs/diagram-bench.md). Guarded so it never
+ * ships: in a production build this returns 404 and emits nothing. The harness
+ * drives it via `astro dev`, which serves it.
+ *
+ *   ?variant=animated  → the shipping design (gradient drift + draw-in)
+ *   ?variant=static    → identical SVG, animation disabled (isolates motion cost)
+ *   ?variant=image     → the same diagram as a flat rasterizable baseline
+ *                        (stand-in for an image-export / D2 route)
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+
+// Never exists in production. Astro evaluates this at build time.
+if (import.meta.env.PROD) {
+  return new Response(null, { status: 404 });
+}
+
+const variant = Astro.url.searchParams.get('variant') ?? 'animated';
+
+// One shared spec, so all three variants measure the *same* diagram.
+const spec = {
+  title: 'EarlBear',
+  desc: 'Benchmark fixture',
+  actors: [
+    { id: 'earl', label: 'Earl (internal)', kind: 'internal' as const },
+    { id: 'customer', label: 'Customer', kind: 'external' as const },
+    { id: 'scheduler', label: 'Scheduler', kind: 'system' as const },
+  ],
+  useCases: [
+    { id: 'route', label: 'Route traffic' },
+    { id: 'experiment', label: 'Run experiment' },
+    { id: 'review', label: 'Review results' },
+    { id: 'rollback', label: 'Roll back' },
+    { id: 'alert', label: 'Get alerted' },
+    { id: 'export', label: 'Export report' },
+  ],
+  links: [
+    { from: 'earl', to: 'experiment' },
+    { from: 'earl', to: 'review' },
+    { from: 'earl', to: 'rollback' },
+    { from: 'earl', to: 'export' },
+    { from: 'customer', to: 'route' },
+    { from: 'scheduler', to: 'route' },
+    { from: 'scheduler', to: 'alert' },
+    { from: 'experiment', to: 'review', type: 'include' as const },
+    { from: 'rollback', to: 'alert', type: 'extend' as const },
+  ],
+};
+---
+
+<BaseLayout title="Diagram benchmark">
+  <main class="bench" data-variant={variant}>
+    <UseCaseDiagram {...spec} />
+  </main>
+  {/* The `static` variant reuses the shipping component but forces reduced
+      motion via a scoped rule, so we measure the exact same DOM minus animation. */}
+  {
+    variant === 'static' && (
+      <style is:global>
+        {`.bench[data-variant="static"] .usecase-diagram *,
+          .bench[data-variant="static"] .usecase-diagram .ucd-grad { animation: none !important; }
+          .bench[data-variant="static"] .usecase-diagram .ucd-link--association line { stroke-dashoffset: 0 !important; }`}
+      </style>
+    )
+  }
+</BaseLayout>

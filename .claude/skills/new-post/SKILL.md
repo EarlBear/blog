@@ -194,6 +194,17 @@ any post with a table, chart, or widget: run `npm run dev`, open the post, and
 this). Fix visual issues in the component's CSS or the global table styles, not
 by contorting the content. The hook and the build are necessary, not sufficient.
 
+## Back a performance or design claim with evidence
+
+If the post asserts that one approach is faster, lighter, or better than another
+(e.g. "inline SVG is lighter than an image", "the animation is free"), don't state
+it from intuition — cite a measurement. Run or point to an A/B/perf comparison
+(the `frontend-audit` skill covers *when* a claim warrants a test and *how* to run
+and document one), write the numbers to a regenerable `docs/<thing>-bench.md`, and
+reference the result in the post's prose. See `earlbear-use-cases.mdx` +
+`docs/diagram-bench.md` for the shape. A claim a reader can't trace to a
+re-runnable table is a vibe, not a finding.
+
 ## Notes
 
 - Add `updatedDate` later, only when a post is materially revised.

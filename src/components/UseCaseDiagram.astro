@@ -1,0 +1,304 @@
+---
+/**
+ * UseCaseDiagram — a customized, UML-spec use-case diagram, rendered as one
+ * inline SVG at build time. No client JS, no dependencies. See
+ * docs/features/usecase-diagrams.md for *why* this is a hand-rolled component
+ * rather than Mermaid/D2.
+ *
+ * UML notation, honored:
+ *   - actors sit OUTSIDE the system boundary (rectangle)
+ *   - use cases are ovals INSIDE the boundary
+ *   - association: solid line, actor ↔ use case
+ *   - <<include>> / <<extend>>: dashed arrow between use cases, with the
+ *     stereotype label; arrow points at the included / extended use case per UML
+ *
+ * On-brand departures: the actor figures are the Earl monogram (internal), a
+ * line person (external), and a line gear (system) instead of stick figures;
+ * the ovals carry a slow-drifting design-system gradient. All motion is wrapped
+ * in prefers-reduced-motion (see .usecase-diagram in src/styles/global.css).
+ *
+ * Layout is deterministic (no measuring / no randomness) so builds are stable:
+ * actors in a column on one side, ovals in a grid inside the boundary. On narrow
+ * viewports CSS restacks the figure; the SVG itself scales via viewBox.
+ */
+import { actorGlyph, type ActorKind } from './diagram/actors';
+
+export interface Actor {
+  id: string;
+  label: string;
+  kind?: ActorKind; // default 'external'
+}
+export interface UseCase {
+  id: string;
+  label: string;
+}
+export interface Link {
+  from: string; // actor id or use-case id
+  to: string; // use-case id
+  type?: 'association' | 'include' | 'extend'; // default association
+}
+interface Props {
+  title: string; // system boundary label + a11y <title>
+  desc?: string; // a11y <desc>
+  actors: Actor[];
+  useCases: UseCase[];
+  links: Link[];
+  /** Reserved for future explicit override; layout is responsive via CSS. */
+  layout?: 'auto';
+}
+
+const { title, desc, actors, useCases, links, layout = 'auto' } = Astro.props;
+
+// A stable id salt so multiple diagrams on one page don't collide on gradient /
+// marker ids. Derived from the title (deterministic — no Math.random at build).
+const salt = title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'ucd';
+
+// ---- Geometry -------------------------------------------------------------
+// One coordinate system; CSS scales the whole thing. Units are "user units".
+const OVAL_W = 200;
+const OVAL_H = 74;
+const COL_GAP = 40; // vertical gap between ovals
+const ROW_GAP = 56; // horizontal gap between oval columns
+const ACTOR_BOX = 72;
+const ACTOR_GAP = 48; // vertical gap between actors
+const PAD = 28; // padding inside the boundary around the ovals
+const ACTOR_LANE = 150; // width reserved for the actor column + its labels
+const LABEL_H = 26; // room under each actor glyph for its label
+
+// Ovals: single column if ≤3, else two columns. Keeps the figure compact and
+// readable in a 720px reading column.
+const twoCol = useCases.length > 3;
+const perCol = twoCol ? Math.ceil(useCases.length / 2) : useCases.length;
+
+const boundaryW = PAD * 2 + (twoCol ? OVAL_W * 2 + ROW_GAP : OVAL_W);
+const boundaryH = PAD * 2 + perCol * OVAL_H + (perCol - 1) * COL_GAP + 30; // +title band
+
+const ucPos = new Map<string, { cx: number; cy: number }>();
+const boundaryX = ACTOR_LANE;
+const boundaryY = 10;
+useCases.forEach((uc, i) => {
+  const col = twoCol && i >= perCol ? 1 : 0;
+  const row = twoCol && i >= perCol ? i - perCol : i;
+  const cx = boundaryX + PAD + OVAL_W / 2 + col * (OVAL_W + ROW_GAP);
+  const cy = boundaryY + 30 + PAD + OVAL_H / 2 + row * (OVAL_H + COL_GAP);
+  ucPos.set(uc.id, { cx, cy });
+});
+
+// Actors: a column to the left of the boundary, vertically centered against it.
+const actorsBlockH = actors.length * ACTOR_BOX + (actors.length - 1) * ACTOR_GAP + LABEL_H;
+const actorsStartY = boundaryY + Math.max(0, (boundaryH - actorsBlockH) / 2);
+const actorPos = new Map<string, { cx: number; cy: number; kind: ActorKind }>();
+actors.forEach((a, i) => {
+  const cx = ACTOR_LANE / 2;
+  const cy = actorsStartY + i * (ACTOR_BOX + ACTOR_GAP) + ACTOR_BOX / 2;
+  actorPos.set(a.id, { cx, cy, kind: a.kind ?? 'external' });
+});
+
+const svgW = boundaryX + boundaryW + 20;
+const svgH = Math.max(boundaryY + boundaryH, actorsStartY + actorsBlockH) + 20;
+
+// ---- Link geometry --------------------------------------------------------
+function anchor(id: string): { x: number; y: number; isActor: boolean } | null {
+  const a = actorPos.get(id);
+  if (a) return { x: a.cx, y: a.cy, isActor: true };
+  const u = ucPos.get(id);
+  if (u) return { x: u.cx, y: u.cy, isActor: false };
+  return null;
+}
+
+// Edge point on an oval toward a target (so lines touch the rim, not center).
+function ovalEdge(cx: number, cy: number, tx: number, ty: number) {
+  const rx = OVAL_W / 2;
+  const ry = OVAL_H / 2;
+  const dx = tx - cx;
+  const dy = ty - cy;
+  const denom = Math.hypot(dx / rx, dy / ry) || 1;
+  return { x: cx + dx / rx / denom, y: cy + dy / ry / denom };
+}
+
+interface Rendered {
+  type: 'association' | 'include' | 'extend';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  mx: number;
+  my: number;
+  len: number;
+}
+const renderedLinks: Rendered[] = [];
+for (const link of links) {
+  const from = anchor(link.from);
+  const to = anchor(link.to);
+  if (!from || !to) continue; // silently skip dangling refs; validated by author
+  const type = link.type ?? 'association';
+
+  // Start point: actor stays at its glyph edge; a use-case starts at its rim.
+  let sx = from.x;
+  let sy = from.y;
+  if (from.isActor) {
+    sx = from.x + ACTOR_BOX / 2 - 6; // right edge of the actor glyph
+  } else {
+    const e = ovalEdge(from.x, from.y, to.x, to.y);
+    sx = e.x;
+    sy = e.y;
+  }
+  const e2 = ovalEdge(to.x, to.y, sx, sy); // always ends on the target oval rim
+  const ex = e2.x;
+  const ey = e2.y;
+  const len = Math.hypot(ex - sx, ey - sy);
+  renderedLinks.push({
+    type,
+    x1: sx,
+    y1: sy,
+    x2: ex,
+    y2: ey,
+    mx: (sx + ex) / 2,
+    my: (sy + ey) / 2,
+    len,
+  });
+}
+
+// Total draw-in length drives the animation timing so all lines finish together.
+const gradientIds = useCases.map((_, i) => `${salt}-g${i}`);
+---
+
+<figure class={`usecase-diagram usecase-diagram--${layout}`}>
+  <div class="ucd-scroll">
+    <svg
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      role="img"
+      aria-labelledby={`${salt}-title${desc ? ` ${salt}-desc` : ''}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title id={`${salt}-title`}>{title}</title>
+      {desc && <desc id={`${salt}-desc`}>{desc}</desc>}
+
+      <defs>
+        {
+          useCases.map((_, i) => (
+            <linearGradient
+              id={gradientIds[i]}
+              class="ucd-grad"
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              {/* Two design-system data tokens, softened toward the surface so
+                  the oval reads as a warm chip, not a saturated blob. The stops
+                  animate position for the ambient drift (see global.css). */}
+              <stop
+                offset="0%"
+                stop-color={`color-mix(in oklab, var(--eb-data-${(i % 8) + 1}) 22%, var(--color-surface))`}
+              />
+              <stop
+                offset="100%"
+                stop-color={`color-mix(in oklab, var(--eb-data-${((i + 3) % 8) + 1}) 30%, var(--color-surface))`}
+              />
+            </linearGradient>
+          ))
+        }
+        {/* Arrowheads: filled for association endpoints, open V for include/extend. */}
+        <marker
+          id={`${salt}-arrow`}
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="context-stroke" stroke-width="1.5" />
+        </marker>
+      </defs>
+
+      {/* System boundary */}
+      <g class="ucd-boundary">
+        <rect
+          x={boundaryX}
+          y={boundaryY}
+          width={boundaryW}
+          height={boundaryH}
+          rx="14"
+        />
+        <text x={boundaryX + 18} y={boundaryY + 24} class="ucd-boundary-label">
+          {title}
+        </text>
+      </g>
+
+      {/* Links drawn under the ovals so ovals sit on top of the line ends. */}
+      <g class="ucd-links">
+        {
+          renderedLinks.map((l, i) => (
+            <g class={`ucd-link ucd-link--${l.type}`}>
+              <line
+                x1={l.x1}
+                y1={l.y1}
+                x2={l.x2}
+                y2={l.y2}
+                marker-end={l.type === 'association' ? undefined : `url(#${salt}-arrow)`}
+                style={`--len:${l.len.toFixed(1)}; --i:${i}`}
+              />
+              {l.type !== 'association' && (
+                <text x={l.mx} y={l.my - 4} class="ucd-stereotype">
+                  {l.type === 'include' ? '«include»' : '«extend»'}
+                </text>
+              )}
+            </g>
+          ))
+        }
+      </g>
+
+      {/* Use-case ovals */}
+      <g class="ucd-usecases">
+        {
+          useCases.map((uc, i) => {
+            const p = ucPos.get(uc.id)!;
+            return (
+              <g class="ucd-oval" style={`--i:${i}`}>
+                <ellipse
+                  cx={p.cx}
+                  cy={p.cy}
+                  rx={OVAL_W / 2}
+                  ry={OVAL_H / 2}
+                  fill={`url(#${gradientIds[i]})`}
+                />
+                <text x={p.cx} y={p.cy} class="ucd-uc-label">
+                  {uc.label}
+                </text>
+              </g>
+            );
+          })
+        }
+      </g>
+
+      {/* Actors — placed last so they render above link ends. */}
+      <g class="ucd-actors">
+        {
+          actors.map((a) => {
+            const p = actorPos.get(a.id)!;
+            const gx = p.cx - ACTOR_BOX / 2;
+            const gy = p.cy - ACTOR_BOX / 2;
+            return (
+              <g class={`ucd-actor ucd-actor--${p.kind}`}>
+                <g
+                  transform={`translate(${gx} ${gy})`}
+                  set:html={actorGlyph(p.kind, ACTOR_BOX)}
+                />
+                <text
+                  x={p.cx}
+                  y={p.cy + ACTOR_BOX / 2 + 16}
+                  class="ucd-actor-label"
+                >
+                  {a.label}
+                </text>
+              </g>
+            );
+          })
+        }
+      </g>
+    </svg>
+  </div>
+  {desc && <figcaption class="ucd-caption">{desc}</figcaption>}
+</figure>

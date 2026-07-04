@@ -13,9 +13,11 @@
     "posts-check": "python3 .claude/hooks/check-posts.py --check",
     "features:check": "python3 scripts/features_check.py",
     "features:seed": "python3 scripts/features_check.py --seed",
-    "regen-favicon": "node scripts/gen-favicon.mjs"
+    "regen-favicon": "node scripts/gen-favicon.mjs",
+    "bench:diagram": "node --experimental-websocket scripts/diagram-bench.mjs"
   },
   "dependencies": {
+    "@astrojs/mdx": "^4.3.14",
     "@astrojs/rss": "^4.0.11",
     "@astrojs/sitemap": "^3.2.1",
     "astro": "^5.1.1"
