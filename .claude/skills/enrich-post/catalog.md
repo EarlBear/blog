@@ -59,6 +59,15 @@ whose lines cross too much (<75% crossing-free), or whose actors fan too lopside
 fails the build with an actionable message. `allowOverlap` downgrades them to
 warnings — use it only when a fan-out genuinely can't be linear, and say why.
 
+## Known gaps (candidates to grow the catalog)
+
+- **Branch / decision flow** — a node that forks into 2+ mutually-exclusive
+  outcomes (an `if/else`). `FlowDiagram` can *draw* the edges (with `|labels|`) but
+  has no dedicated fork layout that fans the outcomes into separate columns, so a
+  branch currently renders as a labeled sequence and needs `allowOverlap`. A
+  `shape="branch"` (or a small decision-diamond primitive) would render it cleanly.
+  Seen in `syncing-append-only-transcripts` (the rewind guard).
+
 ## Adding a technique
 
 New shape → build a primitive like the others (build-time inline SVG, semantic

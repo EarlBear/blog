@@ -25,6 +25,7 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] Build Accordion foldable-options component (native details/summary, zero JS, verdict pills) for decision posts @done(2026-07-04T00:00:00Z) #git:a10de26
 - [x] Enrich 4 proof posts (→.mdx): agentic-workflow (loop), mining-transcripts (pipeline w/ edge boundary), from-one-laptop (architecture), one-database-two-modes (accordion) @done(2026-07-04T00:00:00Z) #git:a10de26
 - [x] Build enrich-post skill + living catalog.md (technique table + Mermaid decision rule) + wire into CLAUDE.md; fix new-post dangling dataviz ref; diagram-catalog feature doc @done(2026-07-04T00:00:00Z) #git:a10de26
+- [x] Enrich via /enrich-post: syncing-append-only-transcripts (rewind-guard decision flow, FlowDiagram sequence) + what-we-never-collect (raw-stays trust-boundary pipeline); note branch-layout gap in catalog.md @done(2026-07-04T00:00:00Z) #git:pending
 - [x] Build skills: new-post, manage-authors, feature-docs, sync-design, deploy @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Regenerate favicon from earl-mark.svg (glasses mark), accent-tinted, via scripts/gen-favicon.mjs @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Multi-author support: authors collection, co-author bylines, /authors/ + /authors/<id>/, RSS author @done(2026-07-03T00:00:00Z) #git:71331877

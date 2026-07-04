@@ -13,6 +13,8 @@ questions:
   - How do we aggregate across machines without raw transcripts ever leaving the laptop?
 ---
 
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
 Our agent metrics come from Claude Code session transcripts — append-only JSONL files that
 grow as a session runs. Keeping the metrics fresh sounds like a plumbing problem, and mostly
 it is. But one feature — rewind — quietly breaks the assumption the whole sync rests on, and
@@ -56,7 +58,25 @@ that offset. On each run we re-read those bytes and compare. If the hash matches
 is unchanged — a normal append — and we resume. If it differs, something rewrote the history
 we already read: a rewind. We throw away the offset and re-extract the whole session. One
 small read and a hash per file, and the append-only fast path stays fast for the common
-case.
+case. Here is that decision — click a step for what it does.
+
+<FlowDiagram
+  title="Delta sync with a rewind guard"
+  shape="sequence"
+  desc="On each sync we re-hash the bytes before our stored offset. If the hash matches, the prefix is unchanged and we resume from the offset; if it differs, a rewind rewrote history we already read, so we discard the offset and re-extract the whole session."
+  nodes={[
+    { id: 'read', label: 'Re-hash prefix', kind: 'edge', detail: 'Re-read the last few kilobytes before the stored byte offset and hash them — one small read per file, on every sync.' },
+    { id: 'match', label: 'Hash matches?', detail: 'Compare against the hash stored beside the offset. Match means the history we already read is untouched; a difference means it was rewritten.' },
+    { id: 'resume', label: 'Resume from offset', kind: 'store', detail: 'The common case: a normal append. Process only the new bytes after the offset — the fast path stays fast.' },
+    { id: 'reextract', label: 'Re-extract session', kind: 'external', detail: 'A rewind was detected. Throw away the offset and re-extract the whole session, so a rewritten transcript never yields a wrong number.' },
+  ]}
+  edges={[
+    { from: 'read', to: 'match' },
+    { from: 'match', to: 'resume', label: 'unchanged' },
+    { from: 'match', to: 'reextract', label: 'rewound' },
+  ]}
+  allowOverlap
+/>
 
 There is a wrinkle worth admitting: until this guard existed, our sync actually re-extracted
 the *entire* file every run, so the metrics were always correct — just not delta-efficient.

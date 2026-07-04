@@ -13,6 +13,8 @@ questions:
   - How can you test uploading only the deltas to a remote database without a cloud account?
 ---
 
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
 When you build telemetry over a fleet of machines, the intuitive architecture draws itself:
 collect the log files somewhere central, run analysis there, show the results. It is how
 most log pipelines work. For agent transcripts, it is the wrong design — and seeing *why*
@@ -75,6 +77,23 @@ the history changed and re-processes it. All of it runs against a container, no 
 the same code path production uses.
 
 ## The shape of it
+
+<FlowDiagram
+  title="Raw stays, only the shadow travels"
+  shape="pipeline"
+  desc="On each machine, raw JSONL is analyzed at the edge into a derived record. Only that derived record crosses to the shared database. The raw file has no route off the machine — the boundary is structural, not a policy."
+  nodes={[
+    { id: 'raw', label: 'Raw JSONL', kind: 'store', detail: 'Full prompts, file contents, the occasional pasted secret. Stays in each machine’s ~/.claude/projects/ — never collected, never moved.' },
+    { id: 'edge', label: 'Analyze at edge', kind: 'edge', detail: 'A stdlib-only pure function runs on each machine, deriving metrics and two short redacted excerpts from an allowlist of safe fields. No central analyzer, because that would require shipping it the raw file.' },
+    { id: 'derived', label: 'Derived record', detail: 'Token counts, tool names, timings, redacted excerpts. The only thing that travels — the safe shadow of the raw file.' },
+    { id: 'db', label: 'Shared database', kind: 'external', detail: 'The collection point, holding no raw content. Aggregation happens here across machines, from data scrubbed before it left the edge. Locally, a Postgres container stands in for it.' },
+  ]}
+  edges={[
+    { from: 'raw', to: 'edge' },
+    { from: 'edge', to: 'derived' },
+    { from: 'derived', to: 'db', label: 'crosses the boundary' },
+  ]}
+/>
 
 The whole architecture falls out of one negative choice. Raw never moves, so analysis is at
 the edge, so there is no central raw store, so what syncs is derived records, so "remote" is
