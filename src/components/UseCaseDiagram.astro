@@ -31,6 +31,8 @@ export interface Actor {
 export interface UseCase {
   id: string;
   label: string;
+  /** Optional longer detail, surfaced in the click-to-focus modal. */
+  detail?: string;
 }
 export interface Link {
   from: string; // actor id or use-case id
@@ -45,9 +47,19 @@ interface Props {
   links: Link[];
   /** Reserved for future explicit override; layout is responsive via CSS. */
   layout?: 'auto';
+  /** Downgrade the build-time overlap gate to a warning for this diagram. */
+  allowOverlap?: boolean;
 }
 
-const { title, desc, actors, useCases, links, layout = 'auto' } = Astro.props;
+const {
+  title,
+  desc,
+  actors,
+  useCases,
+  links,
+  layout = 'auto',
+  allowOverlap = false,
+} = Astro.props;
 
 // A stable id salt so multiple diagrams on one page don't collide on gradient /
 // marker ids. Derived from the title (deterministic — no Math.random at build).
@@ -65,42 +77,157 @@ const PAD = 28; // padding inside the boundary around the ovals
 const ACTOR_LANE = 150; // width reserved for the actor column + its labels
 const LABEL_H = 26; // room under each actor glyph for its label
 
-// Ovals: single column if ≤3, else two columns. Keeps the figure compact and
-// readable in a 720px reading column.
-const twoCol = useCases.length > 3;
-const perCol = twoCol ? Math.ceil(useCases.length / 2) : useCases.length;
+// Split actors by side so association lines fan to the NEAREST edge instead of
+// all crossing the middle: internal + system operators sit on the LEFT, external
+// actors (customers) on the RIGHT. If a side is empty its lane collapses to 0.
+const leftActors = actors.filter((a) => (a.kind ?? 'external') !== 'external');
+const rightActors = actors.filter((a) => (a.kind ?? 'external') === 'external');
+const leftLane = leftActors.length ? ACTOR_LANE : 0;
+const rightLane = rightActors.length ? ACTOR_LANE : 0;
+
+// ---- Order use cases to minimize line overlap -----------------------------
+// A use case is "pulled" toward whichever side's actors associate with it. We
+// put left-pulled use cases in the left column and right-pulled in the right, so
+// each association line stays on its own side and crossings drop. Deterministic
+// (stable input order breaks ties), so the build stays reproducible.
+const leftActorIds = new Set(leftActors.map((a) => a.id));
+const rightActorIds = new Set(rightActors.map((a) => a.id));
+// Count how many left- vs right-side actors touch each use case. A use case is
+// placed RIGHT when a right-side (external) actor uses it and no MORE left-side
+// actors do — i.e. it faces the customer. Everything else stays left near the
+// internal/system operators. This keeps each association line on its own side.
+const ucLeftTouch = new Map<string, number>();
+const ucRightTouch = new Map<string, number>();
+for (const uc of useCases) {
+  ucLeftTouch.set(uc.id, 0);
+  ucRightTouch.set(uc.id, 0);
+}
+for (const link of links) {
+  if (!ucLeftTouch.has(link.to)) continue; // only actor→use-case associations
+  if (leftActorIds.has(link.from)) ucLeftTouch.set(link.to, (ucLeftTouch.get(link.to) ?? 0) + 1);
+  else if (rightActorIds.has(link.from))
+    ucRightTouch.set(link.to, (ucRightTouch.get(link.to) ?? 0) + 1);
+}
+// Affinity used for ordering: right-touches minus left-touches (>0 pulls right).
+const ucAffinity = new Map<string, number>();
+for (const uc of useCases) {
+  ucAffinity.set(uc.id, (ucRightTouch.get(uc.id) ?? 0) - (ucLeftTouch.get(uc.id) ?? 0));
+}
+// A use case faces right only when MORE right-side actors use it than left-side
+// ones. A tie (a use case shared across both sides, like a shared entry point)
+// stays left so only its single cross-side line reaches over — not several.
+const pullsRight = (id: string) =>
+  (ucRightTouch.get(id) ?? 0) > (ucLeftTouch.get(id) ?? 0);
+
+// Two columns only when there ARE right-side actors to pull toward; otherwise a
+// single column keeps the figure compact. The split is AFFINITY-driven, not
+// balanced: a use case goes right only if it is genuinely pulled right (used by
+// external actors more than internal ones); everything else stays left near the
+// internal/system actors. Balancing 50/50 would drag internal-only use cases to
+// the right and force their lines to cross the whole diagram.
+// Right column only holds the use cases that genuinely face the external actors.
+// If none do, stay single-column (a tall internal stack is cleaner than a forced,
+// crossing-heavy split).
+const rightUCsRaw = rightActors.length ? useCases.filter((u) => pullsRight(u.id)) : [];
+const twoCol = rightUCsRaw.length > 0;
+let leftUCs = twoCol ? useCases.filter((u) => !pullsRight(u.id)) : useCases;
+let rightUCs: typeof useCases = rightUCsRaw;
+
+// Within each column, order rows by the average ORDER of the actors that use the
+// case (barycenter heuristic — the standard layered-graph crossing reducer). A
+// use case connected to the top actor floats up; one connected to the bottom
+// actor sinks down, so same-actor lines stack instead of crossing.
+const actorOrder = new Map<string, number>();
+actors.forEach((a, i) => actorOrder.set(a.id, i));
+function barycenter(uc: { id: string }): number {
+  const ys: number[] = [];
+  for (const link of links) {
+    if (link.to === uc.id && actorOrder.has(link.from)) {
+      ys.push(actorOrder.get(link.from)!);
+    }
+  }
+  return ys.length ? ys.reduce((s, y) => s + y, 0) / ys.length : Number.MAX_SAFE_INTEGER;
+}
+const byBarycenter = (a: { id: string }, b: { id: string }) => barycenter(a) - barycenter(b);
+leftUCs = [...leftUCs].sort(byBarycenter);
+rightUCs = [...rightUCs].sort(byBarycenter);
+const singleCol = [...useCases].sort(byBarycenter);
+const perCol = twoCol ? Math.max(leftUCs.length, rightUCs.length) : useCases.length;
 
 const boundaryW = PAD * 2 + (twoCol ? OVAL_W * 2 + ROW_GAP : OVAL_W);
 const boundaryH = PAD * 2 + perCol * OVAL_H + (perCol - 1) * COL_GAP + 30; // +title band
 
 const ucPos = new Map<string, { cx: number; cy: number }>();
-const boundaryX = ACTOR_LANE;
+const boundaryX = leftLane;
 const boundaryY = 10;
-useCases.forEach((uc, i) => {
-  const col = twoCol && i >= perCol ? 1 : 0;
-  const row = twoCol && i >= perCol ? i - perCol : i;
-  const cx = boundaryX + PAD + OVAL_W / 2 + col * (OVAL_W + ROW_GAP);
-  const cy = boundaryY + 30 + PAD + OVAL_H / 2 + row * (OVAL_H + COL_GAP);
-  ucPos.set(uc.id, { cx, cy });
-});
+function placeColumn(col: typeof useCases, colIndex: number) {
+  col.forEach((uc, row) => {
+    const cx = boundaryX + PAD + OVAL_W / 2 + colIndex * (OVAL_W + ROW_GAP);
+    const cy = boundaryY + 30 + PAD + OVAL_H / 2 + row * (OVAL_H + COL_GAP);
+    ucPos.set(uc.id, { cx, cy });
+  });
+}
+if (twoCol) {
+  placeColumn(leftUCs, 0);
+  placeColumn(rightUCs, 1);
+} else {
+  placeColumn(singleCol, 0);
+}
 
-// Actors: a column to the left of the boundary, vertically centered against it.
-const actorsBlockH = actors.length * ACTOR_BOX + (actors.length - 1) * ACTOR_GAP + LABEL_H;
-const actorsStartY = boundaryY + Math.max(0, (boundaryH - actorsBlockH) / 2);
-const actorPos = new Map<string, { cx: number; cy: number; kind: ActorKind }>();
-actors.forEach((a, i) => {
-  const cx = ACTOR_LANE / 2;
-  const cy = actorsStartY + i * (ACTOR_BOX + ACTOR_GAP) + ACTOR_BOX / 2;
-  actorPos.set(a.id, { cx, cy, kind: a.kind ?? 'external' });
-});
+// Place each actor at the vertical BARYCENTER of the use cases it connects to,
+// so its lines balance (roughly equal numbers up and down, leaning horizontal)
+// instead of all shooting one way. Then de-overlap actors sharing a lane: keep
+// their barycenter order but enforce a minimum vertical gap, staying inside the
+// boundary's vertical span.
+const actorPos = new Map<
+  string,
+  { cx: number; cy: number; kind: ActorKind; side: 'left' | 'right' }
+>();
+function actorBarycenterY(id: string): number {
+  const ys: number[] = [];
+  for (const link of links) {
+    if (link.from === id && ucPos.has(link.to)) ys.push(ucPos.get(link.to)!.cy);
+  }
+  // No targets → sit at the boundary's vertical middle.
+  return ys.length ? ys.reduce((s, y) => s + y, 0) / ys.length : boundaryY + boundaryH / 2;
+}
+function placeLane(lane: typeof actors, side: 'left' | 'right', laneX: number) {
+  const cx = laneX + ACTOR_LANE / 2;
+  // Desired Y = barycenter of each actor's targets; order the lane by it.
+  const desired = lane
+    .map((a) => ({ a, y: actorBarycenterY(a.id) }))
+    .sort((p, q) => p.y - q.y);
+  // Resolve overlaps: walk top→down, pushing each actor down to keep MIN_GAP.
+  const MIN_GAP = ACTOR_BOX + ACTOR_GAP;
+  const top = boundaryY + ACTOR_BOX / 2;
+  const bottom = boundaryY + boundaryH - ACTOR_BOX / 2 - LABEL_H;
+  let prev = -Infinity;
+  for (const d of desired) {
+    let y = Math.max(d.y, prev + MIN_GAP);
+    prev = y;
+    actorPos.set(d.a.id, { cx, cy: y, kind: d.a.kind ?? 'external', side });
+  }
+  // If the last one overran the bottom, shift the whole lane up to fit.
+  const overshoot = prev - bottom;
+  if (overshoot > 0) {
+    for (const d of desired) {
+      const p = actorPos.get(d.a.id)!;
+      p.cy = Math.max(top, p.cy - overshoot);
+    }
+  }
+}
+placeLane(leftActors, 'left', 0);
+placeLane(rightActors, 'right', boundaryX + boundaryW);
 
-const svgW = boundaryX + boundaryW + 20;
-const svgH = Math.max(boundaryY + boundaryH, actorsStartY + actorsBlockH) + 20;
+const svgW = boundaryX + boundaryW + rightLane + 20;
+const svgH = boundaryY + boundaryH + LABEL_H + 20;
 
 // ---- Link geometry --------------------------------------------------------
-function anchor(id: string): { x: number; y: number; isActor: boolean } | null {
+function anchor(
+  id: string
+): { x: number; y: number; isActor: boolean; side?: 'left' | 'right' } | null {
   const a = actorPos.get(id);
-  if (a) return { x: a.cx, y: a.cy, isActor: true };
+  if (a) return { x: a.cx, y: a.cy, isActor: true, side: a.side };
   const u = ucPos.get(id);
   if (u) return { x: u.cx, y: u.cy, isActor: false };
   return null;
@@ -125,6 +252,7 @@ interface Rendered {
   mx: number;
   my: number;
   len: number;
+  fromActor?: string; // actor id, when the line starts at an actor
 }
 const renderedLinks: Rendered[] = [];
 for (const link of links) {
@@ -133,11 +261,14 @@ for (const link of links) {
   if (!from || !to) continue; // silently skip dangling refs; validated by author
   const type = link.type ?? 'association';
 
-  // Start point: actor stays at its glyph edge; a use-case starts at its rim.
+  // Start point: an actor starts at the glyph edge facing the boundary (right
+  // edge for left-lane actors, left edge for right-lane actors); a use-case
+  // starts at its rim.
   let sx = from.x;
   let sy = from.y;
   if (from.isActor) {
-    sx = from.x + ACTOR_BOX / 2 - 6; // right edge of the actor glyph
+    const edge = ACTOR_BOX / 2 - 6;
+    sx = from.side === 'right' ? from.x - edge : from.x + edge;
   } else {
     const e = ovalEdge(from.x, from.y, to.x, to.y);
     sx = e.x;
@@ -156,7 +287,99 @@ for (const link of links) {
     mx: (sx + ex) / 2,
     my: (sy + ey) / 2,
     len,
+    fromActor: from.isActor ? link.from : undefined,
   });
+}
+
+// ---- Overlap check (build-time, blocking) ---------------------------------
+// A clean use-case diagram keeps association lines from crossing each other.
+// We count how many of the drawn lines are crossing-free and require at least
+// OVERLAP_MIN_CLEAR of them to be clear; below that the layout is too tangled to
+// read, so we FAIL THE BUILD with an actionable message (reorder actors/use
+// cases, or split the diagram). Escape hatch: pass `allowOverlap` to warn only.
+const OVERLAP_MIN_CLEAR = 0.75;
+
+function segmentsCross(a: Rendered, b: Rendered): boolean {
+  // Proper segment intersection via orientation signs. Shared endpoints (lines
+  // meeting at the same actor or oval) do NOT count as a crossing.
+  const o = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) =>
+    Math.sign((qy - py) * (rx - qx) - (qx - px) * (ry - qy));
+  const near = (p: number, q: number) => Math.abs(p - q) < 0.5;
+  const shareEndpoint =
+    (near(a.x1, b.x1) && near(a.y1, b.y1)) ||
+    (near(a.x1, b.x2) && near(a.y1, b.y2)) ||
+    (near(a.x2, b.x1) && near(a.y2, b.y1)) ||
+    (near(a.x2, b.x2) && near(a.y2, b.y2));
+  if (shareEndpoint) return false;
+  const o1 = o(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
+  const o2 = o(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
+  const o3 = o(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);
+  const o4 = o(b.x1, b.y1, b.x2, b.y2, a.x2, a.y2);
+  return o1 !== o2 && o3 !== o4;
+}
+
+const crossed = new Set<number>();
+for (let i = 0; i < renderedLinks.length; i++) {
+  for (let j = i + 1; j < renderedLinks.length; j++) {
+    if (segmentsCross(renderedLinks[i], renderedLinks[j])) {
+      crossed.add(i);
+      crossed.add(j);
+    }
+  }
+}
+const clearFraction =
+  renderedLinks.length === 0 ? 1 : 1 - crossed.size / renderedLinks.length;
+
+if (clearFraction < OVERLAP_MIN_CLEAR) {
+  const msg =
+    `UseCaseDiagram "${title}": only ${Math.round(clearFraction * 100)}% of ` +
+    `association lines are crossing-free (need ≥${OVERLAP_MIN_CLEAR * 100}%). ` +
+    `Reduce crossings by putting each use case near the actors that use it ` +
+    `(internal/system actors pull left, external pull right), splitting a busy ` +
+    `diagram, or removing incidental links. See the usecase-diagram skill.`;
+  if (allowOverlap) {
+    console.warn(`[usecase-diagram] warning (allowOverlap set): ${msg}`);
+  } else {
+    throw new Error(`${msg} To ship anyway, pass allowOverlap on this <UseCaseDiagram>.`);
+  }
+}
+
+// ---- Actor line-angle balance check (build-time, blocking) ----------------
+// Each actor's lines should lean HORIZONTAL and fan evenly up and down, not all
+// shoot one direction. For every actor with ≥2 lines we check two things:
+//  - balance: the up/down split is within one line of even (|up − down| ≤ 1),
+//  - angle: the average line is closer to horizontal than vertical (|dy| < |dx|
+//    on average), so lines read as reaching across, not stacking vertically.
+// A lopsided fan means the actor sits off-center from its use cases — move it to
+// their vertical barycenter (the layout does this automatically; a failure here
+// usually means the boundary is too short for the actors to spread out).
+for (const actor of actors) {
+  const lines = renderedLinks.filter((l) => l.fromActor === actor.id);
+  if (lines.length < 2) continue;
+  let up = 0;
+  let down = 0;
+  let horiz = 0;
+  for (const l of lines) {
+    const dy = l.y2 - l.y1;
+    if (dy < -1) up++;
+    else if (dy > 1) down++;
+    if (Math.abs(l.y2 - l.y1) <= Math.abs(l.x2 - l.x1)) horiz++;
+  }
+  const imbalance = Math.abs(up - down);
+  const mostlyHorizontal = horiz / lines.length >= 0.5;
+  if (imbalance > 1 || !mostlyHorizontal) {
+    const msg =
+      `UseCaseDiagram "${title}": actor "${actor.label}" has an unbalanced line ` +
+      `fan (${up} up, ${down} down, ${horiz}/${lines.length} near-horizontal). ` +
+      `Actors should sit at the vertical center of the use cases they touch so ` +
+      `their lines spread evenly. Reorder the use cases, give the diagram more ` +
+      `vertical room, or split it. See the usecase-diagram skill.`;
+    if (allowOverlap) {
+      console.warn(`[usecase-diagram] warning (allowOverlap set): ${msg}`);
+    } else {
+      throw new Error(`${msg} To ship anyway, pass allowOverlap on this <UseCaseDiagram>.`);
+    }
+  }
 }
 
 // Total draw-in length drives the animation timing so all lines finish together.
