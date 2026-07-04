@@ -5,6 +5,7 @@ pubDate: 2026-07-04
 tags: [engineering, agents]
 authors: [omar]
 draft: true
+design: poc-e2e-telemetry
 questions:
   - Where do the numbers on the agent dashboard actually come from?
   - What does a Claude Code session transcript look like, and what can you derive from it?

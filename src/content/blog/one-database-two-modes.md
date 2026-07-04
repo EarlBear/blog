@@ -5,6 +5,7 @@ pubDate: 2026-07-04
 tags: [engineering, agents]
 authors: [omar]
 draft: true
+design: database-approach
 questions:
   - Where should the metrics behind the agent dashboard actually live, locally and in production?
   - What are the real options — Postgres everywhere, DuckDB for local, plain Python — and their trade-offs?
