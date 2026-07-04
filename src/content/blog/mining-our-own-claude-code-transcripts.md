@@ -1,0 +1,121 @@
+---
+title: "Mining our own Claude Code transcripts: JSONL to Supabase to dashboard"
+description: How we turn the raw JSONL transcripts of our agent sessions into a metrics dashboard — sanitizing at the edge so secrets never leave the laptop, syncing only derived metrics to Supabase, and the real extraction bug the end-to-end proof caught.
+pubDate: 2026-07-04
+tags: [engineering, agents]
+authors: [omar]
+draft: true
+questions:
+  - Where do the numbers on the agent dashboard actually come from?
+  - What does a Claude Code session transcript look like, and what can you derive from it?
+  - How do you build a telemetry pipeline that never lets a secret leave the laptop?
+  - What did building an end-to-end proof-of-concept catch that unit tests did not?
+---
+
+Our agents run as Claude Code sessions. Every session writes an append-only JSONL
+transcript to `~/.claude/projects/` — one JSON object per line, recording each user
+turn, each assistant turn, every tool call, and the token usage. That transcript
+is the ground truth of what an agent actually did. So the dashboard that
+consolidates our agentic workflow does not read some separate metrics feed; it
+reads what we extract from those transcripts.
+
+Here is how a session becomes a row on a chart.
+
+## What a transcript contains
+
+Each line is a JSON object with a `type` (`user` or `assistant`), a `message` with
+`content` blocks, and — on assistant lines — a `usage` object with token counts.
+The content blocks are where the signal is: `text` blocks, `tool_use` blocks (with
+a name and input), and `tool_result` blocks paired back to their call by id.
+Subagents show up as their own tool call; skills and slash-commands leave their own
+distinctive marks.
+
+From one real session of ours, extraction derived: the stage it belongs to, the
+model, `212,743` input and `696,221` output tokens, `571` tool calls, `10`
+subagent runs, and `9` skill uses.[^session] None of those numbers required
+instrumenting the agent. They were all sitting in the transcript.
+
+## Sanitize at the edge
+
+The load-bearing rule of the whole pipeline is that **raw content never leaves the
+laptop**. A transcript is full of things you would never want in a shared database:
+file contents, full prompts, and — inevitably — the occasional secret pasted into a
+command.
+
+So extraction does not copy a transcript and strip fields out of it. It
+*constructs* each record from an explicit allowlist of safe fields — timestamps,
+token counts, tool names, coarse input summaries — and the only free text that
+survives is two short, redacted excerpts. The redactor is a named-pattern plus
+entropy pass, the same shape the popular secret scanners use: a rule-first matcher
+for known credential formats, with Shannon entropy as a secondary signal for
+high-randomness strings that match no named rule.[^scanners]
+
+We do not trust our own redactor alone. Before anything is pushed or published, an
+*independent* second detector — gitleaks — scans the already-redacted output, and
+the push refuses if it finds anything. Pairing a fast rule scanner with a separate
+verifier is exactly the 2026 best practice for secret detection.[^defense] A
+planted-secret fixture (a synthetic transcript with a dozen known secrets in it)
+runs as a fail-closed self-test, so a gap in the patterns is caught before it can
+leak.
+
+In the real session above, the first prompt extracted as `[command] /model` — a
+slash command, redacted to its name, with nothing else preserved.
+
+## JSONL to Supabase to dashboard
+
+The derived records go to Supabase (Postgres) — session rows, tool-call rows,
+subagent rows, skill rows — via an idempotent upsert, so re-running the sync
+produces the same data, not duplicates. A database function rolls those detail
+tables up into pre-aggregated *marts*: metrics per stage per day, and a funnel that
+joins the telemetry against the business tables (leads found, reviews completed,
+customers onboarded). The dashboard reads only the marts — never the raw tables —
+through a read-only key that row-level security limits to exactly those aggregates.
+
+The sync is incremental: a per-file byte offset means each run reads only the new
+bytes appended since last time, not the whole multi-megabyte transcript again.
+
+## What the end-to-end proof caught
+
+We had built every piece and unit-tested each in isolation. The pieces passed. But
+"each part works" is not "the whole thing works," so we wrote an end-to-end proof:
+point the sourcing step at a folder, have it find every one of our repos, run an
+agent session, sync the telemetry, and confirm it lands on the dashboard.
+
+Running it on a real session, the dashboard showed `0` subagent runs — for a
+session that had clearly used ten. The unit tests were green because they used a
+fixture where the subagent tool was named `Task`. But the version of Claude Code
+we actually run names that tool `Agent`. Our extractor was looking for the wrong
+name, and would have silently reported zero subagents for every real session,
+forever.
+
+That is the entire argument for an end-to-end proof. A unit test confirms the code
+does what you wrote it to do. It cannot tell you that what you wrote it to do
+matches the world. The fix was one line; finding it required running the whole
+chain against real data. After the fix, the same session extracted `10` subagent
+runs, pushed to Supabase, rolled up into the marts, and rendered on the
+dashboard — the number matching what the session actually did.
+
+The tooling — a CLI you install with Homebrew and a Claude Code plugin that drives
+it — is a topic for the next post. The point of this one is narrower: the numbers
+on the dashboard are not a separate thing we maintain alongside the agents. They
+are the agents' own transcripts, sanitized and rolled up. And the only way we
+trust them is that we ran the whole pipeline end to end and watched it catch its
+own bug.
+
+[^session]: Figures are from a single real EarlBear Claude Code session extracted
+by the `ebtranscripts` tool on 2026-07-04; they are the derived per-session metrics
+(tokens, tool calls, subagent runs, skill uses) that the pipeline computes, not
+estimates.
+
+[^scanners]: Gitleaks matches credentials against a large library of regex rules
+for known formats (AWS keys, GitHub tokens, Stripe keys, private keys) and uses
+Shannon entropy as a secondary signal for high-randomness strings. "detect-secrets
+vs Gitleaks vs TruffleHog vs GitGuardian (2026)." *DevSecOps.ae*,
+https://devsecops.ae/secrets-scanners-comparison-2026/. Accessed 4 July 2026.
+
+[^defense]: The 2026 recommendation pairs a fast rule scanner (Gitleaks) at commit
+and CI time with a separate verification pass, rather than relying on a single
+detector. "TruffleHog vs. Gitleaks: A Detailed Comparison of Secret Scanning
+Tools." *Jit*,
+https://www.jit.io/resources/appsec-tools/trufflehog-vs-gitleaks-a-detailed-comparison-of-secret-scanning-tools.
+Accessed 4 July 2026.

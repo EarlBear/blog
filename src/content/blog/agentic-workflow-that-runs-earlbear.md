@@ -1,0 +1,88 @@
+---
+title: "The agentic workflow that runs EarlBear"
+description: How EarlBear runs its business as a loop of agents — scanning stores for leads, preparing outreach, onboarding customers, then reviewing their sites and shipping enhancements — and what each agent replaces from the growth team you would otherwise hire.
+pubDate: 2026-07-04
+tags: [growth, agents]
+authors: [sad, omar]
+draft: true
+questions:
+  - What does it mean to run a business as a loop of agents rather than a team of people?
+  - What are the stages of EarlBear's workflow, and what does each one do?
+  - Which agent replaces which role from the growth team you would otherwise hire?
+  - How does the loop close — how does what happens at the end feed back into the start?
+---
+
+In an earlier post we priced out the growth team you would have to hire to
+optimize an ecommerce store by hand — the SDR who finds prospects, the copywriter
+who writes the outreach, the onboarding specialist, the CRO analyst who reviews
+the store and runs the tests. It is a real team, and it is expensive.
+
+EarlBear does that work as a **loop of agents**. Each stage is an agent that does
+one job and hands off to the next, and the last stage feeds back into the first.
+This is that loop.
+
+## The loop
+
+The workflow has four agents and the states between them:
+
+**Scan → leads.** A discovery agent pulls candidate Shopify stores from several
+sources at once — search, crawling, backlink graphs — then crawls each one, scores
+its revenue gaps against a fixed audit framework, and lets a model classify the
+fit. What comes out is not a raw list of stores; it is a ranked list of *leads*,
+each carrying the specific gaps found on it. That specificity is what makes the
+next stage work.
+
+**Outreach → landed customers.** The outreach agent turns a qualified lead into a
+conversation. Instead of a generic template, it builds a per-store pitch from that
+store's own gaps and competitive context, tunes the tone to a buyer persona, and
+schedules a follow-up sequence that adapts to whether the owner opened, clicked,
+or replied. Some of those owners say yes.
+
+**Onboarding → onboarded customers.** A new customer starts with zero shared
+context. The onboarding agent runs a four-step intake — brand context, assets,
+validation, hand-off — and produces a developer-ready bundle. The point is that
+build work can start immediately, instead of stalling for a week on a missing logo
+or an unanswered question about brand voice.
+
+**Review and enhancement → back to the start.** Once a store is under management,
+a review agent scans it and scores it, producing evidenced findings rather than
+vague advice ("reviews only appear after 600px of scroll," not "improve trust").
+An enhancement agent turns each finding into an ICE-scored hypothesis, sends it to
+a human reviewer for approval, ships the approved changes behind an A/B test, and
+feeds the attribution proof back into the store intelligence that the discovery
+agent draws on. The loop closes.
+
+## What each agent replaces
+
+The mapping to the team you would otherwise hire is close to one-to-one:
+
+- The **discovery agent** does the work of an SDR building a prospect list — except
+  it qualifies on the actual revenue gaps it can see in each store, not on
+  firmographic guesses.
+- The **outreach agent** does the work of an SDR plus a copywriter — a specific
+  pitch per store, at a volume no person writes by hand.
+- The **onboarding agent** does the work of an onboarding specialist — the
+  unglamorous, essential job of turning a "yes" into something a builder can start
+  from.
+- The **review and enhancement agents** do the work of a CRO analyst and the
+  engineer who implements the tests — find the gap, form the hypothesis, get
+  sign-off, ship it, measure the lift.
+
+The difference is not just cost. A team hands work between people, and context
+leaks at every hand-off. The loop keeps its context: the gap the discovery agent
+found is the gap the outreach agent pitches, and the lift the enhancement agent
+proves is the intelligence the discovery agent uses next time.
+
+## Why a loop and not a line
+
+A pipeline that runs start to finish and stops is a line. What makes this a
+*flywheel* is the return edge — every enhancement that ships, and whether it
+actually moved the primary metric, becomes evidence that sharpens the next round
+of discovery and review. The system gets better at finding stores worth helping,
+and better at knowing what will help them, the longer it runs.
+
+We built a place to watch all of this: a walk-through of each agent, sample views
+of the experiences a prospect, customer, and reviewer each see, and a dashboard
+that consolidates what the whole loop is doing. The next post gets into how that
+dashboard is built — because the agents run as Claude Code sessions, and their
+transcripts are the raw telemetry behind every number on it.
