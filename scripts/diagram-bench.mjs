@@ -31,7 +31,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const DEV_URL = 'http://localhost:4321';
+const DEV_URL = process.env.DEV_URL || 'http://localhost:4343';
 const BENCH_PATH = '/bench/diagram';
 const CHROME =
   process.env.CHROME_BIN ||

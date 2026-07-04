@@ -37,7 +37,7 @@ DevTools Protocol using Node's built-in `WebSocket` via
 
 1. **Build + serve:**
    ```bash
-   npm run build && npm run preview   # preview serves dist/ (default :4321)
+   npm run build && npm run preview   # preview serves dist/ on :4343 (see astro.config.mjs)
    ```
 2. **Launch headless Chrome** with a temp profile and remote debugging:
    ```bash

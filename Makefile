@@ -29,7 +29,7 @@ scan: ## Full gitleaks secret scan of the working tree + history
 install: ## Install dependencies (all public — no token needed)
 	npm install
 
-dev: ## Run the local dev server (drafts visible) at localhost:4321
+dev: ## Run the local dev server (drafts visible) at localhost:4343
 	npm run dev
 
 build: ## Production build to dist/ (drafts excluded)
