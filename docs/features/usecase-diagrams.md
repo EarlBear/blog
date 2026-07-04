@@ -68,6 +68,35 @@ proof post's cited figures if they move materially.
 - src/styles/global.css — `.usecase-diagram` styling + animation (gradient drift, draw-in, reduced-motion reset)
 - src/content/blog/earlbear-use-cases.mdx — the proof post that embeds the diagram
 
+## Layout quality (why the gates exist)
+
+A diagram is only useful if it reads cleanly, so the component earns its layout
+rather than trusting author placement:
+
+- **Two-sided actors** — internal/system operators on the left, external actors on
+  the right — so association lines fan to the nearest edge instead of crossing the
+  middle.
+- **Overlap-minimizing use-case order** — each use case is placed in the column
+  facing the actors that use it (shared ones stay left so one line reaches over),
+  and rows sort by their actors' barycenter.
+- **Barycenter actor placement** — each actor sits at the vertical center of the
+  use cases it touches, so its lines spread evenly up and down and lean horizontal.
+- **Two blocking build-time gates** (they `throw`, failing the build): ≥75% of
+  association lines must be crossing-free, and each actor's fan must be balanced
+  (even up/down, mostly horizontal). `allowOverlap` downgrades both to warnings.
+
+These make bad diagrams a build error, not a thing you discover in review. The
+`usecase-diagram` skill documents how to satisfy them.
+
+## Focus modal (progressive enhancement)
+
+When a use case carries a `detail` string or participates in links, each oval
+becomes a focusable button that opens a native `<dialog>` modal — the use case's
+detail, its actors, and its include/extend relations. Data is inlined as JSON at
+build time; the script is the *only* client JS the component ever ships, and only
+for diagrams that opt in. Without JS (or `<dialog>` support) the diagram renders
+and reads identically, so the zero-JS baseline holds everywhere else.
+
 ## Notes
 
 - The proof post is `.mdx` (not `.md`) so it can embed the component inline. The

@@ -114,6 +114,9 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
 - **`concurrent-commit`** — commit safely when multiple sessions share this
   working dir; auto-capture others' WIP, replay yours on top, and recover any
   work that seems lost (reflog + `backup/` tags).
+- **`usecase-diagram`** — author a UML use-case diagram with `<UseCaseDiagram>`
+  (two-sided actor layout, overlap-minimizing order, the blocking overlap/balance
+  gates, and the click-to-focus detail modal).
 
 ## Feature docs (the "why")
 
