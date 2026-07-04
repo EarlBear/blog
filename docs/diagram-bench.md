@@ -13,10 +13,10 @@ Measured on a headless Chrome, local run. Numbers move run-to-run; read the
 
 | Variant | Viewport | Doc transfer | FCP | CLS | Long frames (>50ms) |
 |---|---|--:|--:|--:|--:|
-| animated | desktop | 54.6 KB | 168 ms | 0 | 0 / 181 |
-| animated | mobile | 54.6 KB | 60 ms | 0 | 0 / 182 |
-| static | desktop | 54.6 KB | 60 ms | 0 | 0 / 182 |
-| static | mobile | 54.6 KB | 56 ms | 0 | 0 / 181 |
+| animated | desktop | 54.6 KB | 172 ms | 0 | 0 / 181 |
+| animated | mobile | 54.6 KB | 56 ms | 0 | 0 / 181 |
+| static | desktop | 54.6 KB | 60 ms | 0 | 0 / 181 |
+| static | mobile | 54.6 KB | 60 ms | 0 | 0 / 182 |
 | image | desktop | 233.5 KB | — | 0 | — (n/a) |
 | image | mobile | 135.7 KB | — | 0 | — (n/a) |
 
