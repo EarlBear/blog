@@ -1,0 +1,108 @@
+---
+title: "One database, two modes: choosing where our metrics live"
+description: Why we run the same standard-Postgres aggregation locally in Docker and in Supabase in production — the options we weighed (including DuckDB), the trade-offs, and the one factor that decided it.
+pubDate: 2026-07-04
+tags: [engineering, agents]
+authors: [omar]
+draft: true
+questions:
+  - Where should the metrics behind the agent dashboard actually live, locally and in production?
+  - What are the real options — Postgres everywhere, DuckDB for local, plain Python — and their trade-offs?
+  - What decided it, and what did we accept as the cost?
+  - When would this decision be wrong, and what would we do then?
+---
+
+Our agent dashboard reads *marts* — pre-aggregated tables of metrics rolled up from the
+transcripts of our agent sessions. That data has to live somewhere, and the aggregation
+has to run on some engine. The requirement that made this a real decision, rather than a
+default, is that it must work in two places: **locally**, so anyone can see the dashboard
+without our cloud credentials, and in **production**, where the real data lives.
+
+Here is how we chose, weighing the options honestly rather than reaching for the first one.
+
+## The forces
+
+Four things pulled the decision in different directions:
+
+- **Local friction.** Seeing the dashboard locally should need as little setup as
+  possible.
+- **Consistency.** The count the transcript viewer shows and the count the dashboard
+  shows must be the *same* count. Two code paths that both compute "agent calls" will
+  eventually disagree, and then you trust neither.
+- **Operational burden.** Every engine and dialect we run is one more thing to install,
+  keep in sync, and debug.
+- **Scale horizon.** Today it is a handful of sessions on one laptop. It may grow to many
+  gigabytes across many machines. We want that future to be a port, not a rewrite.
+
+## The options
+
+**Option A — one engine, Postgres everywhere.** Run Postgres in a Docker container
+locally; use Supabase (also Postgres) in production. The schema and the aggregation
+function are standard Postgres, applied to both. *Pro:* one dialect, one aggregation
+written once; the production path already exists. *Con:* the local demo needs a running
+container.
+
+**Option B — DuckDB locally, Postgres in the cloud.** DuckDB runs in-process with no
+server, so local needs no container. *Pro:* frictionless local demo, and DuckDB's SQL is
+a recognized on-ramp to lakehouse scale. *Con:* two engines to keep behaviorally
+identical. DuckDB and Postgres SQL diverge in dialect and function semantics, so the
+aggregation would exist in two places — which is the exact consistency problem we are
+trying to avoid.
+
+**Option C — plain Python locally, Postgres in the cloud.** Aggregate in Python for the
+local snapshot; SQL in production. *Pro:* nothing to install locally. *Con:* the marts
+logic exists twice — once in Python, once in SQL. Every change has to be made in both,
+correctly, forever.
+
+I will admit a mistake here, because it is the point of the post. My first instinct was
+Option B — DuckDB is genuinely the 2026 standard for "small data on a laptop, big data in
+the cloud, reusable queries," and one good search made it feel decided.[^duckdb] But
+"decided" after one search and zero weighed alternatives is not a decision; it is a
+preference wearing a decision's clothes. When we actually laid the options side by side,
+B's headline strength — reusable SQL — turned into its main weakness *for us*: it means
+two SQL dialects to keep identical, in the one place where identical is the whole point.
+
+## What decided it
+
+We chose **Option A: one engine, standard Postgres, Docker locally and Supabase in
+production.** Two factors tipped it:
+
+1. **Consistency becomes structural instead of aspirational.** With a single aggregation
+   function as the one source of the marts, the viewer and the dashboard *cannot*
+   disagree — they read the same computation. Both other options split that computation
+   in two.
+2. **We already run Postgres in production.** The aggregation is written and tested;
+   Option A reuses it locally rather than maintaining a second dialect or a second
+   language.
+
+What we accepted, knowingly: a Docker container for the local database — heavier than an
+in-process engine for a tiny dataset. We judged one-behavior-everywhere worth a
+`docker compose up`.
+
+## About scale
+
+"Design for scale" did not mean "adopt a distributed engine now." It meant keep the
+aggregation as *standard SQL*, which ports to a lakehouse or Spark when volume actually
+demands it — and keep the row-shaping step (JSONL to records) a pure function with no
+heavy dependencies, so it ports to a distributed transform unchanged. DuckDB and its
+cloud on-ramp remain a documented, deliberate future step, not a present dependency. The
+best time to reach for it is when we have the data volume that justifies its cost — not
+before.
+
+## When this is wrong
+
+A decision you cannot revisit is a decision you cannot trust, so we wrote down what would
+make this one wrong: if daily transcript volume grows past what a single Postgres node
+aggregates comfortably, the standard SQL ports to a lakehouse engine; if the local Docker
+requirement turns out to be real friction for people, we reconsider an in-process local
+engine and accept the dual-dialect cost we rejected today. Either way, we will know we are
+changing the decision, and why — which is more than we could say if we had never written
+the alternatives down.
+
+[^duckdb]: DuckDB runs in-process with no server, is roughly an order of magnitude faster
+than pandas on medium data, and runs the same SQL from laptop to cloud, with MotherDuck
+adding hybrid laptop-plus-cloud execution — which is why it is the 2026 default for
+medium-scale, portable analytics. "DuckDB in Production 2026." *BirJob*,
+https://www.birjob.com/blog/duckdb-in-production-2026. Accessed 4 July 2026. See also
+"DuckDB in the Cloud." *DuckDB*, https://duckdb.org/library/duckdb-in-the-cloud/. Accessed
+4 July 2026.
