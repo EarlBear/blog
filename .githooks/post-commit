@@ -1,0 +1,17 @@
+#!/bin/sh
+# After a commit lands, sweep any leftover working-tree changes (another
+# concurrent session's in-progress work in this shared dir) into their own safety
+# commit, so nothing is ever left exposed. See scripts/concurrent-capture.sh and
+# the concurrent-commit skill. Runs after the index lock is released, so creating
+# the safety commit here is safe (a pre-commit hook could not).
+#
+# Opt-out for a single commit:  EB_NO_CAPTURE=1 git commit ...
+if [ "${EB_NO_CAPTURE:-}" = "1" ]; then
+    exit 0
+fi
+
+# Resolve repo root so the hook works regardless of cwd.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+if [ -x "$ROOT/scripts/concurrent-capture.sh" ]; then
+    sh "$ROOT/scripts/concurrent-capture.sh" || true
+fi

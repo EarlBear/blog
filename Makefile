@@ -16,10 +16,11 @@ help: ## List available targets
 
 ## --- secrets -------------------------------------------------------------
 
-install-hooks: ## Wire the gitleaks pre-commit/pre-push secret scan (run once after clone)
+install-hooks: ## Wire git hooks (secret scan + concurrent-change capture) — run once after clone
 	@git config core.hooksPath .githooks
 	@command -v gitleaks >/dev/null 2>&1 || echo "  warn: gitleaks not installed — brew install gitleaks"
-	@echo "  core.hooksPath -> .githooks (secret scan active on commit + push)"
+	@sh scripts/setup-concurrency.sh
+	@echo "  core.hooksPath -> .githooks (secret scan + concurrent-capture active)"
 
 scan: ## Full gitleaks secret scan of the working tree + history
 	gitleaks detect --source . --verbose

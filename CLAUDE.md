@@ -66,6 +66,31 @@ make install-hooks   # sets core.hooksPath to .githooks (needs: brew install git
 
 `make scan` runs a full scan on demand. Config + allowlist live in `.gitleaks.toml`.
 
+## Concurrent sessions (shared working dir — read before committing)
+
+Several sessions often edit this repo **at the same time, sharing one working
+directory and one `.git`** (the `Workspace/` and `workplace/` paths are the same
+folder on a case-insensitive filesystem — same tree, index, `HEAD`, and branch).
+The rule that keeps work safe: **bundle rather than lose, and never rewrite shared
+history.**
+
+- **Stage only your own files** — `git add <your paths>`, **never `git add .` /
+  `git add -A`** when committing. That makes *staged = your work* and
+  *unstaged/untracked = another session's WIP*.
+- **A `post-commit` hook auto-captures** the other sessions' leftover WIP into a
+  separate `chore: auto-capture concurrent changes` commit (tagging a
+  `backup/<ts>` ref first), so nothing is ever left exposed. Your own commit stays
+  clean.
+- **Never `amend` / `reset --hard` / `rebase` a commit you didn't just create** —
+  append instead. A `pre-rebase` hook blocks ad-hoc rebases unless
+  `EB_ALLOW_REWRITE=1`. `pull.rebase` replays your work on top automatically when
+  others' commits land below.
+- **Task logs are append-only** — add your line to `backlog.md` / `done.md`; never
+  rewrite lines you didn't add.
+- Wired by `make install-hooks` (also sets the concurrency git config). Full flow
+  and the **recovery playbook** (reflog + `backup/` tags) live in the
+  **`concurrent-commit`** skill — use it if a commit collides or work seems lost.
+
 ## Common tasks (`make help`)
 
 A `Makefile` wraps the everyday commands: `make dev|build|preview|deploy`,
@@ -86,6 +111,9 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
   mobile) with a headless-Chrome pass; two-tier fixes (functional-equivalent vs.
   behavior-shifting) applied only on approval. Also governs when to run an A/B
   test and how to document the evidence.
+- **`concurrent-commit`** — commit safely when multiple sessions share this
+  working dir; auto-capture others' WIP, replay yours on top, and recover any
+  work that seems lost (reflog + `backup/` tags).
 
 ## Feature docs (the "why")
 
