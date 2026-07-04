@@ -1,0 +1,65 @@
+---
+title: "A pitch deck that reads its own numbers"
+description: Making the deck an output of the agentic workflow instead of a document someone maintains — one shared selector so the deck and the dashboard can never show different numbers for the same thing.
+pubDate: 2026-07-04
+tags: [engineering, agents]
+authors: [omar]
+draft: true
+design: live-pitch-deck
+questions:
+  - How do you keep a pitch deck's numbers from going stale?
+  - Where should the deck's figures come from so they can't disagree with the dashboard?
+  - Is the deck a standalone file or part of the app, and why?
+  - How do you prove two surfaces show the same number rather than hoping they do?
+---
+
+Every deck goes stale. Someone builds it with the right numbers on a Tuesday, and by the
+next conversation the numbers have moved and the deck hasn't. We wanted the opposite: a
+deck that is an *output* of the agentic workflow, not a document about it — one that reads
+the current numbers every time it's opened.
+
+That turns out to be less a design problem than a discipline problem. The interesting
+decision is where the numbers come from.
+
+## Not its own numbers
+
+The obvious build is a deck that fetches its own figures. It's self-contained and it feels
+clean. It is also the exact mistake we keep having to not make: a *second* path to the same
+numbers. The dashboard computes "sessions" one way; the deck computes it another; they
+agree today and drift the first time either changes. Two surfaces showing different numbers
+for the same thing is worse than one surface — because now you don't trust either.
+
+So the deck reads the **same data layer the dashboard reads** — the same snapshot, the same
+live toggle. And more than that: the headline figures come from a single shared selector
+that both the deck and the dashboard call. Neither one hand-rolls its own `sum`. There is
+one function that turns the marts into "sessions, tokens, tool calls, cost," and both
+surfaces use it. They cannot disagree, because there is only one of them.
+
+## Part of the app, not a file
+
+We considered shipping the deck as a standalone HTML artifact, like the other decks in our
+gallery. The catch: to be *live*, a standalone file would have to re-implement the data
+fetch outside the app — which is the second-path problem again, wearing a different hat. So
+the deck is a route in the app instead. It loses the "portable single file" property and
+gains live-by-construction consistency and the design system for free. If we ever need a
+portable copy, we snapshot the live values into a static file at that moment — but the
+canonical deck stays the route.
+
+## Proving it, not hoping
+
+Here is the part that matters most, and it's a habit we've been building. It is not enough
+to *say* the deck and the dashboard show the same numbers. A claim about how the system
+behaves — "these two surfaces produce identical figures" — has to be observed on the real
+system, or it's a guess.
+
+So we ran it: loaded the actual snapshot, computed the figures both ways, and checked every
+one. They matched — sessions, tokens, tool calls, all of it. Then we made the match
+structural rather than lucky, by collapsing the two implementations into the one shared
+selector, and wrote a check into the build that fails if anyone ever splits them again. The
+claim is green because it was proven, and it stays green because the build won't let it
+rot.
+
+That is the whole philosophy in miniature. The numbers on the deck are not a thing we
+maintain next to the work; they *are* the work, read live. And the only reason to trust that
+is that we proved it and wired the proof into the build — the same move we make for the
+dashboard, the transcripts, and every other place two numbers could quietly disagree.
