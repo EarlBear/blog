@@ -1,0 +1,98 @@
+---
+title: "Syncing append-only transcripts, and the rewind that breaks the assumption"
+description: How we keep agent-session metrics fresh — byte-offset delta sync for append-only logs, a SessionEnd hook plus an hourly safety net, and the content hash that catches a rewind rewriting a transcript out from under us.
+pubDate: 2026-07-04
+tags: [engineering, agents]
+authors: [omar]
+draft: true
+design: transcript-sync
+questions:
+  - What triggers our transcript metrics to update — do we poll, or react to sessions ending?
+  - Do we reprocess whole transcripts, or only the new bytes since last sync?
+  - What happens when a developer uses rewind and the transcript stops being append-only?
+  - How do we aggregate across machines without raw transcripts ever leaving the laptop?
+---
+
+Our agent metrics come from Claude Code session transcripts — append-only JSONL files that
+grow as a session runs. Keeping the metrics fresh sounds like a plumbing problem, and mostly
+it is. But one feature — rewind — quietly breaks the assumption the whole sync rests on, and
+that is the interesting part.
+
+## What triggers a sync
+
+Two layers. A **SessionEnd hook** fires the moment a session ends and syncs just that
+session — fresh and targeted. An **hourly poll** runs as a reconciliation safety net, so a
+session whose hook didn't fire (a crash, a laptop that was asleep) still gets picked up
+eventually. This is the ordinary "event plus sweep" pattern: the event does the work, the
+sweep guarantees nothing is lost.
+
+We considered event-only and poll-only and took neither. Event-only loses sessions when the
+hook doesn't fire; poll-only is up to an hour stale and re-scans everything each time.
+Layered, each covers the other's failure.
+
+## Only the new bytes
+
+A transcript is append-only, so the efficient thing is to remember where we stopped reading
+and resume from there — a per-file byte offset. This is, per the literature on syncing
+append-only logs, the simplest correct approach: you only need to process the bytes appended
+after the last known position.[^append] No diffing, no chunking, no re-reading gigabytes.
+
+That is the whole design — until it isn't.
+
+## The rewind that breaks the assumption
+
+Claude Code has a rewind feature: a developer can rewind a session, and the transcript can
+then be **rewritten** — messages removed, different ones added. The file is no longer
+append-only. If a rewind happens after we've recorded an offset, and the rewrite lands at a
+similar size, our "resume from the offset" reads from a position that now points into
+*different content than we think*. The metrics drift from what the session actually did, and
+nothing complains.
+
+Our first cut caught two cases: if the file shrank below our offset, or its identity
+changed, we re-read from the start. But a rewrite that keeps a similar size slips past both.
+
+The fix is cheap. Alongside the offset, we store a hash of the last few kilobytes *before*
+that offset. On each run we re-read those bytes and compare. If the hash matches, the prefix
+is unchanged — a normal append — and we resume. If it differs, something rewrote the history
+we already read: a rewind. We throw away the offset and re-extract the whole session. One
+small read and a hash per file, and the append-only fast path stays fast for the common
+case.
+
+There is a wrinkle worth admitting: until this guard existed, our sync actually re-extracted
+the *entire* file every run, so the metrics were always correct — just not delta-efficient.
+The offset was tracked but not fully trusted. The rewind guard is what makes it safe to
+finally trust the delta, so we get the efficiency without ever risking a wrong number. The
+correctness was never the thing to rush; the efficiency was the thing to earn.
+
+## Across machines, without moving raw
+
+If more than one machine runs agents, we need the metrics aggregated across all of them. The
+tempting answer is rsync over SSH — the standard, secure way to sync files between
+machines.[^rsync] We rejected it, on one ground: it moves the **raw** transcripts off the
+laptop, and our first rule is that raw content never leaves the edge.
+
+Instead, each machine extracts and sanitizes locally and pushes only *derived* records to a
+shared database. Aggregation happens there, across machines, from data that was already
+scrubbed before it left. rsync is the right tool for moving raw files — which is exactly what
+we must never do — so we don't use it. The security invariant isn't a setting we can forget
+to enable; it's structural, because the raw file has no path off the machine.
+
+## When this is wrong
+
+If rewinds became routine — if transcripts stopped being append-only most of the time — the
+byte-offset-plus-guard approach would thrash on full re-reads, and content-defined chunking
+would earn its complexity. And if a shared database ever became undesirable, the
+multi-machine story would need rethinking. We wrote those triggers down, because the point of
+a design is not to be permanent — it is to be revisitable when the world it assumed changes.
+
+[^append]: For append-only logs, tracking the byte offset since the last sync is the simplest
+correct approach — only the newly appended bytes need processing. "Incremental Backups with
+Rsync: A Comprehensive Guide." *WafaTech*,
+https://wafatech.sa/blog/linux/linux-security/incremental-backups-with-rsync-a-comprehensive-guide/.
+Accessed 4 July 2026.
+
+[^rsync]: rsync's delta-transfer algorithm sends only the differences between files and runs
+over SSH for transport security, which is why it is the standard for secure file sync between
+machines. "How To Use Rsync to Sync Local and Remote Directories." *DigitalOcean*,
+https://www.digitalocean.com/community/tutorials/how-to-use-rsync-to-sync-local-and-remote-directories.
+Accessed 4 July 2026.
