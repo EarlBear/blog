@@ -1,0 +1,117 @@
+---
+title: The EarlBear use cases, drawn as code
+description: A look at who uses EarlBear and what they do with it, drawn with a UML use-case diagram we render from a compact spec at build time.
+pubDate: 2026-07-04
+tags: [engineering, meta]
+authors: [omar]
+questions:
+  - Who uses EarlBear, and what does each kind of user do with it?
+  - How do we draw UML use-case diagrams on the blog without a heavy diagram engine?
+  - What do the include and extend relationships mean in a use-case diagram?
+draft: true
+---
+
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+
+Every product is easier to reason about once you can see who touches it and what
+they reach for. This post draws EarlBear that way, using the one UML notation
+built for exactly this question: the use-case diagram. It also doubles as the
+first proof of a small capability we added to the blog — use-case diagrams
+authored as code and rendered to inline SVG at build time.
+
+## Who uses EarlBear
+
+EarlBear sits on live production traffic, so it has three distinct kinds of
+user. Internal operators run experiments and watch results. External customers
+consume the outcome on their storefronts. And an automated scheduler drives the
+routine work that no human should have to trigger by hand.
+
+Here is the whole picture at a glance.
+
+<UseCaseDiagram
+  title="EarlBear"
+  desc="Earl (internal operator), a customer (external), and the scheduler (automated) each interact with EarlBear's core use cases."
+  actors={[
+    { id: 'earl', label: 'Earl (internal)', kind: 'internal' },
+    { id: 'customer', label: 'Customer', kind: 'external' },
+    { id: 'scheduler', label: 'Scheduler', kind: 'system' },
+  ]}
+  useCases={[
+    { id: 'route', label: 'Route traffic' },
+    { id: 'experiment', label: 'Run experiment' },
+    { id: 'review', label: 'Review results' },
+    { id: 'rollback', label: 'Roll back' },
+    { id: 'alert', label: 'Get alerted' },
+    { id: 'export', label: 'Export report' },
+  ]}
+  links={[
+    { from: 'earl', to: 'experiment' },
+    { from: 'earl', to: 'review' },
+    { from: 'earl', to: 'rollback' },
+    { from: 'earl', to: 'export' },
+    { from: 'customer', to: 'route' },
+    { from: 'scheduler', to: 'route' },
+    { from: 'scheduler', to: 'alert' },
+    { from: 'experiment', to: 'review', type: 'include' },
+    { from: 'rollback', to: 'alert', type: 'extend' },
+  ]}
+/>
+
+## Reading the diagram
+
+The rectangle is the **system boundary** — everything inside it is a thing
+EarlBear does. The ovals inside are **use cases**, each one a unit of observable
+value to some user. The figures outside are the **actors**: the Earl monogram
+for the internal operator, a line person for the external customer, and a gear
+for the automated scheduler. Actors always sit outside the boundary, because
+they are not part of the system — they are who the system serves.
+
+The solid lines are **associations**: they connect an actor to a use case the
+actor participates in. Earl runs experiments, reviews results, rolls back, and
+exports reports. The customer's only direct association is with routed traffic —
+they experience the outcome without operating the machinery. The scheduler
+drives routing on a cadence and raises alerts.
+
+## Include and extend
+
+Two of the relationships are between use cases rather than between an actor and
+a use case, and they carry UML stereotype labels.
+
+**«include»** means one use case always incorporates another. Running an
+experiment always includes reviewing its results — you cannot meaningfully run
+an experiment without the review step, so the arrow points from *run experiment*
+to *review results*.
+
+**«extend»** means one use case optionally adds behavior to another under some
+condition. Rolling back *extends* getting alerted: a roll back may raise an
+alert, but the alert is conditional, not guaranteed. The arrow points at the use
+case being extended.
+
+The distinction matters when you read a diagram quickly: include is a hard
+dependency, extend is a conditional add-on.
+
+## Why draw it as code
+
+The diagram above is not an image file or a screenshot. It is written as a
+compact spec — a list of actors, a list of use cases, and a list of links —
+directly in this post, and rendered to inline SVG when the site builds. That
+keeps it in the same warm palette and type as everything else here, lets it
+animate on load, and means it costs no extra network request. It also means the
+diagram is diffable: change a use case, and the change shows up in the pull
+request as text, not as a re-exported binary.
+
+We did not take that on faith. A small benchmark renders this exact diagram three
+ways — inline and animated, inline and static, and as a flat exported image — and
+measures each. The result settled the question: the entire page including the
+inline SVG weighs about 55 KB, which is *lighter* than the exported PNG of the
+diagram on its own, and the browser would have had to fetch that PNG as a
+separate request anyway. The animation added no measurable jank, and the layout
+never shifted as it played. So the inline SVG is not a cost we accept for the
+niceties — it is the cheaper option that also happens to scale crisply, keep its
+text selectable, and read to a screen reader.
+
+We looked hard at using an existing engine for this. Mermaid, the obvious
+choice, still has no use-case diagram type, and its build-time rendering wants a
+headless browser we deliberately keep out of this repo. So we drew our own — a
+small component that honors the UML spec and speaks the design system natively.
+The full reasoning lives in the feature docs.

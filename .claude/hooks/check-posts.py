@@ -37,7 +37,7 @@ from pathlib import Path
 POSTS_DIR = Path("src/content/blog")
 AUTHORS_DIR = Path("src/content/authors")
 
-SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\.md$")
+SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\.mdx?$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 EMOJI_RE = re.compile(
     "[\U0001F000-\U0001FAFF\U00002700-\U000027BF\U0001F1E6-\U0001F1FF"
@@ -224,7 +224,7 @@ def touched_post(payload):
         rel = p.relative_to(Path.cwd())
     except ValueError:
         rel = p
-    if str(rel.parent).replace("\\", "/") == str(POSTS_DIR) and rel.suffix == ".md":
+    if str(rel.parent).replace("\\", "/") == str(POSTS_DIR) and rel.suffix in (".md", ".mdx"):
         return p if p.is_absolute() else Path.cwd() / rel
     return None
 
@@ -248,7 +248,10 @@ def main() -> int:
             pass  # fall through to CLI mode
 
     if targets is None:
-        targets = sorted((root / POSTS_DIR).glob("*.md"))
+        targets = sorted(
+            p for p in (root / POSTS_DIR).iterdir()
+            if p.suffix in (".md", ".mdx")
+        )
 
     errs = []
     for post in targets:

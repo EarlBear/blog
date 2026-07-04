@@ -82,6 +82,10 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
 - **`feature-docs`** — author or reconcile `docs/features/` why-docs.
 - **`sync-design`** — re-pull vendored tokens/assets from the design system.
 - **`deploy`** — guided pre-flight, deploy, and live verification.
+- **`frontend-audit`** — audit + optimize the site (perf, a11y, SEO, bundle,
+  mobile) with a headless-Chrome pass; two-tier fixes (functional-equivalent vs.
+  behavior-shifting) applied only on approval. Also governs when to run an A/B
+  test and how to document the evidence.
 
 ## Feature docs (the "why")
 

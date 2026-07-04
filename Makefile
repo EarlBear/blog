@@ -7,7 +7,8 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan dev build preview deploy sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check check clean
+        regen-favicon tasks-check features-check features-seed posts-check check \
+        bench-diagram clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -60,6 +61,11 @@ posts-check: ## Validate blog-post frontmatter + voice rules
 	npm run posts-check
 
 check: tasks-check features-check posts-check ## Run all governance checks
+
+## --- measure --------------------------------------------------------------
+
+bench-diagram: ## A/B + perf harness for the use-case diagram → docs/diagram-bench.md
+	npm run bench:diagram
 
 ## --- ship ----------------------------------------------------------------
 

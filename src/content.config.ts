@@ -3,7 +3,8 @@ import { glob } from 'astro/loaders';
 
 const blog = defineCollection({
   // The filename (kebab-slug) becomes the URL slug; no date prefix.
-  loader: glob({ pattern: '**/*.md', base: './src/content/blog' }),
+  // Both .md and .mdx are posts — .mdx lets a post embed components inline.
+  loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/blog' }),
   schema: z.object({
     title: z.string(),
     description: z.string(),
