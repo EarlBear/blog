@@ -384,9 +384,43 @@ for (const actor of actors) {
 
 // Total draw-in length drives the animation timing so all lines finish together.
 const gradientIds = useCases.map((_, i) => `${salt}-g${i}`);
+
+// ---- Per-use-case detail, for the click-to-focus modal --------------------
+// Precompute at build time: which actors use each case, and its include/extend
+// relationships, so the modal is pure data (the interaction is progressive
+// enhancement — see the inline script; the diagram is fully readable without JS).
+const actorLabel = new Map(actors.map((a) => [a.id, a.label]));
+const ucLabel = new Map(useCases.map((u) => [u.id, u.label]));
+const ucDetail = useCases.map((uc) => {
+  const usedBy = links
+    .filter((l) => (l.type ?? 'association') === 'association' && l.to === uc.id && actorLabel.has(l.from))
+    .map((l) => actorLabel.get(l.from)!);
+  const includes = links
+    .filter((l) => l.type === 'include' && l.from === uc.id)
+    .map((l) => ucLabel.get(l.to)!)
+    .filter(Boolean);
+  const includedBy = links
+    .filter((l) => l.type === 'include' && l.to === uc.id)
+    .map((l) => ucLabel.get(l.from)!)
+    .filter(Boolean);
+  const extends_ = links
+    .filter((l) => l.type === 'extend' && l.from === uc.id)
+    .map((l) => ucLabel.get(l.to)!)
+    .filter(Boolean);
+  const extendedBy = links
+    .filter((l) => l.type === 'extend' && l.to === uc.id)
+    .map((l) => ucLabel.get(l.from)!)
+    .filter(Boolean);
+  return { id: uc.id, label: uc.label, detail: uc.detail ?? '', usedBy, includes, includedBy, extends: extends_, extendedBy };
+});
+// Only wire up the interactive modal if at least one use case carries detail or
+// relationships worth surfacing (otherwise the ovals stay plain, no JS shipped).
+const interactive = ucDetail.some(
+  (d) => d.detail || d.usedBy.length || d.includes.length || d.includedBy.length || d.extends.length || d.extendedBy.length
+);
 ---
 
-<figure class={`usecase-diagram usecase-diagram--${layout}`}>
+<figure class={`usecase-diagram usecase-diagram--${layout}`} data-ucd={salt}>
   <div class="ucd-scroll">
     <svg
       viewBox={`0 0 ${svgW} ${svgH}`}
@@ -473,13 +507,15 @@ const gradientIds = useCases.map((_, i) => `${salt}-g${i}`);
         }
       </g>
 
-      {/* Use-case ovals */}
+      {/* Use-case ovals. When interactive, each is a focusable button that opens
+          the detail modal; without JS it is simply a non-acting focusable label,
+          and the diagram reads exactly the same. */}
       <g class="ucd-usecases">
         {
           useCases.map((uc, i) => {
             const p = ucPos.get(uc.id)!;
-            return (
-              <g class="ucd-oval" style={`--i:${i}`}>
+            const oval = (
+              <>
                 <ellipse
                   cx={p.cx}
                   cy={p.cy}
@@ -490,6 +526,22 @@ const gradientIds = useCases.map((_, i) => `${salt}-g${i}`);
                 <text x={p.cx} y={p.cy} class="ucd-uc-label">
                   {uc.label}
                 </text>
+              </>
+            );
+            return interactive ? (
+              <g
+                class="ucd-oval ucd-oval--interactive"
+                style={`--i:${i}`}
+                role="button"
+                tabindex="0"
+                aria-haspopup="dialog"
+                data-uc={uc.id}
+              >
+                {oval}
+              </g>
+            ) : (
+              <g class="ucd-oval" style={`--i:${i}`}>
+                {oval}
               </g>
             );
           })
@@ -524,4 +576,70 @@ const gradientIds = useCases.map((_, i) => `${salt}-g${i}`);
     </svg>
   </div>
   {desc && <figcaption class="ucd-caption">{desc}</figcaption>}
+
+  {
+    interactive && (
+      <>
+        {/* Use-case data for the modal, inlined as JSON (no network, no framework). */}
+        <script
+          type="application/json"
+          class="ucd-data"
+          set:html={JSON.stringify(ucDetail)}
+        />
+        <dialog class="ucd-modal" aria-labelledby={`${salt}-modal-title`}>
+          <form method="dialog" class="ucd-modal-inner">
+            <button class="ucd-modal-close" aria-label="Close" value="close">
+              ×
+            </button>
+            <p class="ucd-modal-eyebrow">{title} · use case</p>
+            <h3 id={`${salt}-modal-title`} class="ucd-modal-title" />
+            <p class="ucd-modal-detail" />
+            <dl class="ucd-modal-rels" />
+          </form>
+        </dialog>
+      </>
+    )
+  }
 </figure>
+
+{
+  interactive && (
+    <script is:inline set:html={`(() => {
+        const fig = document.querySelector('.usecase-diagram[data-ucd="${salt}"]');
+        if (!fig) return;
+        const data = JSON.parse(fig.querySelector('.ucd-data').textContent || '[]');
+        const byId = Object.fromEntries(data.map((d) => [d.id, d]));
+        const dialog = fig.querySelector('.ucd-modal');
+        if (!dialog || !dialog.showModal) return; // no <dialog> support → stays static
+        const titleEl = dialog.querySelector('.ucd-modal-title');
+        const detailEl = dialog.querySelector('.ucd-modal-detail');
+        const relsEl = dialog.querySelector('.ucd-modal-rels');
+        const row = (label, items) =>
+          items && items.length
+            ? '<dt>' + label + '</dt><dd>' + items.map((s) => '<span>' + s + '</span>').join('') + '</dd>'
+            : '';
+        function open(id) {
+          const d = byId[id];
+          if (!d) return;
+          titleEl.textContent = d.label;
+          detailEl.textContent = d.detail || '';
+          detailEl.style.display = d.detail ? '' : 'none';
+          relsEl.innerHTML =
+            row('Used by', d.usedBy) +
+            row('Includes', d.includes) +
+            row('Included by', d.includedBy) +
+            row('Extends', d.extends) +
+            row('Extended by', d.extendedBy);
+          dialog.showModal();
+        }
+        fig.querySelectorAll('.ucd-oval--interactive').forEach((el) => {
+          el.addEventListener('click', () => open(el.getAttribute('data-uc')));
+          el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(el.getAttribute('data-uc')); }
+          });
+        });
+        // Click on the backdrop closes it.
+        dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+      })();`} />
+  )
+}

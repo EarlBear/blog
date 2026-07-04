@@ -37,12 +37,12 @@ Here is the whole picture at a glance.
     { id: 'scheduler', label: 'Scheduler', kind: 'system' },
   ]}
   useCases={[
-    { id: 'route', label: 'Route traffic' },
-    { id: 'experiment', label: 'Run experiment' },
-    { id: 'review', label: 'Review results' },
-    { id: 'rollback', label: 'Roll back' },
-    { id: 'alert', label: 'Get alerted' },
-    { id: 'export', label: 'Export report' },
+    { id: 'route', label: 'Route traffic', detail: 'Send live storefront traffic to the current winning variant, on a cadence the scheduler drives and a customer experiences.' },
+    { id: 'experiment', label: 'Run experiment', detail: 'Stand up an A/B test on production traffic, splitting visitors between variants and collecting outcomes.' },
+    { id: 'review', label: 'Review results', detail: 'Read an experiment’s lift, confidence, and per-segment breakdown to decide what ships.' },
+    { id: 'rollback', label: 'Roll back', detail: 'Revert to the previous known-good variant when a change underperforms or misbehaves.' },
+    { id: 'alert', label: 'Get alerted', detail: 'Receive a notification when something crosses a threshold — a regression, an anomaly, or a completed rollback.' },
+    { id: 'export', label: 'Export report', detail: 'Produce a shareable summary of an experiment or a period for stakeholders outside the tool.' },
   ]}
   links={[
     { from: 'earl', to: 'experiment' },
@@ -61,7 +61,8 @@ Here is the whole picture at a glance.
 
 The rectangle is the **system boundary** — everything inside it is a thing
 EarlBear does. The ovals inside are **use cases**, each one a unit of observable
-value to some user. The figures outside are the **actors**: the Earl monogram
+value to some user. Click any use case to focus on it — who uses it, and what it
+includes or extends. The figures outside are the **actors**: the Earl monogram
 for the internal operator, a line person for the external customer, and a gear
 for the automated scheduler. Actors always sit outside the boundary, because
 they are not part of the system — they are who the system serves.
