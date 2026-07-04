@@ -1,0 +1,151 @@
+---
+title: The login page we didn't build
+description: We set out to put a branded EarlBear page in front of Cloudflare Access so staff wouldn't land on a cryptic cloudflareaccess.com screen. We built an elaborate edge-redirect system, watched our own proofs demolish its assumptions, and shipped a one-setting native feature instead. A story about letting the tests win.
+pubDate: 2026-07-04
+tags: [engineering, meta]
+authors: [omar]
+design: trusted-entry-redirect
+questions:
+  - Why did visiting an internal EarlBear app drop you on an unfamiliar cloudflareaccess.com page?
+  - How do you put your own branded page in front of Cloudflare Access without breaking the login?
+  - What made us throw away a working-looking redirect system for a single Cloudflare setting?
+draft: true
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Someone signed out of an internal EarlBear app, clicked back in, and asked a fair
+question: *why am I on `cloudflareaccess.com`?* Our staff apps —
+`wireframes.earlbear.com`, and now a couple more — sit behind Cloudflare Access
+with Google sign-in. The gate works. But a signed-out visitor's first sight was a
+bare `cloudflareaccess.com` screen with a cryptic token in the URL. It looks like
+someone else's site. For a page that's supposed to say "this is EarlBear, sign in,"
+that's the wrong first impression.
+
+The fix seemed obvious: put *our* branded page in front. We had one already —
+`login.earlbear.com`. Send unauthenticated visitors there first, let them click a
+trustworthy "Sign in," then hand them off to Google. How hard could it be.
+
+This is the story of building that, watching our own proof-of-concept tests take it
+apart one assumption at a time, and shipping something much smaller instead. The
+short version: the best outcome of the week was deleting most of what we wrote.
+
+## The plan that looked right
+
+Cloudflare Access won't let you host its login on your own domain — the sign-in
+page stays on `cloudflareaccess.com`, and you can only brand it a little. So we
+couldn't move the page. Instead we'd *intercept before* it: a Cloudflare **Redirect
+Rule** at the edge, firing on any unauthenticated request to a gated host, sending
+the visitor to `login.earlbear.com` with their original destination attached so we
+could return them there after sign-in.
+
+We wrote it down as a design with options and a rule we hold ourselves to: no
+option gets chosen until at least two are written out honestly, and any claim the
+design leans on gets a proof-of-concept before we commit. That rule is the only
+reason this story has a happy ending.
+
+The design leaned on one big claim, and we wrote it in bold: *Cloudflare Access
+appends its own query parameters during login, so if our return destination rides
+in the query string too, the two collide and ours gets mangled.* From that single
+claim the whole elaborate shape followed — an opaque encoded token instead of a
+plain URL, a dedicated decode route, the works.
+
+Then we started proving the claims. That's where it fell apart — usefully.
+
+## The proofs that said no
+
+The first surprise was small and mechanical. We wanted the edge rule to base64-encode
+the destination so it couldn't collide with anything. Cloudflare's rules language has
+an `encode_base64` function, so this seemed fine. It is not fine: the redirect target
+rejected it outright — *"the use of function encode_base64 is not allowed"* — and,
+separately, *"concat … exceeding the maximum allowed number of calls 1."* The edge
+simply cannot build the token we designed. Fine, we moved the encoding into a small
+function on the login side and pressed on.[^p2]
+
+The second surprise ended the whole approach. We put the redirect live and clicked
+through it as a real signed-out user. Landing on `login.earlbear.com` worked. Clicking
+"Sign in" did *nothing* — it bounced straight back to the same page. A loop.
+
+The cause is almost funny in hindsight. Our "Sign in" button pointed at the gated
+host, because that's what triggers Cloudflare Access. But the visitor was *still
+unauthenticated at that moment* — so our own edge rule caught the click and sent them
+right back to the login page. Every path on the gated host was intercepted, including
+the one path that was supposed to escape into Google's sign-in. We'd built a door that
+locked behind itself.[^p4]
+
+And here's the part that stings: **the original premise was wrong too.** Cloudflare
+Access does append its own parameters — we confirmed that.[^p1] But it appends them on
+the `cloudflareaccess.com` hop, not on `login.earlbear.com`. Our return destination
+never shares a query string with Cloudflare's parameters, because they live on
+different hosts. The collision we architected a whole encoded-token scheme to avoid
+*could not happen on the leg where we'd have used a plain URL.* The scary claim that
+justified the complexity was true in general and irrelevant in particular.
+
+## The setting we'd missed
+
+At this point the honest move was to stop defending the design and go read the docs
+we'd skimmed. One search later: Cloudflare Access has a per-application setting called
+**"Apply instant authentication."** With a single identity provider — we have exactly
+one, Google Workspace — it skips the Access page entirely and sends the user straight
+to the provider's sign-in.
+
+We enabled it, deleted the edge rule, and watched. A signed-out visitor now goes:
+
+<FlowDiagram
+  title="Sign-in with instant auth"
+  shape="pipeline"
+  desc="A signed-out visitor hits a gated host, Cloudflare Access forwards them straight to Google with no visible interstitial, and after Google auth they land on the app. No custom redirect, no branded interstitial, no loop."
+  nodes={[
+    { id: 'visitor', label: 'Signed-out visitor', detail: 'Hits e.g. wireframes.earlbear.com/gallery with no Cloudflare Access session cookie.' },
+    { id: 'access', label: 'CF Access', kind: 'edge', detail: 'The gate. With instant authentication on and a single identity provider, it does not render its own login page — the cloudflareaccess.com stop is a sub-second JavaScript shell that forwards straight to Google (autoRedirect → window.location).' },
+    { id: 'google', label: 'Google', kind: 'external', detail: 'Google Workspace SSO, restricted to earlbear.com accounts. The page the user actually sees and already trusts.' },
+    { id: 'app', label: 'Gated app', detail: 'After Google authenticates, Cloudflare issues its session cookie and returns the user to the exact path they first requested.' },
+  ]}
+  edges={[
+    { from: 'visitor', to: 'access' },
+    { from: 'access', to: 'google', label: 'instant auth' },
+    { from: 'google', to: 'app', label: 'return to original path' },
+  ]}
+/>
+
+There is no branded interstitial. There didn't need to be. The visitor effectively
+sees their own Google sign-in — the page they trust most — and lands where they were
+going. The `cloudflareaccess.com` stop still technically happens, but it's a
+sub-second script that forwards to Google before anything renders; we confirmed in the
+browser that a genuinely signed-out session (`auth_status: NONE`) goes straight to
+Google's account chooser, scoped to `earlbear.com`.[^p10]
+
+One setting. Zero custom code. And it's *more* secure than what we built, precisely
+because there's no custom redirect surface to get wrong — and we had already gotten it
+wrong twice.
+
+## What we deleted, and what we kept
+
+Gone: the edge Redirect Rule, the script that generated it, a dedicated Cloudflare API
+token minted just for it, the login-side decode function, and a whole branch of our
+domain validator that checked for a redirect that no longer exists. The design document
+survives as a gravestone with the proofs attached, so the next person who has this
+idea can read why it doesn't work before spending the week.
+
+Kept: everything the detour taught us to build *around* the redirect. Onboarding a new
+gated subdomain is now a single codified path — create the Pages project, attach the
+domain, create the Access application over the API, add the sign-in policy, record it
+in one manifest, validate. No dashboard clicking. We proved it by standing up two new
+gated apps end to end while chasing this. That infrastructure was never the dead end;
+only the redirect was.
+
+## The lesson we keep relearning
+
+Twice in one week, a claim we were confident about was refuted by the smallest possible
+real test — a rejected API call, a single click that looped. Both times, the thing that
+saved us wasn't being smart up front. It was the rule that says *prove the load-bearing
+claim before you build on it,* and then actually running the proof instead of admiring
+the design.
+
+The reward for that discipline is usually not a clever system. It's permission to
+delete one. The best login page we shipped this week is the one we didn't build.
+
+[^p1]: Verified against the live gate: an unauthenticated request to the gated origin returns a 302 to `earlbear.cloudflareaccess.com/cdn-cgi/access/login/…?kid=…&meta=<JWT>&redirect_url=%2Fgallery` — Cloudflare's own parameters. The collision risk is real; it just doesn't occur on `login.earlbear.com`, which is a different host.
+[^p2]: Cloudflare's dynamic redirect `target_url` expression rejected `encode_base64` with *"the use of function encode_base64 is not allowed,"* and rejected nested `concat` with *"exceeding the maximum allowed number of calls 1."* Confirmed by the API on rule creation.
+[^p4]: Reproduced live: signed out, `wireframes.earlbear.com/gallery` → `login.earlbear.com`, and the "Sign in" link (pointing back at the gated host) was re-caught by the same edge rule → back to `login.earlbear.com`. Even `/cdn-cgi/access/login` was intercepted. No path escaped to Google.
+[^p10]: Confirmed in a real browser session: after clearing the Cloudflare Access session, a fresh visit reported `auth_status: NONE` and forwarded to `accounts.google.com/v3/signin/accountchooser` with `hd=earlbear.com`. The `cloudflareaccess.com` page's own JavaScript (`autoRedirect` → `window.location`) does the forwarding.
