@@ -13,6 +13,8 @@ questions:
   - When would this decision be wrong, and what would we do then?
 ---
 
+import Accordion from '../../components/Accordion.astro';
+
 Our agent dashboard reads *marts* — pre-aggregated tables of metrics rolled up from the
 transcripts of our agent sessions. That data has to live somewhere, and the aggregation
 has to run on some engine. The requirement that made this a real decision, rather than a
@@ -36,6 +38,18 @@ Four things pulled the decision in different directions:
   gigabytes across many machines. We want that future to be a port, not a rewrite.
 
 ## The options
+
+Three ways to place the aggregation, folded here for a quick scan — the trade-off
+that mattered is in each one, and the full reasoning follows below.
+
+<Accordion
+  label="The options"
+  items={[
+    { summary: 'A — Postgres everywhere (Docker local, Supabase cloud)', verdict: 'chosen', open: true, body: '<p>One dialect, one aggregation function written once; the production path already exists. The cost: the local demo needs a running Docker container.</p>' },
+    { summary: 'B — DuckDB locally, Postgres in the cloud', verdict: 'rejected', body: '<p>Frictionless local demo (DuckDB runs in-process, no server), and a recognized on-ramp to lakehouse scale. But two engines means the aggregation SQL lives in two dialects — the exact consistency problem we are trying to avoid.</p>' },
+    { summary: 'C — plain Python locally, Postgres in the cloud', verdict: 'rejected', body: '<p>Nothing to install locally. But the marts logic exists twice — once in Python, once in SQL — and every change has to be made in both, correctly, forever.</p>' },
+  ]}
+/>
 
 **Option A — one engine, Postgres everywhere.** Run Postgres in a Docker container
 locally; use Supabase (also Postgres) in production. The schema and the aggregation

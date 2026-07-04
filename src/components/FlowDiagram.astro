@@ -1,0 +1,383 @@
+---
+/**
+ * FlowDiagram — a directed-flow diagram (pipeline, loop, or sequence) rendered as
+ * one inline SVG at build time. Zero dependencies, no client JS unless a node
+ * opts into the detail modal. Mirrors UseCaseDiagram's engine: deterministic
+ * layout, semantic-token gradient fills, a blocking overlap gate, reduced-motion
+ * draw-in animation, and the click-to-focus modal.
+ *
+ * Shapes:
+ *   - pipeline — a horizontal row A → B → C → D (linear data/handoff flow)
+ *   - loop     — the same row wrapped into a cycle: the last node feeds the first
+ *   - sequence — a vertical stack, top → bottom (ordered steps)
+ *
+ * Node kinds tint/mark the box: default, store (a datastore), external (outside
+ * the system), edge (a trust-boundary / sanitize-at-the-edge marker).
+ *
+ * Authors can write the nodes/edges spec directly, or a Mermaid flowchart string
+ * that src/components/diagram/mermaid-parse.ts converts into this spec — see the
+ * enrich-post skill. Either way it renders through this one engine.
+ */
+export type FlowNodeKind = 'default' | 'store' | 'external' | 'edge';
+export interface FlowNode {
+  id: string;
+  label: string;
+  kind?: FlowNodeKind;
+  /** Optional longer detail, surfaced in the click-to-focus modal. */
+  detail?: string;
+}
+export interface FlowEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+interface Props {
+  title: string;
+  desc?: string;
+  shape?: 'pipeline' | 'loop' | 'sequence';
+  /** Native spec — or supply `mermaid` instead and we parse it into nodes/edges. */
+  nodes?: FlowNode[];
+  edges?: FlowEdge[];
+  /** A Mermaid flowchart string (our extended-Mermaid path). Parsed at build
+   *  time into nodes/edges; `shape` is inferred from it unless you pass one. */
+  mermaid?: string;
+  /** Downgrade the build-time overlap gate to a warning for this diagram. */
+  allowOverlap?: boolean;
+}
+
+import { parseMermaidFlow } from './diagram/mermaid-parse';
+
+const {
+  title,
+  desc,
+  shape: shapeProp,
+  nodes: nodesProp,
+  edges: edgesProp,
+  mermaid,
+  allowOverlap = false,
+} = Astro.props;
+
+// Resolve the spec: explicit nodes/edges, or parse the Mermaid string.
+let nodes: FlowNode[];
+let edges: FlowEdge[];
+let inferredShape: 'pipeline' | 'loop' | 'sequence' = 'pipeline';
+if (mermaid) {
+  const parsed = parseMermaidFlow(mermaid);
+  nodes = parsed.nodes;
+  edges = parsed.edges;
+  inferredShape = parsed.shape;
+} else {
+  nodes = nodesProp ?? [];
+  edges = edgesProp ?? [];
+}
+// A back-edge to an earlier node means the flow cycles → render as a loop. This
+// runs for both authoring paths, so `{from:'review', to:'scan'}` becomes a ring
+// without the author having to also pass shape="loop".
+{
+  const index = new Map(nodes.map((n, i) => [n.id, i]));
+  const hasBackEdge = edges.some((e) => (index.get(e.to) ?? 0) <= (index.get(e.from) ?? 0));
+  if (hasBackEdge && inferredShape !== 'sequence') inferredShape = 'loop';
+}
+const shape = shapeProp ?? inferredShape;
+
+const salt = title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'flow';
+
+// ---- Geometry -------------------------------------------------------------
+const BOX_W = 168;
+const BOX_H = 68;
+const GAP = 72; // gap between boxes along the flow
+const PAD = 32; // outer padding
+const horizontal = shape !== 'sequence';
+
+const pos = new Map<string, { cx: number; cy: number }>();
+if (shape === 'loop') {
+  // Arrange nodes evenly around an ellipse so the last→first edge closes cleanly.
+  const n = nodes.length;
+  const rx = Math.max(BOX_W, (n * (BOX_W + GAP)) / (2 * Math.PI));
+  const ry = Math.max(BOX_H * 1.6, (n * (BOX_H + GAP)) / (2 * Math.PI));
+  const cxC = PAD + rx + BOX_W / 2;
+  const cyC = PAD + ry + BOX_H / 2;
+  nodes.forEach((node, i) => {
+    // Start at the top, go clockwise.
+    const a = -Math.PI / 2 + (i / n) * 2 * Math.PI;
+    pos.set(node.id, { cx: cxC + Math.cos(a) * rx, cy: cyC + Math.sin(a) * ry });
+  });
+} else {
+  nodes.forEach((node, i) => {
+    const cx = horizontal ? PAD + BOX_W / 2 + i * (BOX_W + GAP) : PAD + BOX_W / 2;
+    const cy = horizontal ? PAD + BOX_H / 2 : PAD + BOX_H / 2 + i * (BOX_H + GAP);
+    pos.set(node.id, { cx, cy });
+  });
+}
+
+const svgW =
+  shape === 'loop'
+    ? Math.max(...[...pos.values()].map((p) => p.cx)) + BOX_W / 2 + PAD
+    : horizontal
+      ? PAD * 2 + nodes.length * BOX_W + (nodes.length - 1) * GAP
+      : PAD * 2 + BOX_W;
+const svgH =
+  shape === 'loop'
+    ? Math.max(...[...pos.values()].map((p) => p.cy)) + BOX_H / 2 + PAD
+    : horizontal
+      ? PAD * 2 + BOX_H
+      : PAD * 2 + nodes.length * BOX_H + (nodes.length - 1) * GAP;
+
+// ---- Edge geometry: line from box rim to box rim --------------------------
+function rimPoint(cx: number, cy: number, tx: number, ty: number) {
+  // Intersection of the box border with the line toward (tx, ty).
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const hw = BOX_W / 2;
+  const hh = BOX_H / 2;
+  const scale = 1 / Math.max(Math.abs(dx) / hw, Math.abs(dy) / hh);
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+interface Rendered {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  mx: number;
+  my: number;
+  len: number;
+  label?: string;
+  curve: boolean;
+}
+const renderedEdges: Rendered[] = [];
+for (const edge of edges) {
+  const a = pos.get(edge.from);
+  const b = pos.get(edge.to);
+  if (!a || !b) continue; // skip dangling refs
+  const s = rimPoint(a.cx, a.cy, b.cx, b.cy);
+  const e = rimPoint(b.cx, b.cy, a.cx, a.cy);
+  const len = Math.hypot(e.x - s.x, e.y - s.y);
+  renderedEdges.push({
+    x1: s.x,
+    y1: s.y,
+    x2: e.x,
+    y2: e.y,
+    mx: (s.x + e.x) / 2,
+    my: (s.y + e.y) / 2,
+    len,
+    label: edge.label,
+    curve: shape === 'loop',
+  });
+}
+
+// ---- Overlap gate (build-time, blocking) — same contract as UseCaseDiagram --
+const OVERLAP_MIN_CLEAR = 0.75;
+function segmentsCross(a: Rendered, b: Rendered): boolean {
+  const o = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) =>
+    Math.sign((qy - py) * (rx - qx) - (qx - px) * (ry - qy));
+  const near = (p: number, q: number) => Math.abs(p - q) < 0.5;
+  const shareEndpoint =
+    (near(a.x1, b.x1) && near(a.y1, b.y1)) ||
+    (near(a.x1, b.x2) && near(a.y1, b.y2)) ||
+    (near(a.x2, b.x1) && near(a.y2, b.y1)) ||
+    (near(a.x2, b.x2) && near(a.y2, b.y2));
+  if (shareEndpoint) return false;
+  const o1 = o(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
+  const o2 = o(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
+  const o3 = o(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);
+  const o4 = o(b.x1, b.y1, b.x2, b.y2, a.x2, a.y2);
+  return o1 !== o2 && o3 !== o4;
+}
+// Curved loop edges aren't straight segments; the crossing test is for straight
+// pipeline/sequence flows. Loops are laid out on a ring and don't self-cross.
+if (shape !== 'loop') {
+  const crossed = new Set<number>();
+  for (let i = 0; i < renderedEdges.length; i++) {
+    for (let j = i + 1; j < renderedEdges.length; j++) {
+      if (segmentsCross(renderedEdges[i], renderedEdges[j])) {
+        crossed.add(i);
+        crossed.add(j);
+      }
+    }
+  }
+  const clear = renderedEdges.length === 0 ? 1 : 1 - crossed.size / renderedEdges.length;
+  if (clear < OVERLAP_MIN_CLEAR) {
+    const msg =
+      `FlowDiagram "${title}": only ${Math.round(clear * 100)}% of edges are ` +
+      `crossing-free (need ≥${OVERLAP_MIN_CLEAR * 100}%). Reorder nodes so the ` +
+      `flow reads left-to-right (or top-to-bottom) without backtracking, or split ` +
+      `the diagram. See the enrich-post skill.`;
+    if (allowOverlap) console.warn(`[flow-diagram] warning (allowOverlap set): ${msg}`);
+    else throw new Error(`${msg} To ship anyway, pass allowOverlap.`);
+  }
+}
+
+const gradientIds = nodes.map((_, i) => `${salt}-g${i}`);
+
+// ---- Modal data (progressive enhancement) ---------------------------------
+const nodeLabel = new Map(nodes.map((n) => [n.id, n.label]));
+const nodeDetail = nodes.map((n) => {
+  const to = edges.filter((e) => e.from === n.id).map((e) => nodeLabel.get(e.to)!).filter(Boolean);
+  const from = edges.filter((e) => e.to === n.id).map((e) => nodeLabel.get(e.from)!).filter(Boolean);
+  return { id: n.id, label: n.label, detail: n.detail ?? '', to, from };
+});
+const interactive = nodeDetail.some((d) => d.detail);
+---
+
+<figure class={`flow-diagram flow-diagram--${shape}`} data-flow={salt}>
+  <div class="flow-scroll">
+    <svg
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      role="img"
+      aria-labelledby={`${salt}-title${desc ? ` ${salt}-desc` : ''}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title id={`${salt}-title`}>{title}</title>
+      {desc && <desc id={`${salt}-desc`}>{desc}</desc>}
+
+      <defs>
+        {
+          nodes.map((_, i) => (
+            <linearGradient id={gradientIds[i]} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop
+                offset="0%"
+                stop-color={`color-mix(in oklab, var(--eb-data-${(i % 8) + 1}) 20%, var(--color-surface))`}
+              />
+              <stop
+                offset="100%"
+                stop-color={`color-mix(in oklab, var(--eb-data-${((i + 2) % 8) + 1}) 26%, var(--color-surface))`}
+              />
+            </linearGradient>
+          ))
+        }
+        <marker
+          id={`${salt}-arrow`}
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="context-stroke" stroke-width="1.5" />
+        </marker>
+      </defs>
+
+      {/* Edges under the boxes */}
+      <g class="flow-edges">
+        {
+          renderedEdges.map((ed, i) => {
+            const path = ed.curve
+              ? `M ${ed.x1} ${ed.y1} Q ${ed.mx + (ed.my - ed.y1) * 0.3} ${ed.my + (ed.x1 - ed.mx) * 0.3} ${ed.x2} ${ed.y2}`
+              : `M ${ed.x1} ${ed.y1} L ${ed.x2} ${ed.y2}`;
+            return (
+              <g class="flow-edge">
+                <path
+                  d={path}
+                  fill="none"
+                  marker-end={`url(#${salt}-arrow)`}
+                  style={`--len:${ed.len.toFixed(1)}; --i:${i}`}
+                />
+                {ed.label && (
+                  <text x={ed.mx} y={ed.my - 5} class="flow-edge-label">
+                    {ed.label}
+                  </text>
+                )}
+              </g>
+            );
+          })
+        }
+      </g>
+
+      {/* Node boxes */}
+      <g class="flow-nodes">
+        {
+          nodes.map((node, i) => {
+            const p = pos.get(node.id)!;
+            const kind = node.kind ?? 'default';
+            const box = (
+              <>
+                <rect
+                  x={p.cx - BOX_W / 2}
+                  y={p.cy - BOX_H / 2}
+                  width={BOX_W}
+                  height={BOX_H}
+                  rx={kind === 'store' ? 4 : 12}
+                  fill={`url(#${gradientIds[i]})`}
+                  class={`flow-box flow-box--${kind}`}
+                />
+                <text x={p.cx} y={p.cy} class="flow-label">
+                  {node.label}
+                </text>
+              </>
+            );
+            return interactive && node.detail ? (
+              <g
+                class="flow-node flow-node--interactive"
+                role="button"
+                tabindex="0"
+                aria-haspopup="dialog"
+                data-node={node.id}
+                style={`--i:${i}`}
+              >
+                {box}
+              </g>
+            ) : (
+              <g class="flow-node" style={`--i:${i}`}>
+                {box}
+              </g>
+            );
+          })
+        }
+      </g>
+    </svg>
+  </div>
+  {desc && <figcaption class="flow-caption">{desc}</figcaption>}
+
+  {
+    interactive && (
+      <>
+        <script type="application/json" class="flow-data" set:html={JSON.stringify(nodeDetail)} />
+        <dialog class="flow-modal" aria-labelledby={`${salt}-modal-title`}>
+          <form method="dialog" class="flow-modal-inner">
+            <button class="flow-modal-close" aria-label="Close" value="close">×</button>
+            <p class="flow-modal-eyebrow">{title} · step</p>
+            <h3 id={`${salt}-modal-title`} class="flow-modal-title" />
+            <p class="flow-modal-detail" />
+            <dl class="flow-modal-rels" />
+          </form>
+        </dialog>
+      </>
+    )
+  }
+</figure>
+
+{
+  interactive && (
+    <script is:inline set:html={`(() => {
+      const fig = document.querySelector('.flow-diagram[data-flow="${salt}"]');
+      if (!fig) return;
+      const data = JSON.parse(fig.querySelector('.flow-data').textContent || '[]');
+      const byId = Object.fromEntries(data.map((d) => [d.id, d]));
+      const dialog = fig.querySelector('.flow-modal');
+      if (!dialog || !dialog.showModal) return;
+      const titleEl = dialog.querySelector('.flow-modal-title');
+      const detailEl = dialog.querySelector('.flow-modal-detail');
+      const relsEl = dialog.querySelector('.flow-modal-rels');
+      const row = (label, items) => items && items.length
+        ? '<dt>' + label + '</dt><dd>' + items.map((s) => '<span>' + s + '</span>').join('') + '</dd>' : '';
+      function open(id) {
+        const d = byId[id]; if (!d) return;
+        titleEl.textContent = d.label;
+        detailEl.textContent = d.detail || '';
+        detailEl.style.display = d.detail ? '' : 'none';
+        relsEl.innerHTML = row('From', d.from) + row('To', d.to);
+        dialog.showModal();
+      }
+      fig.querySelectorAll('.flow-node--interactive').forEach((el) => {
+        el.addEventListener('click', () => open(el.getAttribute('data-node')));
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(el.getAttribute('data-node')); }
+        });
+      });
+      dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+    })();`} />
+  )
+}

@@ -13,6 +13,8 @@ questions:
   - What did building an end-to-end proof-of-concept catch that unit tests did not?
 ---
 
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
 Our agents run as Claude Code sessions. Every session writes an append-only JSONL
 transcript to `~/.claude/projects/` — one JSON object per line, recording each user
 turn, each assistant turn, every tool call, and the token usage. That transcript
@@ -21,6 +23,23 @@ consolidates our agentic workflow does not read some separate metrics feed; it
 reads what we extract from those transcripts.
 
 Here is how a session becomes a row on a chart.
+
+<FlowDiagram
+  title="Transcript pipeline"
+  shape="pipeline"
+  desc="A session transcript is extracted and sanitized on the laptop; only derived metrics cross to Supabase and then to the dashboard. Raw content never leaves the edge."
+  nodes={[
+    { id: 'jsonl', label: 'JSONL', detail: 'The append-only session transcript in ~/.claude/projects/ — one JSON object per turn, with content blocks and token usage. The ground truth of what an agent did.' },
+    { id: 'sanitize', label: 'Sanitize', kind: 'edge', detail: 'Extraction constructs each record from an allowlist of safe fields and redacts the two short excerpts it keeps. Raw content never leaves the laptop — this is the trust boundary.' },
+    { id: 'supabase', label: 'Supabase', kind: 'store', detail: 'Only derived, redacted metrics are stored: timestamps, token counts, tool names, coarse summaries.' },
+    { id: 'dashboard', label: 'Dashboard', detail: 'Consolidates the metrics across every session into the charts that track the agentic workflow.' },
+  ]}
+  edges={[
+    { from: 'jsonl', to: 'sanitize' },
+    { from: 'sanitize', to: 'supabase', label: 'derived only' },
+    { from: 'supabase', to: 'dashboard' },
+  ]}
+/>
 
 ## What a transcript contains
 

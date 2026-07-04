@@ -117,6 +117,9 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
 - **`usecase-diagram`** — author a UML use-case diagram with `<UseCaseDiagram>`
   (two-sided actor layout, overlap-minimizing order, the blocking overlap/balance
   gates, and the click-to-focus detail modal).
+- **`enrich-post`** — add a diagram/visual to an existing post; picks a technique
+  from the diagram catalog (flow/loop/pipeline via `FlowDiagram`, decision via
+  `Accordion`, use-case, and our extended-Mermaid parser path).
 
 ## Feature docs (the "why")
 

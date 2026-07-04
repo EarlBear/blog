@@ -12,6 +12,8 @@ questions:
   - How does the loop close — how does what happens at the end feed back into the start?
 ---
 
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
 In an earlier post we priced out the growth team you would have to hire to
 optimize an ecommerce store by hand — the SDR who finds prospects, the copywriter
 who writes the outreach, the onboarding specialist, the CRO analyst who reviews
@@ -19,7 +21,24 @@ the store and runs the tests. It is a real team, and it is expensive.
 
 EarlBear does that work as a **loop of agents**. Each stage is an agent that does
 one job and hands off to the next, and the last stage feeds back into the first.
-This is that loop.
+This is that loop — click any stage to see what it does.
+
+<FlowDiagram
+  title="EarlBear loop"
+  desc="Four agents in a cycle: discovery finds leads, outreach lands customers, onboarding readies them, review and enhancement ship improvements — whose measured lift feeds discovery again."
+  nodes={[
+    { id: 'scan', label: 'Scan', detail: 'A discovery agent pulls candidate stores from search, crawling, and backlink graphs, then scores each store’s revenue gaps into a ranked list of leads.' },
+    { id: 'outreach', label: 'Outreach', detail: 'Builds a per-store pitch from that store’s own gaps and runs an adaptive follow-up sequence. Some owners say yes.' },
+    { id: 'onboard', label: 'Onboard', detail: 'A four-step intake (brand context, assets, validation, hand-off) that produces a developer-ready bundle so build work starts immediately.' },
+    { id: 'review', label: 'Review', detail: 'A review agent scores the live store into evidenced findings; an enhancement agent turns each into an ICE-scored, A/B-tested change and feeds the proven lift back to discovery.' },
+  ]}
+  edges={[
+    { from: 'scan', to: 'outreach', label: 'leads' },
+    { from: 'outreach', to: 'onboard', label: 'customers' },
+    { from: 'onboard', to: 'review', label: 'onboarded' },
+    { from: 'review', to: 'scan', label: 'proven lift' },
+  ]}
+/>
 
 ## The loop
 

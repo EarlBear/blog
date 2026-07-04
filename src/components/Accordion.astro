@@ -1,0 +1,41 @@
+---
+/**
+ * Accordion — a foldable list of options, built on native <details>/<summary>.
+ * Zero JavaScript, keyboard-accessible by default, design-system styled. Good for
+ * decision posts: each option is a fold with a one-line summary and expandable
+ * detail (the forces, the trade-off). Authors pass the items; the body of each is
+ * rendered as raw HTML so a fold can carry prose, a list, or another component.
+ *
+ * The first item can be `open` to show a default. Optional `verdict` on an item
+ * renders a small pill (e.g. "chosen") so the decision is scannable while folded.
+ */
+export interface AccordionItem {
+  summary: string;
+  /** Fold body as HTML (kept simple — a sentence or two, or a short list). */
+  body: string;
+  open?: boolean;
+  verdict?: string; // small pill, e.g. "chosen" / "rejected"
+}
+interface Props {
+  items: AccordionItem[];
+  /** A short eyebrow above the list, e.g. "The options". */
+  label?: string;
+}
+const { items, label } = Astro.props;
+---
+
+<div class="eb-accordion">
+  {label && <p class="eb-accordion-label">{label}</p>}
+  {
+    items.map((item) => (
+      <details class="eb-accordion-item" open={item.open}>
+        <summary>
+          <span class="eb-accordion-summary">{item.summary}</span>
+          {item.verdict && <span class="eb-accordion-verdict">{item.verdict}</span>}
+          <span class="eb-accordion-chevron" aria-hidden="true" />
+        </summary>
+        <div class="eb-accordion-body" set:html={item.body} />
+      </details>
+    ))
+  }
+</div>

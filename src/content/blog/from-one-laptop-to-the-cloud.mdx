@@ -19,6 +19,24 @@ telemetry pipeline behind our agent dashboard runs on a laptop with no cloud acc
 production on Supabase, and is built to scale to many machines later — and it is the same
 system in all three. Here is the shape that makes that true.
 
+<FlowDiagram
+  title="One system, three homes"
+  shape="pipeline"
+  desc="The same migrations and aggregation SQL run against a local Docker Postgres, production Supabase, and a future multi-machine deployment. Only production-only concerns (roles, row-level security) are added on top in the cloud."
+  nodes={[
+    { id: 'core', label: 'Shared schema + SQL', kind: 'edge', detail: 'The portable migrations (tables, aggregation logic) and the one function that computes the dashboard’s numbers — zero cloud-specific constructs, so it behaves identically everywhere.' },
+    { id: 'local', label: 'Local Postgres', kind: 'store', detail: 'A Docker container applying the same migrations. No credentials, works offline; the dashboard reads a build-time snapshot or this container.' },
+    { id: 'cloud', label: 'Supabase', kind: 'store', detail: 'Production. Runs the shared migrations plus production-only ones (roles, row-level security) layered on top — never in the shared schema.' },
+    { id: 'scale', label: 'Many machines', kind: 'external', detail: 'The future: the same system scaled out. A port, not a rewrite, because the core carries no host-specific assumptions.' },
+  ]}
+  edges={[
+    { from: 'core', to: 'local', label: 'same SQL' },
+    { from: 'core', to: 'cloud', label: 'same SQL' },
+    { from: 'core', to: 'scale', label: 'later' },
+  ]}
+  allowOverlap
+/>
+
 ## Local without the cloud
 
 The first temptation is to point local development at the shared production database. It is

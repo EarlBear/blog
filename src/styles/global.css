@@ -409,3 +409,241 @@ a:focus:not(:focus-visible) {
   border-radius: var(--radius-pill);
   padding: var(--space-0-5) var(--space-3);
 }
+
+/* ============================================================================
+   FlowDiagram — src/components/FlowDiagram.astro. Directed flow (pipeline / loop
+   / sequence). Same token-driven, reduced-motion-safe pattern as .usecase-diagram.
+   ============================================================================ */
+.flow-diagram {
+  margin: var(--space-8) 0;
+}
+.flow-diagram .flow-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.flow-diagram svg {
+  width: 100%;
+  height: auto;
+  min-width: 280px;
+  display: block;
+}
+/* A vertical sequence is a narrow, tall figure — cap its width and center it so
+   `width:100%` doesn't blow the boxes up to the full reading column. */
+.flow-diagram--sequence svg {
+  max-width: 260px;
+  margin: 0 auto;
+}
+
+.flow-diagram .flow-box {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.flow-diagram .flow-box--store {
+  stroke: var(--color-border-strong);
+  stroke-dasharray: 0;
+}
+.flow-diagram .flow-box--external {
+  stroke-dasharray: 5 4;
+}
+.flow-diagram .flow-box--edge {
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+.flow-diagram .flow-label {
+  fill: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: var(--fw-medium);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.flow-diagram .flow-edge path {
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+}
+.flow-diagram .flow-edge-label {
+  fill: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-anchor: middle;
+}
+.flow-diagram .flow-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* Motion: edges draw in, boxes fade in. Reduced-motion → final state. */
+.flow-diagram .flow-edge path {
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  animation: flow-draw var(--dur-deliberate, 480ms) var(--ease-decelerate, ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 100ms);
+}
+.flow-diagram .flow-node {
+  animation: flow-fade var(--dur-slow, 320ms) var(--ease-decelerate, ease-out) both;
+  animation-delay: calc(var(--i, 0) * 80ms + 100ms);
+}
+@keyframes flow-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes flow-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-diagram .flow-edge path {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+  .flow-diagram .flow-node {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Interactive nodes + modal (mirrors the use-case modal). */
+.flow-diagram .flow-node--interactive { cursor: pointer; }
+.flow-diagram .flow-node--interactive .flow-box {
+  transition: stroke var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+.flow-diagram .flow-node--interactive:hover .flow-box,
+.flow-diagram .flow-node--interactive:focus-visible .flow-box {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+.flow-diagram .flow-node--interactive:focus-visible { outline: none; }
+
+.flow-diagram .flow-modal {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  max-width: min(440px, 92vw);
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-pop);
+}
+.flow-diagram .flow-modal::backdrop { background: rgba(32, 30, 26, 0.32); }
+.flow-diagram .flow-modal-inner { position: relative; padding: var(--space-6); }
+.flow-diagram .flow-modal-close {
+  position: absolute; top: var(--space-3); right: var(--space-3);
+  border: none; background: transparent; font-size: var(--fs-h4); line-height: 1;
+  color: var(--color-text-muted); cursor: pointer; padding: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.flow-diagram .flow-modal-close:hover { color: var(--color-text); background: var(--color-surface-sunken); }
+.flow-diagram .flow-modal-eyebrow {
+  font-size: var(--fs-eyebrow); font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow); text-transform: uppercase;
+  color: var(--color-accent); margin: 0 0 var(--space-2);
+}
+.flow-diagram .flow-modal-title {
+  font-size: var(--fs-h3); font-weight: var(--fw-semibold);
+  margin: 0 0 var(--space-3); padding-right: var(--space-6);
+}
+.flow-diagram .flow-modal-detail { margin: 0 0 var(--space-4); color: var(--color-text-secondary); line-height: var(--lh-body); }
+.flow-diagram .flow-modal-rels { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); }
+.flow-diagram .flow-modal-rels dt {
+  font-size: var(--fs-eyebrow); font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow); text-transform: uppercase;
+  color: var(--color-text-muted); align-self: center;
+}
+.flow-diagram .flow-modal-rels dd { margin: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.flow-diagram .flow-modal-rels dd span {
+  font-size: var(--fs-sm); background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill);
+  padding: var(--space-0-5) var(--space-3);
+}
+
+/* ============================================================================
+   Accordion — src/components/Accordion.astro. Native <details>/<summary>, zero
+   JS, for foldable option lists (decision posts). Semantic tokens only.
+   ============================================================================ */
+.eb-accordion {
+  margin: var(--space-8) 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.eb-accordion-label {
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.eb-accordion-item + .eb-accordion-item {
+  border-top: 1px solid var(--color-border-subtle);
+}
+.eb-accordion-item > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  list-style: none;
+  font-weight: var(--fw-medium);
+  color: var(--color-text);
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+.eb-accordion-item > summary::-webkit-details-marker {
+  display: none;
+}
+.eb-accordion-item > summary:hover {
+  background: var(--color-surface-sunken);
+}
+.eb-accordion-item > summary:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.eb-accordion-summary {
+  flex: 1;
+}
+.eb-accordion-verdict {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-text-inverse);
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+  padding: var(--space-0-5) var(--space-3);
+}
+.eb-accordion-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(45deg);
+  transition: transform var(--dur-fast, 120ms) var(--ease-standard, ease);
+  flex: none;
+}
+.eb-accordion-item[open] > summary .eb-accordion-chevron {
+  transform: rotate(-135deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .eb-accordion-chevron,
+  .eb-accordion-item > summary {
+    transition: none;
+  }
+}
+.eb-accordion-body {
+  padding: 0 var(--space-5) var(--space-5);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+}
+.eb-accordion-body > :first-child {
+  margin-top: 0;
+}
+.eb-accordion-body > :last-child {
+  margin-bottom: 0;
+}

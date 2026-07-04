@@ -154,10 +154,14 @@ calculator). Rules:
   now flags trapped refs, but the fix is always "move the ref into the prose."
 - Style with **semantic design-system tokens only** — never raw hex. Single
   light theme.
-- Charts: load the `dataviz` skill before writing chart markup. Use the vendored
-  categorical palette `--eb-data-1..8` in fixed order; validate the exact combo
-  with the skill's `validate_palette.js` against the ivory surface `#FBF9F5`.
-  (Known-good trio: `--eb-data-1`, `--eb-data-3`, `--eb-data-4`.)
+- Diagrams (flow, loop, pipeline, use-case, decision): use the `enrich-post` skill
+  and its catalog — the blog has zero-dep diagram components (`FlowDiagram`,
+  `UseCaseDiagram`, `Accordion`) that render inline SVG at build time and pass
+  blocking layout gates. Prefer these over hand-rolled diagram markup.
+- Charts (bars, ranges, calculators): use the vendored categorical palette
+  `--eb-data-1..8` in fixed order against the ivory surface. Known-good trio:
+  `--eb-data-1`, `--eb-data-3`, `--eb-data-4`. See the salary chart in
+  `life-without-earlbear.md` for a worked example.
 - Figures in widgets use `.num` (tabular numerics); text never wears the data
   color.
 - Scope all selectors under one wrapper class so post styles can't leak (styles
