@@ -34,7 +34,7 @@ export interface FlowEdge {
 interface Props {
   title: string;
   desc?: string;
-  shape?: 'pipeline' | 'loop' | 'sequence';
+  shape?: 'pipeline' | 'loop' | 'sequence' | 'branch';
   /** Native spec — or supply `mermaid` instead and we parse it into nodes/edges. */
   nodes?: FlowNode[];
   edges?: FlowEdge[];
@@ -87,7 +87,7 @@ const BOX_W = 168;
 const BOX_H = 68;
 const GAP = 72; // gap between boxes along the flow
 const PAD = 32; // outer padding
-const horizontal = shape !== 'sequence';
+const horizontal = shape === 'pipeline' || shape === 'loop';
 
 const pos = new Map<string, { cx: number; cy: number }>();
 if (shape === 'loop') {
@@ -102,6 +102,51 @@ if (shape === 'loop') {
     const a = -Math.PI / 2 + (i / n) * 2 * Math.PI;
     pos.set(node.id, { cx: cxC + Math.cos(a) * rx, cy: cyC + Math.sin(a) * ry });
   });
+} else if (shape === 'branch') {
+  // Layered top-down layout: a node's LEVEL is the longest edge-path to it from a
+  // root, so a fork's outcomes sit on the level below it, spread horizontally.
+  // Trunk levels (one node) stay centered; a level with siblings fans them out.
+  const level = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  for (const n of nodes) {
+    level.set(n.id, 0);
+    adj.set(n.id, []);
+  }
+  for (const e of edges) if (adj.has(e.from)) adj.get(e.from)!.push(e.to);
+  // Longest-path levelling (the graph is a DAG for branch flows; a stray back-edge
+  // is ignored for levelling and just draws across).
+  let changed = true;
+  let guard = 0;
+  while (changed && guard++ < nodes.length + 2) {
+    changed = false;
+    for (const e of edges) {
+      const lf = level.get(e.from) ?? 0;
+      const lt = level.get(e.to) ?? 0;
+      if (lt < lf + 1) {
+        level.set(e.to, lf + 1);
+        changed = true;
+      }
+    }
+  }
+  // Group node ids by level, preserving input order within a level.
+  const byLevel = new Map<number, string[]>();
+  for (const n of nodes) {
+    const l = level.get(n.id) ?? 0;
+    if (!byLevel.has(l)) byLevel.set(l, []);
+    byLevel.get(l)!.push(n.id);
+  }
+  const widest = Math.max(...[...byLevel.values()].map((ids) => ids.length));
+  const rowW = widest * BOX_W + (widest - 1) * GAP;
+  for (const [l, ids] of byLevel) {
+    const levelW = ids.length * BOX_W + (ids.length - 1) * GAP;
+    const startX = PAD + (rowW - levelW) / 2;
+    ids.forEach((id, i) => {
+      pos.set(id, {
+        cx: startX + BOX_W / 2 + i * (BOX_W + GAP),
+        cy: PAD + BOX_H / 2 + l * (BOX_H + GAP),
+      });
+    });
+  }
 } else {
   nodes.forEach((node, i) => {
     const cx = horizontal ? PAD + BOX_W / 2 + i * (BOX_W + GAP) : PAD + BOX_W / 2;
@@ -111,13 +156,13 @@ if (shape === 'loop') {
 }
 
 const svgW =
-  shape === 'loop'
+  shape === 'loop' || shape === 'branch'
     ? Math.max(...[...pos.values()].map((p) => p.cx)) + BOX_W / 2 + PAD
     : horizontal
       ? PAD * 2 + nodes.length * BOX_W + (nodes.length - 1) * GAP
       : PAD * 2 + BOX_W;
 const svgH =
-  shape === 'loop'
+  shape === 'loop' || shape === 'branch'
     ? Math.max(...[...pos.values()].map((p) => p.cy)) + BOX_H / 2 + PAD
     : horizontal
       ? PAD * 2 + BOX_H

@@ -14,6 +14,7 @@ a technique.
 | **loop** | a cycle whose last step feeds the first (flywheel) | `FlowDiagram` (auto-detected from a back-edge, or `shape="loop"`) | native spec **or** `mermaid` | `agentic-workflow-...` |
 | **architecture / boundary** | what runs where; what crosses a trust line | `FlowDiagram` with `kind: 'edge' \| 'store' \| 'external'` nodes | native spec | `from-one-laptop-...` |
 | **sequence / steps** | ordered vertical steps | `FlowDiagram shape="sequence"` (or `mermaid` with `TB`/`TD`) | native spec **or** `mermaid` | — |
+| **branch / decision flow** | a step that forks into 2+ mutually-exclusive outcomes | `FlowDiagram shape="branch"` (layered top-down; forks fan into a row, labeled edges) | native spec | `syncing-...-transcripts` |
 | **decision / options** | weigh options toward a choice | `Accordion` (+ optional `FlowDiagram` for the flow) | native spec (items with `verdict`) | `one-database-two-modes` |
 
 ## The Mermaid decision rule (why we parse, not render)
@@ -61,12 +62,8 @@ warnings — use it only when a fan-out genuinely can't be linear, and say why.
 
 ## Known gaps (candidates to grow the catalog)
 
-- **Branch / decision flow** — a node that forks into 2+ mutually-exclusive
-  outcomes (an `if/else`). `FlowDiagram` can *draw* the edges (with `|labels|`) but
-  has no dedicated fork layout that fans the outcomes into separate columns, so a
-  branch currently renders as a labeled sequence and needs `allowOverlap`. A
-  `shape="branch"` (or a small decision-diamond primitive) would render it cleanly.
-  Seen in `syncing-append-only-transcripts` (the rewind guard).
+_None open right now. When a post needs a shape no component draws, note it here
+so the next primitive is obvious._
 
 ## Adding a technique
 

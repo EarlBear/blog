@@ -13,6 +13,8 @@ questions:
   - How do you prove two surfaces show the same number rather than hoping they do?
 ---
 
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
 Every deck goes stale. Someone builds it with the right numbers on a Tuesday, and by the
 next conversation the numbers have moved and the deck hasn't. We wanted the opposite: a
 deck that is an *output* of the agentic workflow, not a document about it — one that reads
@@ -34,6 +36,23 @@ live toggle. And more than that: the headline figures come from a single shared 
 that both the deck and the dashboard call. Neither one hand-rolls its own `sum`. There is
 one function that turns the marts into "sessions, tokens, tool calls, cost," and both
 surfaces use it. They cannot disagree, because there is only one of them.
+
+<FlowDiagram
+  title="One selector, two surfaces"
+  shape="branch"
+  desc="The marts feed a single shared selector that computes the headline figures. Both the deck and the dashboard call that one selector, so they cannot show different numbers for the same thing."
+  nodes={[
+    { id: 'marts', label: 'Marts', kind: 'store', detail: 'The pre-aggregated tables of metrics rolled up from agent-session transcripts — the raw material both surfaces draw on.' },
+    { id: 'selector', label: 'Shared selector', kind: 'edge', detail: 'The one function that turns marts into "sessions, tokens, tool calls, cost." Neither surface hand-rolls its own sum — there is only one of these, so the numbers cannot fork.' },
+    { id: 'deck', label: 'Pitch deck', detail: 'A route in the app, not a standalone file — live by construction, reading the current figures every time it opens.' },
+    { id: 'dashboard', label: 'Dashboard', detail: 'The operational view of the agentic workflow. Same snapshot, same live toggle, same selector as the deck.' },
+  ]}
+  edges={[
+    { from: 'marts', to: 'selector' },
+    { from: 'selector', to: 'deck' },
+    { from: 'selector', to: 'dashboard' },
+  ]}
+/>
 
 ## Part of the app, not a file
 
