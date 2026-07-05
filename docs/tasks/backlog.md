@@ -14,6 +14,19 @@ Tasks must exist here (or in done.md) **before** being deleted from the live tas
 - [ ] Real author portraits to replace the shared Earl-mark avatar on author cards/pages
 - [ ] Revisit React (or other framework) integration in Astro via islands (`@astrojs/react`) — only if a post needs genuine client-side interactivity. Astro is HTML-first and ships zero JS by default; framework components are opt-in islands that pull in a renderer runtime, so weigh that cost against the blog's zero-JS baseline. Prefer plain `.astro` components or build-time SVG (see `UseCaseDiagram`) unless interactivity is required.
 - [ ] When GitHub Packages billing is restored: consider upstreaming the diagram actor glyphs (`src/components/diagram/actors.ts` — the external "customer" and "system" line marks the design system currently lacks) into `@earlbear/ui` as framework-agnostic SVG primitives, then consume them here via the vendored-assets sync.
-- [ ] Track B: build a `/frontend-audit` skill (local + advisory) — build+preview, drive Chrome via CDP for Lighthouse + perf trace on desktop and mobile, produce a ranked perf/a11y/SEO/bundle report; Tier 1 = functional-equivalent fixes (apply on approval), Tier 2 = behavior-shifting (recommend only).
-- [ ] Track C: build a diagram perf + A/B harness (`scripts/diagram-bench.mjs`) — variant pages (animated / static / image-baseline) measured via CDP on desktop + mobile for HTML weight, paint, CLS, and animation frame cost; emit `docs/diagram-bench.md`.
 - [ ] [audit-finding] Nav links row (`src/components/Nav.astro` `.links`) overflows the viewport by ~14px at ≤390px width (horizontal page scroll on phones). Found while verifying diagram mobile-safety; fix belongs to the frontend-audit skill as a Tier-1 functional-equivalent change (wrap/scroll/condense the nav on narrow screens).
+
+## Diagram system — deferred ideas
+
+Candidates that surfaced while building the diagram catalog (`enrich-post` /
+`new-diagram-kind` skills). None is urgent; each is a real, scoped follow-up.
+
+- [ ] Legend/key for `UseCaseDiagram` actor kinds (internal/external/system) — FlowDiagram has `legend`; UseCaseDiagram relies on the visible actor labels, but a small key could help. Only if a diagram proves confusing.
+- [ ] Publish (un-draft) the enriched posts — all 8 agentic/architecture posts are `draft: true`, so the diagrams aren't live yet. Decide which to ship, verify each renders in a production build, then flip `draft: false`.
+- [ ] Extend the Mermaid subset parser: subgraphs, `class`/`style` directives, and sequence-diagram syntax (currently flowchart-only — see `.claude/skills/enrich-post/catalog.md`).
+- [ ] Consider a `matrix`/`grid` FlowDiagram-style shape or a Timeline primitive if a post needs one (per the `new-diagram-kind` skill — survey the catalog first).
+- [ ] Broaden the visual-density heuristic if it proves noisy or misses cases (per-paragraph vs per-section; tune the 280-word threshold with real usage).
+
+## Deferred infra
+
+- [ ] Astro/dependency security advisories: `npm audit` reports pre-existing Astro-5 XSS/SSR classes (don't apply to this prerendered static site; fixing means an Astro 7 major upgrade). Revisit as a scoped upgrade, not a routine fix. Surfaced by the `frontend-audit` skill.
