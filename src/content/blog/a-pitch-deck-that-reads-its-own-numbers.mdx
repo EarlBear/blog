@@ -40,6 +40,7 @@ surfaces use it. They cannot disagree, because there is only one of them.
 <FlowDiagram
   title="One selector, two surfaces"
   shape="branch"
+  legend
   desc="The marts feed a single shared selector that computes the headline figures. Both the deck and the dashboard call that one selector, so they cannot show different numbers for the same thing."
   nodes={[
     { id: 'marts', label: 'Marts', kind: 'store', detail: 'The pre-aggregated tables of metrics rolled up from agent-session transcripts — the raw material both surfaces draw on.' },

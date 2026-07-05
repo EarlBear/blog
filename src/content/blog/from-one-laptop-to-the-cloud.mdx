@@ -24,6 +24,7 @@ system in all three. Here is the shape that makes that true.
 <FlowDiagram
   title="One system, three homes"
   shape="pipeline"
+  legend
   desc="The same migrations and aggregation SQL run against a local Docker Postgres, production Supabase, and a future multi-machine deployment. Only production-only concerns (roles, row-level security) are added on top in the cloud."
   nodes={[
     { id: 'core', label: 'Shared schema + SQL', kind: 'edge', detail: 'The portable migrations (tables, aggregation logic) and the one function that computes the dashboard’s numbers — zero cloud-specific constructs, so it behaves identically everywhere.' },

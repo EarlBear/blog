@@ -81,6 +81,7 @@ the same code path production uses.
 <FlowDiagram
   title="Raw stays, only the shadow travels"
   shape="pipeline"
+  legend
   desc="On each machine, raw JSONL is analyzed at the edge into a derived record. Only that derived record crosses to the shared database. The raw file has no route off the machine — the boundary is structural, not a policy."
   nodes={[
     { id: 'raw', label: 'Raw JSONL', kind: 'store', detail: 'Full prompts, file contents, the occasional pasted secret. Stays in each machine’s ~/.claude/projects/ — never collected, never moved.' },

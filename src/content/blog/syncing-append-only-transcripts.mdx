@@ -63,6 +63,7 @@ case. Here is that decision — click a step for what it does.
 <FlowDiagram
   title="Delta sync with a rewind guard"
   shape="branch"
+  legend
   desc="On each sync we re-hash the bytes before our stored offset. If the hash matches, the prefix is unchanged and we resume from the offset; if it differs, a rewind rewrote history we already read, so we discard the offset and re-extract the whole session."
   nodes={[
     { id: 'read', label: 'Re-hash prefix', kind: 'edge', detail: 'Re-read the last few kilobytes before the stored byte offset and hash them — one small read per file, on every sync.' },
