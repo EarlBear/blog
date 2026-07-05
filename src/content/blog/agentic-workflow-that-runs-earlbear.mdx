@@ -71,6 +71,33 @@ a human reviewer for approval, ships the approved changes behind an A/B test, an
 feeds the attribution proof back into the store intelligence that the discovery
 agent draws on. The loop closes.
 
+The cycle above shows *that* it loops; this shows *what each agent hands off* —
+each lane is one agent, and the arrows are the artifacts crossing between them.
+
+<FlowDiagram
+  title="What each agent hands off"
+  shape="swimlane"
+  desc="Each agent owns a lane. Discovery hands ranked leads to outreach, which hands landed customers to onboarding, which hands a ready bundle to review and enhancement — whose proven lift feeds discovery again."
+  nodes={[
+    { id: 'scan', label: 'Score stores', lane: 'Discovery', detail: 'Pull candidate stores from search, crawling, and backlink graphs; score each one’s revenue gaps.' },
+    { id: 'rank', label: 'Rank leads', lane: 'Discovery', detail: 'Emit a ranked list of leads, each carrying the specific gaps found on it — the specificity the next stage needs.' },
+    { id: 'pitch', label: 'Build pitch', lane: 'Outreach', detail: 'A per-store pitch from that store’s own gaps and competitive context, tuned to a buyer persona.' },
+    { id: 'land', label: 'Land customer', lane: 'Outreach', detail: 'An adaptive follow-up sequence; some owners say yes.' },
+    { id: 'intake', label: 'Run intake', lane: 'Onboarding', detail: 'A four-step intake producing a developer-ready bundle so build work starts immediately.' },
+    { id: 'review', label: 'Score the store', lane: 'Review', detail: 'Scan the live store into evidenced findings, not vague advice.' },
+    { id: 'ship', label: 'Ship enhancement', lane: 'Review', detail: 'Turn each finding into an ICE-scored, human-approved, A/B-tested change — and feed the proven lift back to discovery.' },
+  ]}
+  edges={[
+    { from: 'scan', to: 'rank' },
+    { from: 'rank', to: 'pitch', label: 'leads' },
+    { from: 'pitch', to: 'land' },
+    { from: 'land', to: 'intake', label: 'customers' },
+    { from: 'intake', to: 'review', label: 'onboarded' },
+    { from: 'review', to: 'ship' },
+    { from: 'ship', to: 'scan', label: 'proven lift' },
+  ]}
+/>
+
 ## What each agent replaces
 
 The mapping to the team you would otherwise hire is close to one-to-one:
