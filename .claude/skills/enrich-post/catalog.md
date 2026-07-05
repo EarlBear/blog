@@ -55,10 +55,25 @@ the `kind: 'edge'`/`'external'` node hints (set those via the native spec).
 
 ## Quality gates (shared by the SVG primitives)
 
-`FlowDiagram` and `UseCaseDiagram` both run **blocking build-time gates**: a diagram
-whose lines cross too much (<75% crossing-free), or whose actors fan too lopsidedly,
-fails the build with an actionable message. `allowOverlap` downgrades them to
-warnings — use it only when a fan-out genuinely can't be linear, and say why.
+`FlowDiagram` and `UseCaseDiagram` run build-time gates so a broken or ugly diagram
+never ships. **Blocking (throw):**
+
+- **Overlap** — <75% of edges/links crossing-free.
+- **Actor balance** (UseCaseDiagram) — an actor's lines must fan evenly, not all one way.
+- **Dangling reference** — an edge/link `from`/`to` that isn't a real node/actor/use-case
+  id (a typo). Previously these were silently dropped.
+
+**Warnings (console, non-blocking):** no `desc` (accessibility — the SVG `<desc>` a
+screen reader reads), a **disconnected** node/actor/use-case (no edges — renders
+floating), and an over-long **label** that would clip its box.
+
+`allowOverlap` downgrades the overlap/balance/quality *warnings* to non-blocking — use
+it only when a fan-out genuinely can't be linear, and say why. (Dangling references
+always throw; a typo is never intentional.)
+
+Separately, **`npm run diagrams-check`** (a static check + PostToolUse hook) fails if an
+`.mdx` post uses a `<Component>` it never imports — the one class of bug the build hides
+for draft posts.
 
 ## Known gaps (candidates to grow the catalog)
 

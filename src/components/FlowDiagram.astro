@@ -89,6 +89,58 @@ const shape = shapeProp ?? inferredShape;
 
 const salt = title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'flow';
 
+// ---- Content-quality gates (before geometry, so a bad spec fails fast) -----
+// These catch authoring mistakes the geometry gates can't see. A dangling edge
+// is a correctness bug → throw; the rest are quality warnings.
+{
+  const ids = new Set(nodes.map((n) => n.id));
+  // (1) Dangling reference: an edge points at a node id that doesn't exist. Today
+  //     such edges are silently dropped, so a typo vanishes with no signal.
+  const dangling = edges.filter((e) => !ids.has(e.from) || !ids.has(e.to));
+  if (dangling.length) {
+    const bad = dangling
+      .map((e) => `${!ids.has(e.from) ? `"${e.from}"` : e.from} → ${!ids.has(e.to) ? `"${e.to}"` : e.to}`)
+      .join(', ');
+    throw new Error(
+      `FlowDiagram "${title}": edge references a node id that doesn't exist: ${bad}. ` +
+        `Check the from/to ids against your nodes list.`
+    );
+  }
+  if (!allowOverlap) {
+    // (2) Accessibility: a diagram with no title/desc is invisible to a screen
+    //     reader. title is required by the type; nudge for desc.
+    if (!desc || !desc.trim()) {
+      console.warn(
+        `[flow-diagram] warning: "${title}" has no desc — add desc= so screen ` +
+          `readers get an accessible description (rendered as the SVG <desc>).`
+      );
+    }
+    // (3) Disconnected node: a node no edge touches is usually a mistake (added a
+    //     node, forgot to wire it). A single lone node is a legitimate 1-box flow.
+    if (nodes.length > 1) {
+      const touched = new Set(edges.flatMap((e) => [e.from, e.to]));
+      for (const n of nodes) {
+        if (!touched.has(n.id)) {
+          console.warn(
+            `[flow-diagram] warning: "${title}" node "${n.id}" (${n.label}) has ` +
+              `no edges — it renders floating. Connect it or remove it.`
+          );
+        }
+      }
+    }
+    // (4) Legibility: a label too long for its box will clip. ~13 chars fit a
+    //     168px box at 14px; warn past a generous threshold.
+    for (const n of nodes) {
+      if (n.label.length > 22) {
+        console.warn(
+          `[flow-diagram] warning: "${title}" label "${n.label}" is long and may ` +
+            `clip its box — shorten it or move detail into the node's \`detail\`.`
+        );
+      }
+    }
+  }
+}
+
 // ---- Geometry -------------------------------------------------------------
 const BOX_W = 168;
 const BOX_H = 68;

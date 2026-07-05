@@ -65,6 +65,54 @@ const {
 // marker ids. Derived from the title (deterministic — no Math.random at build).
 const salt = title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'ucd';
 
+// ---- Content-quality gates (mirror FlowDiagram) ---------------------------
+// A dangling link is a correctness bug → throw; the rest are quality warnings.
+{
+  const ids = new Set([...actors.map((a) => a.id), ...useCases.map((u) => u.id)]);
+  const dangling = links.filter((l) => !ids.has(l.from) || !ids.has(l.to));
+  if (dangling.length) {
+    const bad = dangling
+      .map((l) => `${!ids.has(l.from) ? `"${l.from}"` : l.from} → ${!ids.has(l.to) ? `"${l.to}"` : l.to}`)
+      .join(', ');
+    throw new Error(
+      `UseCaseDiagram "${title}": link references an id that doesn't exist: ${bad}. ` +
+        `Check the from/to against your actors and useCases.`
+    );
+  }
+  if (!allowOverlap) {
+    if (!desc || !desc.trim()) {
+      console.warn(
+        `[usecase-diagram] warning: "${title}" has no desc — add desc= so screen ` +
+          `readers get an accessible description (rendered as the SVG <desc>).`
+      );
+    }
+    // Disconnected: an actor or use case no link touches renders floating.
+    const touched = new Set(links.flatMap((l) => [l.from, l.to]));
+    for (const a of actors) {
+      if (!touched.has(a.id))
+        console.warn(
+          `[usecase-diagram] warning: "${title}" actor "${a.id}" (${a.label}) has ` +
+            `no associations — it renders floating. Connect it or remove it.`
+        );
+    }
+    for (const u of useCases) {
+      if (!touched.has(u.id))
+        console.warn(
+          `[usecase-diagram] warning: "${title}" use case "${u.id}" (${u.label}) has ` +
+            `no links — it renders floating. Connect it or remove it.`
+        );
+    }
+    // Legibility: an oval fits ~24 chars at 15px; a stick-figure label ~18.
+    for (const u of useCases) {
+      if (u.label.length > 26)
+        console.warn(
+          `[usecase-diagram] warning: "${title}" use-case label "${u.label}" is long ` +
+            `and may clip its oval — shorten it or move detail into \`detail\`.`
+        );
+    }
+  }
+}
+
 // ---- Geometry -------------------------------------------------------------
 // One coordinate system; CSS scales the whole thing. Units are "user units".
 const OVAL_W = 200;
