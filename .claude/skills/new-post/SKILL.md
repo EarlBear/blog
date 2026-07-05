@@ -43,6 +43,13 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
      the post to an existing one.
    - **Draft?** — default `true` for a fresh draft (visible in `npm run dev`,
      excluded from production builds) unless the user wants it published now.
+   - **Expects** (optional) — the visual(s) this post should carry, by kind:
+     `expects: [comparison]` for an options-comparison post (owes a
+     `<ComparisonMatrix>`), `flow` (a `<FlowDiagram>`), `use-case`, or `decision`
+     (an `<Accordion>`/matrix). Declaring it makes the post's promise explicit; a
+     non-blocking `expects-check` warns if the visual is missing. Use it whenever
+     the post's *type* implies a visual — a comparison without a matrix is a wall
+     of prose pretending to compare.
 
 2. **Derive and check the slug.** Lowercase the title, spaces → hyphens, strip
    punctuation. Confirm it doesn't collide:

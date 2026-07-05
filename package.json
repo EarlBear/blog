@@ -14,6 +14,7 @@
     "diagrams-check": "python3 .claude/hooks/check-diagrams.py --check",
     "visuals-check": "python3 .claude/hooks/check-visual-density.py --check",
     "catalog-check": "python3 .claude/hooks/check-diagram-catalog.py --check",
+    "expects-check": "python3 .claude/hooks/check-visual-expectations.py --check",
     "features:check": "python3 scripts/features_check.py",
     "features:seed": "python3 scripts/features_check.py --seed",
     "regen-favicon": "node scripts/gen-favicon.mjs",

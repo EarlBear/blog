@@ -18,6 +18,13 @@ const blog = defineCollection({
     // Author ids (file stems in src/content/authors/), in byline order.
     // Validated against the authors collection in src/lib/authors.ts.
     authors: z.array(z.string()).default([]),
+    // Visuals this post is expected to carry, by kind — a post that declares
+    // `expects: [comparison]` should embed a ComparisonMatrix, etc. A non-blocking
+    // check-visual-expectations hook warns when a declared visual is missing, so a
+    // comparison post never ships as a wall of prose. See the enrich-post catalog.
+    expects: z
+      .array(z.enum(['comparison', 'flow', 'use-case', 'decision']))
+      .default([]),
     draft: z.boolean().default(false),
   }),
 });

@@ -7,7 +7,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan dev build preview deploy sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check check \
+        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check check \
         bench-diagram clean
 
 help: ## List available targets
@@ -70,7 +70,10 @@ visuals-check: ## Nudge: flag wall-of-text sections with no visual (advisory)
 catalog-check: ## Nudge: flag diagram components/shapes missing from the catalog (advisory)
 	npm run catalog-check
 
-check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check ## Run all governance checks
+expects-check: ## Nudge: flag a post whose frontmatter `expects` a visual it lacks (advisory)
+	npm run expects-check
+
+check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check ## Run all governance checks
 
 ## --- measure --------------------------------------------------------------
 
