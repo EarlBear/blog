@@ -7,7 +7,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan dev build preview deploy sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check check \
+        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check check \
         bench-diagram clean
 
 help: ## List available targets
@@ -67,7 +67,10 @@ diagrams-check: ## Verify every component used in an .mdx post is imported
 visuals-check: ## Nudge: flag wall-of-text sections with no visual (advisory)
 	npm run visuals-check
 
-check: tasks-check features-check posts-check diagrams-check visuals-check ## Run all governance checks
+catalog-check: ## Nudge: flag diagram components/shapes missing from the catalog (advisory)
+	npm run catalog-check
+
+check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check ## Run all governance checks
 
 ## --- measure --------------------------------------------------------------
 

@@ -127,6 +127,10 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
 - **`enrich-post`** — add a diagram/visual to an existing post; picks a technique
   from the diagram catalog (flow/loop/pipeline via `FlowDiagram`, decision via
   `Accordion`, use-case, and our extended-Mermaid parser path).
+- **`new-diagram-kind`** — design and add a *new* kind of diagram (a new
+  `FlowDiagram` shape or a new primitive): survey the catalog first, match the
+  house engine (zero-dep build-time SVG, tokens, gates), prove it, and keep the
+  catalog a living artifact (a `catalog-check` hook flags drift).
 
 ## Feature docs (the "why")
 
