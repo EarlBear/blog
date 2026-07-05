@@ -174,22 +174,31 @@ if (shape === 'swimlane') {
     const ln = n.lane ?? '—';
     if (!laneNames.includes(ln)) laneNames.push(ln);
   }
-  // Longest-path column rank (same DAG levelling as branch).
-  const col = new Map<string, number>();
-  for (const n of nodes) col.set(n.id, 0);
+  // Column rank = longest-path over the FORWARD edges only. A back-edge (the
+  // cycle-closer, e.g. the loop's return arrow) is skipped for ranking — left in,
+  // it would push ranks up every pass and blow the width out. Then columns are
+  // compressed to remove gaps, so N nodes never span more than N columns.
+  const order = new Map(nodes.map((n, i) => [n.id, i]));
+  const forward = edges.filter((e) => (order.get(e.to) ?? 0) > (order.get(e.from) ?? 0));
+  const rank = new Map<string, number>();
+  for (const n of nodes) rank.set(n.id, 0);
   let changed = true;
   let guard = 0;
-  while (changed && guard++ < nodes.length + 2) {
+  while (changed && guard++ <= nodes.length) {
     changed = false;
-    for (const e of edges) {
-      const cf = col.get(e.from) ?? 0;
-      const ct = col.get(e.to) ?? 0;
+    for (const e of forward) {
+      const cf = rank.get(e.from) ?? 0;
+      const ct = rank.get(e.to) ?? 0;
       if (ct < cf + 1) {
-        col.set(e.to, cf + 1);
+        rank.set(e.to, cf + 1);
         changed = true;
       }
     }
   }
+  // Compress ranks to consecutive integers (0,1,2,…) so unused columns collapse.
+  const usedRanks = [...new Set([...rank.values()])].sort((a, b) => a - b);
+  const compress = new Map(usedRanks.map((r, i) => [r, i]));
+  const col = new Map([...rank].map(([id, r]) => [id, compress.get(r) ?? 0]));
   const laneH = BOX_H + PAD; // band height: one box plus breathing room
   laneNames.forEach((name, r) => {
     lanes.push({ name, top: PAD + r * laneH, height: laneH });
@@ -472,9 +481,22 @@ const legendKinds = legend
                   style={`--len:${ed.len.toFixed(1)}; --i:${i}`}
                 />
                 {ed.label && (
-                  <text x={ed.mx} y={ed.my - 5} class="flow-edge-label">
-                    {ed.label}
-                  </text>
+                  <g class="flow-edge-label-g">
+                    {/* A chip behind the label keeps it legible over lines and
+                        gradient boxes. Monospace 11px ≈ 6.6px/char; estimate the
+                        width so no runtime measurement is needed. */}
+                    <rect
+                      class="flow-edge-label-chip"
+                      x={ed.mx - (ed.label.length * 6.6) / 2 - 5}
+                      y={ed.my - 5 - 11}
+                      width={ed.label.length * 6.6 + 10}
+                      height={16}
+                      rx={4}
+                    />
+                    <text x={ed.mx} y={ed.my - 5} class="flow-edge-label">
+                      {ed.label}
+                    </text>
+                  </g>
                 )}
               </g>
             );

@@ -463,11 +463,18 @@ a:focus:not(:focus-visible) {
   stroke: var(--color-border-strong);
   stroke-width: 1.5;
 }
+/* Edge labels sit in a chip so they stay legible over lines and gradient boxes. */
+.flow-diagram .flow-edge-label-chip {
+  fill: var(--color-surface);
+  stroke: var(--color-border-subtle);
+  stroke-width: 1;
+}
 .flow-diagram .flow-edge-label {
-  fill: var(--color-text-muted);
+  fill: var(--color-text-secondary);
   font-family: var(--font-mono);
   font-size: 11px;
   text-anchor: middle;
+  dominant-baseline: alphabetic;
 }
 .flow-diagram .flow-caption {
   margin-top: var(--space-3);
@@ -689,4 +696,110 @@ a:focus:not(:focus-visible) {
   letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
   dominant-baseline: central;
+}
+
+/* ============================================================================
+   ComparisonMatrix — src/components/ComparisonMatrix.astro. Options as columns,
+   criteria as rows; the chosen column is highlighted. Zero JS, tokens only.
+   ============================================================================ */
+.comparison-matrix {
+  margin: var(--space-8) 0;
+}
+.comparison-matrix .cm-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+}
+.comparison-matrix table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-body);
+}
+.comparison-matrix .cm-caption {
+  caption-side: bottom;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: left;
+}
+.comparison-matrix th,
+.comparison-matrix td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.comparison-matrix tbody tr:last-child th,
+.comparison-matrix tbody tr:last-child td {
+  border-bottom: none;
+}
+.comparison-matrix .cm-corner {
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  background: var(--color-surface-sunken);
+}
+.comparison-matrix .cm-option {
+  background: var(--color-surface-sunken);
+  font-weight: var(--fw-semibold);
+  vertical-align: bottom;
+  min-width: 120px;
+}
+.comparison-matrix .cm-option--chosen {
+  background: var(--color-accent-soft);
+  color: var(--color-text-accent);
+}
+.comparison-matrix .cm-option-label {
+  display: block;
+}
+.comparison-matrix .cm-chosen-badge {
+  display: inline-block;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-text-inverse);
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+.comparison-matrix .cm-criterion {
+  font-weight: var(--fw-medium);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+.comparison-matrix .cm-cell--chosen {
+  background: color-mix(in oklab, var(--color-accent-soft) 55%, transparent);
+}
+.comparison-matrix .cm-mark {
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+.comparison-matrix .cm-mark--yes {
+  color: var(--eb-success);
+}
+.comparison-matrix .cm-mark--no {
+  color: var(--color-text-muted);
+}
+.comparison-matrix .cm-mark--partial {
+  color: var(--eb-warning);
+}
+.comparison-matrix .cm-value {
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+}
+/* Screen-reader-only text for the marks (so "●" reads as "yes"). */
+.comparison-matrix .cm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
