@@ -1,0 +1,108 @@
+---
+/**
+ * ComparisonMatrix — a feature/criteria comparison for option-comparison posts.
+ * Options are columns, criteria are rows, each cell is a rating (a yes/no/partial
+ * mark or a short value). The chosen option's column is highlighted so the
+ * decision is scannable at a glance. Pairs with <Accordion> (which carries the
+ * narrative); the matrix carries the head-to-head.
+ *
+ * Zero JavaScript, semantic tokens only, mobile-safe (the grid scrolls inside its
+ * own wrapper rather than pushing the page sideways). Built as an HTML table for
+ * accessibility (real <th> scope, so a screen reader reads "Consistency, Option B:
+ * partial").
+ */
+export type Rating = 'yes' | 'no' | 'partial' | string;
+
+export interface MatrixOption {
+  id: string;
+  label: string;
+  /** Mark the winning option — its column is highlighted and badged. */
+  chosen?: boolean;
+}
+export interface MatrixCriterion {
+  label: string;
+  /** One cell per option, keyed by option id. Value is a Rating: 'yes' | 'no' |
+   *  'partial' render as marks; any other string renders as text. */
+  cells: Record<string, Rating>;
+}
+interface Props {
+  title: string;
+  desc?: string;
+  options: MatrixOption[];
+  criteria: MatrixCriterion[];
+}
+const { title, desc, options, criteria } = Astro.props;
+
+// ---- Quality gate: every cell must reference a real option -----------------
+{
+  const ids = new Set(options.map((o) => o.id));
+  for (const c of criteria) {
+    for (const key of Object.keys(c.cells)) {
+      if (!ids.has(key)) {
+        throw new Error(
+          `ComparisonMatrix "${title}": criterion "${c.label}" has a cell for ` +
+            `"${key}", which is not an option id. Check the cell keys against your options.`
+        );
+      }
+    }
+  }
+  if (!desc || !desc.trim()) {
+    console.warn(
+      `[comparison-matrix] warning: "${title}" has no desc — add desc= so screen ` +
+        `readers get an accessible summary of what is being compared.`
+    );
+  }
+}
+
+const MARK: Record<string, { glyph: string; label: string; cls: string }> = {
+  yes: { glyph: '●', label: 'yes', cls: 'yes' },
+  no: { glyph: '○', label: 'no', cls: 'no' },
+  partial: { glyph: '◐', label: 'partial', cls: 'partial' },
+};
+---
+
+<figure class="comparison-matrix">
+  <div class="cm-scroll">
+    <table>
+      {desc && <caption class="cm-caption">{desc}</caption>}
+      <thead>
+        <tr>
+          <th scope="col" class="cm-corner">{title}</th>
+          {
+            options.map((o) => (
+              <th scope="col" class={o.chosen ? 'cm-option cm-option--chosen' : 'cm-option'}>
+                <span class="cm-option-label">{o.label}</span>
+                {o.chosen && <span class="cm-chosen-badge">chosen</span>}
+              </th>
+            ))
+          }
+        </tr>
+      </thead>
+      <tbody>
+        {
+          criteria.map((c) => (
+            <tr>
+              <th scope="row" class="cm-criterion">{c.label}</th>
+              {options.map((o) => {
+                const v = c.cells[o.id];
+                const mark = v ? MARK[v] : undefined;
+                return (
+                  <td class={o.chosen ? 'cm-cell cm-cell--chosen' : 'cm-cell'}>
+                    {mark ? (
+                      <span class={`cm-mark cm-mark--${mark.cls}`} title={mark.label}>
+                        <span aria-hidden="true">{mark.glyph}</span>
+                        <span class="cm-sr">{mark.label}</span>
+                      </span>
+                    ) : (
+                      <span class="cm-value">{v ?? '—'}</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+</figure>
