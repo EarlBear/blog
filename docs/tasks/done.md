@@ -34,6 +34,7 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] Add 4 build-time diagram-quality gates to FlowDiagram + UseCaseDiagram: dangling-reference (throws), plus warnings for missing desc (a11y), disconnected node/actor, and over-long label; documented in catalog.md @done(2026-07-04T00:00:00Z) #git:dad9c263
 - [x] Add optional `legend` to FlowDiagram: renders a key (swatch + meaning) for the store/external/edge node kinds actually used; enabled on the mining pipeline post; documented in catalog + enrich-post skill @done(2026-07-04T00:00:00Z) #git:512a352b
 - [x] Add `legend` to the remaining FlowDiagram posts that use special node kinds (from-one-laptop, syncing, what-we-never-collect, pitch-deck) so every diagram with edge/store/external boxes explains them @done(2026-07-04T00:00:00Z) #git:6862a787
+- [x] Add FlowDiagram shape="swimlane": nodes carry a `lane`; each lane is a labeled horizontal band, flow reads left→right by longest-path rank, cross-lane edges show handoffs; documented in catalog @done(2026-07-05T00:00:00Z) #git:pending
 - [x] Build skills: new-post, manage-authors, feature-docs, sync-design, deploy @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Regenerate favicon from earl-mark.svg (glasses mark), accent-tinted, via scripts/gen-favicon.mjs @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Multi-author support: authors collection, co-author bylines, /authors/ + /authors/<id>/, RSS author @done(2026-07-03T00:00:00Z) #git:71331877

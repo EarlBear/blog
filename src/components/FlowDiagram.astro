@@ -23,6 +23,9 @@ export interface FlowNode {
   id: string;
   label: string;
   kind?: FlowNodeKind;
+  /** Which actor/system owns this step. Only used by shape="swimlane", where
+   *  each distinct lane becomes a labeled horizontal band. */
+  lane?: string;
   /** Optional longer detail, surfaced in the click-to-focus modal. */
   detail?: string;
 }
@@ -34,7 +37,7 @@ export interface FlowEdge {
 interface Props {
   title: string;
   desc?: string;
-  shape?: 'pipeline' | 'loop' | 'sequence' | 'branch';
+  shape?: 'pipeline' | 'loop' | 'sequence' | 'branch' | 'swimlane';
   /** Native spec — or supply `mermaid` instead and we parse it into nodes/edges. */
   nodes?: FlowNode[];
   edges?: FlowEdge[];
@@ -151,9 +154,56 @@ const BOX_H = 68;
 const GAP = 72; // gap between boxes along the flow
 const PAD = 32; // outer padding
 const horizontal = shape === 'pipeline' || shape === 'loop';
+const LANE_LABEL_W = 128; // left gutter for lane labels (swimlane only)
+
+// Swimlane bands, computed up front so both layout and rendering can use them.
+interface Lane {
+  name: string;
+  top: number;
+  height: number;
+}
+const lanes: Lane[] = [];
 
 const pos = new Map<string, { cx: number; cy: number }>();
-if (shape === 'loop') {
+if (shape === 'swimlane') {
+  // Rows = lanes (distinct `lane` values, first-appearance order). Columns =
+  // flow order (longest-path rank), so a handoff reads left→right and the edge
+  // that jumps between lanes is the visible cross-lane hop.
+  const laneNames: string[] = [];
+  for (const n of nodes) {
+    const ln = n.lane ?? '—';
+    if (!laneNames.includes(ln)) laneNames.push(ln);
+  }
+  // Longest-path column rank (same DAG levelling as branch).
+  const col = new Map<string, number>();
+  for (const n of nodes) col.set(n.id, 0);
+  let changed = true;
+  let guard = 0;
+  while (changed && guard++ < nodes.length + 2) {
+    changed = false;
+    for (const e of edges) {
+      const cf = col.get(e.from) ?? 0;
+      const ct = col.get(e.to) ?? 0;
+      if (ct < cf + 1) {
+        col.set(e.to, cf + 1);
+        changed = true;
+      }
+    }
+  }
+  const laneH = BOX_H + PAD; // band height: one box plus breathing room
+  laneNames.forEach((name, r) => {
+    lanes.push({ name, top: PAD + r * laneH, height: laneH });
+  });
+  const laneRow = new Map(laneNames.map((n, r) => [n, r]));
+  for (const n of nodes) {
+    const r = laneRow.get(n.lane ?? '—') ?? 0;
+    const c = col.get(n.id) ?? 0;
+    pos.set(n.id, {
+      cx: LANE_LABEL_W + PAD + BOX_W / 2 + c * (BOX_W + GAP),
+      cy: PAD + r * laneH + laneH / 2,
+    });
+  }
+} else if (shape === 'loop') {
   // Arrange nodes evenly around an ellipse so the last→first edge closes cleanly.
   const n = nodes.length;
   const rx = Math.max(BOX_W, (n * (BOX_W + GAP)) / (2 * Math.PI));
@@ -219,17 +269,19 @@ if (shape === 'loop') {
 }
 
 const svgW =
-  shape === 'loop' || shape === 'branch'
+  shape === 'loop' || shape === 'branch' || shape === 'swimlane'
     ? Math.max(...[...pos.values()].map((p) => p.cx)) + BOX_W / 2 + PAD
     : horizontal
       ? PAD * 2 + nodes.length * BOX_W + (nodes.length - 1) * GAP
       : PAD * 2 + BOX_W;
 const svgH =
-  shape === 'loop' || shape === 'branch'
-    ? Math.max(...[...pos.values()].map((p) => p.cy)) + BOX_H / 2 + PAD
-    : horizontal
-      ? PAD * 2 + BOX_H
-      : PAD * 2 + nodes.length * BOX_H + (nodes.length - 1) * GAP;
+  shape === 'swimlane'
+    ? PAD + lanes.reduce((h, l) => h + l.height, 0) + PAD
+    : shape === 'loop' || shape === 'branch'
+      ? Math.max(...[...pos.values()].map((p) => p.cy)) + BOX_H / 2 + PAD
+      : horizontal
+        ? PAD * 2 + BOX_H
+        : PAD * 2 + nodes.length * BOX_H + (nodes.length - 1) * GAP;
 
 // ---- Edge geometry: line from box rim to box rim --------------------------
 function rimPoint(cx: number, cy: number, tx: number, ty: number) {
@@ -377,6 +429,32 @@ const legendKinds = legend
           <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="context-stroke" stroke-width="1.5" />
         </marker>
       </defs>
+
+      {/* Swimlane bands (behind everything): a labeled row per lane. */}
+      {
+        lanes.length > 0 && (
+          <g class="flow-lanes">
+            {lanes.map((lane, i) => (
+              <>
+                <rect
+                  class={`flow-lane-band flow-lane-band--${i % 2}`}
+                  x={0}
+                  y={lane.top}
+                  width={svgW}
+                  height={lane.height}
+                />
+                <text
+                  class="flow-lane-label"
+                  x={PAD / 2}
+                  y={lane.top + lane.height / 2}
+                >
+                  {lane.name}
+                </text>
+              </>
+            ))}
+          </g>
+        )
+      }
 
       {/* Edges under the boxes */}
       <g class="flow-edges">

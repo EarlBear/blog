@@ -673,3 +673,20 @@ a:focus:not(:focus-visible) {
   height: 18px;
   flex: none;
 }
+
+/* FlowDiagram swimlane bands — one labeled horizontal row per lane. */
+.flow-diagram .flow-lane-band {
+  fill: var(--color-surface-sunken);
+}
+.flow-diagram .flow-lane-band--1 {
+  fill: var(--color-canvas);
+}
+.flow-diagram .flow-lane-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  dominant-baseline: central;
+}

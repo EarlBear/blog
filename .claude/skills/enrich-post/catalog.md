@@ -15,6 +15,7 @@ a technique.
 | **architecture / boundary** | what runs where; what crosses a trust line | `FlowDiagram` with `kind: 'edge' \| 'store' \| 'external'` nodes (add `legend` to explain them) | native spec | `from-one-laptop-...`, `mining-...-transcripts` |
 | **sequence / steps** | ordered vertical steps | `FlowDiagram shape="sequence"` (or `mermaid` with `TB`/`TD`) | native spec **or** `mermaid` | — |
 | **branch / decision flow** | a step that forks into 2+ mutually-exclusive outcomes | `FlowDiagram shape="branch"` (layered top-down; forks fan into a row, labeled edges) | native spec | `syncing-...-transcripts` |
+| **swimlane / handoffs** | who owns which step; work handing off across owners | `FlowDiagram shape="swimlane"` (nodes carry a `lane`; each lane is a labeled band, flow reads left→right, cross-lane edges = handoffs) | native spec | — |
 | **decision / options** | weigh options toward a choice | `Accordion` (+ optional `FlowDiagram` for the flow) | native spec (items with `verdict`) | `one-database-two-modes` |
 
 ## The Mermaid decision rule (why we parse, not render)
