@@ -27,6 +27,7 @@ Here is how a session becomes a row on a chart.
 <FlowDiagram
   title="Transcript pipeline"
   shape="pipeline"
+  legend
   desc="A session transcript is extracted and sanitized on the laptop; only derived metrics cross to Supabase and then to the dashboard. Raw content never leaves the edge."
   nodes={[
     { id: 'jsonl', label: 'JSONL', detail: 'The append-only session transcript in ~/.claude/projects/ — one JSON object per turn, with content blocks and token usage. The ground truth of what an agent did.' },

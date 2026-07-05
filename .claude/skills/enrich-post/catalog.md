@@ -12,7 +12,7 @@ a technique.
 | **use case** | who does what to a system (actors + oval use cases) | `UseCaseDiagram` | native spec (actors/useCases/links) | `earlbear-use-cases` |
 | **pipeline** | linear A → B → C data or handoff flow | `FlowDiagram shape="pipeline"` | native spec **or** `mermaid` string | `mining-...-transcripts` |
 | **loop** | a cycle whose last step feeds the first (flywheel) | `FlowDiagram` (auto-detected from a back-edge, or `shape="loop"`) | native spec **or** `mermaid` | `agentic-workflow-...` |
-| **architecture / boundary** | what runs where; what crosses a trust line | `FlowDiagram` with `kind: 'edge' \| 'store' \| 'external'` nodes | native spec | `from-one-laptop-...` |
+| **architecture / boundary** | what runs where; what crosses a trust line | `FlowDiagram` with `kind: 'edge' \| 'store' \| 'external'` nodes (add `legend` to explain them) | native spec | `from-one-laptop-...`, `mining-...-transcripts` |
 | **sequence / steps** | ordered vertical steps | `FlowDiagram shape="sequence"` (or `mermaid` with `TB`/`TD`) | native spec **or** `mermaid` | — |
 | **branch / decision flow** | a step that forks into 2+ mutually-exclusive outcomes | `FlowDiagram shape="branch"` (layered top-down; forks fan into a row, labeled edges) | native spec | `syncing-...-transcripts` |
 | **decision / options** | weigh options toward a choice | `Accordion` (+ optional `FlowDiagram` for the flow) | native spec (items with `verdict`) | `one-database-two-modes` |

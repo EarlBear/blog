@@ -43,8 +43,11 @@ every time we add a primitive.
 
 4. **Author the diagram** where the prose introduces the structure, and add a short
    sentence pointing at it ("click any stage…", "here is that loop"). Fill in node
-   `detail` so the click-to-focus modal has something to say. Keep every label and
-   detail in house voice: sentence case, no emoji, no exclamation points.
+   `detail` so the click-to-focus modal has something to say. If you use the
+   `store`/`external`/`edge` node kinds, add `legend` so a reader can decode the
+   swatches (a datastore, something outside the system, a trust boundary). Keep
+   every label and detail in house voice: sentence case, no emoji, no exclamation
+   points.
 
 5. **Verify — the gates only check geometry, not meaning:**
    ```bash

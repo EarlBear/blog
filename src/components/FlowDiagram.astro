@@ -43,6 +43,9 @@ interface Props {
   mermaid?: string;
   /** Downgrade the build-time overlap gate to a warning for this diagram. */
   allowOverlap?: boolean;
+  /** Show a key explaining the special node kinds actually used (store, external,
+   *  edge). Off by default — a diagram of only default boxes needs no legend. */
+  legend?: boolean;
 }
 
 import { parseMermaidFlow } from './diagram/mermaid-parse';
@@ -55,6 +58,7 @@ const {
   edges: edgesProp,
   mermaid,
   allowOverlap = false,
+  legend = false,
 } = Astro.props;
 
 // Resolve the spec: explicit nodes/edges, or parse the Mermaid string.
@@ -323,6 +327,16 @@ const nodeDetail = nodes.map((n) => {
   return { id: n.id, label: n.label, detail: n.detail ?? '', to, from };
 });
 const interactive = nodeDetail.some((d) => d.detail);
+
+// ---- Legend: explain the special node kinds that actually appear -----------
+const KIND_MEANING: Record<string, string> = {
+  store: 'datastore',
+  external: 'outside the system',
+  edge: 'trust boundary',
+};
+const legendKinds = legend
+  ? (['edge', 'store', 'external'] as const).filter((k) => nodes.some((n) => n.kind === k))
+  : [];
 ---
 
 <figure class={`flow-diagram flow-diagram--${shape}`} data-flow={salt}>
@@ -434,6 +448,29 @@ const interactive = nodeDetail.some((d) => d.detail);
     </svg>
   </div>
   {desc && <figcaption class="flow-caption">{desc}</figcaption>}
+
+  {
+    legendKinds.length > 0 && (
+      <ul class="flow-legend" aria-label="Node kinds key">
+        {legendKinds.map((k) => (
+          <li class="flow-legend-item">
+            <svg class="flow-legend-swatch" viewBox="0 0 28 18" aria-hidden="true">
+              <rect
+                x="1"
+                y="1"
+                width="26"
+                height="16"
+                rx={k === 'store' ? 2 : 5}
+                class={`flow-box flow-box--${k}`}
+                fill="var(--color-surface-sunken)"
+              />
+            </svg>
+            <span class="flow-legend-label">{KIND_MEANING[k]}</span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
 
   {
     interactive && (
