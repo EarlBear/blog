@@ -138,6 +138,16 @@ violation with its fix. When that happens:
 5. If a rule itself is wrong (false positive), stop and raise it with the user
    instead of working around it.
 
+## A picture is worth a thousand words
+
+This is a blog tenet, not a nicety: **interleave visuals; never ship a wall of
+text.** As you draft, whenever a section describes a *structure* — a flow, a loop,
+a boundary, a decision, who-does-what — stop and ask whether a diagram carries it
+better than the next three paragraphs. It almost always does. The diagram catalog
+(`enrich-post` skill) has a technique for each; embedding one is cheap. A
+non-blocking `visuals-check` warns when a section runs long with no visual — treat
+that warning as a prompt to reach for the catalog, not noise to ignore.
+
 ## Interactive widgets and charts
 
 Posts may embed plain HTML/CSS/JS directly in the markdown (calculators, charts —

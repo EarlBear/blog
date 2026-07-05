@@ -40,6 +40,10 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-diagrams.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-visual-density.py"
           }
         ]
       }

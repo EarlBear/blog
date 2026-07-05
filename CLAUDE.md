@@ -28,6 +28,13 @@ The EarlBear blog — a static Astro site served via GitHub Pages at
   so `currentColor` tinting works.
 - **Brand voice**: sentence case, no emoji, no exclamation points, tabular
   numerics (`.num`).
+- **A picture is worth a thousand words**: interleave visuals — never ship a wall
+  of text. When a section describes a structure (a flow, a loop, a boundary, a
+  decision, who-does-what), reach for a diagram before writing three more
+  paragraphs. The blog has zero-dep diagram components (`FlowDiagram`,
+  `UseCaseDiagram`, `Accordion`) and an `enrich-post` skill + catalog for exactly
+  this. A non-blocking `visuals-check` hook nudges when a section runs long with no
+  visual (`npm run visuals-check`).
 
 ## Local setup
 
