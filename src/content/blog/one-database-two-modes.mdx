@@ -14,6 +14,7 @@ questions:
 ---
 
 import Accordion from '../../components/Accordion.astro';
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
 
 Our agent dashboard reads *marts* — pre-aggregated tables of metrics rolled up from the
 transcripts of our agent sessions. That data has to live somewhere, and the aggregation
@@ -36,6 +37,25 @@ Four things pulled the decision in different directions:
   keep in sync, and debug.
 - **Scale horizon.** Today it is a handful of sessions on one laptop. It may grow to many
   gigabytes across many machines. We want that future to be a port, not a rewrite.
+
+Here is how the three options score against those four forces at a glance — the
+narrative for each follows below.
+
+<ComparisonMatrix
+  title="Where the aggregation lives"
+  desc="The three options scored against the four forces. Postgres everywhere is the only one that keeps a single aggregation, which is the force that decided it."
+  options={[
+    { id: 'pg', label: 'Postgres everywhere', chosen: true },
+    { id: 'duck', label: 'DuckDB + Postgres' },
+    { id: 'py', label: 'Python + Postgres' },
+  ]}
+  criteria={[
+    { label: 'Low local friction', cells: { pg: 'partial', duck: 'yes', py: 'yes' } },
+    { label: 'One aggregation (consistency)', cells: { pg: 'yes', duck: 'no', py: 'no' } },
+    { label: 'Low operational burden', cells: { pg: 'yes', duck: 'partial', py: 'partial' } },
+    { label: 'Scales as a port', cells: { pg: 'yes', duck: 'yes', py: 'no' } },
+  ]}
+/>
 
 ## The options
 

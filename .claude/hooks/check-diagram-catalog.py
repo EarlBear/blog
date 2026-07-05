@@ -28,8 +28,9 @@ COMPONENTS_DIR = Path("src/components")
 CATALOG = Path(".claude/skills/enrich-post/catalog.md")
 FLOW = Path("src/components/FlowDiagram.astro")
 
-# Components that are diagram/visual primitives the catalog should cover.
-DIAGRAM_COMPONENT_RE = re.compile(r"(?:.*Diagram|Accordion)\.astro$")
+# Components that are diagram/visual primitives the catalog should cover. Matches
+# *Diagram and *Matrix components plus the named visual primitives (Accordion).
+DIAGRAM_COMPONENT_RE = re.compile(r"(?:.*Diagram|.*Matrix|Accordion)\.astro$")
 
 
 def diagram_components(root: Path):

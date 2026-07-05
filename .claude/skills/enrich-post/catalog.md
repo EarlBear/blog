@@ -16,7 +16,8 @@ a technique.
 | **sequence / steps** | ordered vertical steps | `FlowDiagram shape="sequence"` (or `mermaid` with `TB`/`TD`) | native spec **or** `mermaid` | — |
 | **branch / decision flow** | a step that forks into 2+ mutually-exclusive outcomes | `FlowDiagram shape="branch"` (layered top-down; forks fan into a row, labeled edges) | native spec | `syncing-...-transcripts` |
 | **swimlane / handoffs** | who owns which step; work handing off across owners | `FlowDiagram shape="swimlane"` (nodes carry a `lane`; each lane is a labeled band, flow reads left→right, cross-lane edges = handoffs) | native spec | `agentic-workflow-...` |
-| **decision / options** | weigh options toward a choice | `Accordion` (+ optional `FlowDiagram` for the flow) | native spec (items with `verdict`) | `one-database-two-modes` |
+| **decision / options** | weigh options toward a choice (the narrative) | `Accordion` (+ optional `FlowDiagram` for the flow) | native spec (items with `verdict`) | `one-database-two-modes` |
+| **comparison matrix** | options × criteria, head-to-head, at a glance | `ComparisonMatrix` (options = columns, criteria = rows, cells = yes/no/partial or a value; chosen column highlighted) | native spec | `one-database-two-modes` |
 
 ## The Mermaid decision rule (why we parse, not render)
 
