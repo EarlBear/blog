@@ -28,6 +28,9 @@ Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from
 - [x] Enrich via /enrich-post: syncing-append-only-transcripts (rewind-guard decision flow, FlowDiagram sequence) + what-we-never-collect (raw-stays trust-boundary pipeline); note branch-layout gap in catalog.md @done(2026-07-04T00:00:00Z) #git:38a012f6
 - [x] Add FlowDiagram shape="branch": layered top-down layout that fans a fork's outcomes into a row with labeled edges (passes overlap gate, no allowOverlap); re-render syncing rewind-guard as a branch; close the catalog gap @done(2026-07-04T00:00:00Z) #git:e3df97e5
 - [x] Enrich a-pitch-deck-that-reads-its-own-numbers (→.mdx): "one selector, two surfaces" branch — marts → shared selector → deck + dashboard @done(2026-07-04T00:00:00Z) #git:e3df97e5
+- [x] Auto-detect FlowDiagram shape from graph (loop from back-edge, branch from a 2+-out-degree fork) for both native + Mermaid paths, so Mermaid forks render as branches with no shape prop; removed now-unneeded allowOverlap on from-one-laptop @done(2026-07-04T00:00:00Z) #git:pending
+- [x] Fix missing FlowDiagram import in from-one-laptop-to-the-cloud.mdx (rendered fine in prod because draft, broke in dev) @done(2026-07-04T00:00:00Z) #git:pending
+- [x] Add check-diagrams.py (npm run diagrams-check, make check, PostToolUse hook): every Capitalized component used in an .mdx post must be imported — catches the missing-import class of bug that drafts hide from the build @done(2026-07-04T00:00:00Z) #git:pending
 - [x] Build skills: new-post, manage-authors, feature-docs, sync-design, deploy @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Regenerate favicon from earl-mark.svg (glasses mark), accent-tinted, via scripts/gen-favicon.mjs @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Multi-author support: authors collection, co-author bylines, /authors/ + /authors/<id>/, RSS author @done(2026-07-03T00:00:00Z) #git:71331877

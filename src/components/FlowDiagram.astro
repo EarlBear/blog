@@ -60,7 +60,7 @@ const {
 // Resolve the spec: explicit nodes/edges, or parse the Mermaid string.
 let nodes: FlowNode[];
 let edges: FlowEdge[];
-let inferredShape: 'pipeline' | 'loop' | 'sequence' = 'pipeline';
+let inferredShape: 'pipeline' | 'loop' | 'sequence' | 'branch' = 'pipeline';
 if (mermaid) {
   const parsed = parseMermaidFlow(mermaid);
   nodes = parsed.nodes;
@@ -70,13 +70,20 @@ if (mermaid) {
   nodes = nodesProp ?? [];
   edges = edgesProp ?? [];
 }
-// A back-edge to an earlier node means the flow cycles → render as a loop. This
-// runs for both authoring paths, so `{from:'review', to:'scan'}` becomes a ring
-// without the author having to also pass shape="loop".
+// Infer the shape from the graph so authors rarely need to pass `shape` — this
+// runs for both the native and Mermaid paths, in precedence order:
+//   - a back-edge to an earlier node → a cycle → `loop`
+//   - a node with 2+ outgoing edges → a fork → `branch` (wins over sequence: a
+//     top-down flowchart that forks still needs the fan-out layout)
+//   - otherwise the parser's shape stands (pipeline, or sequence for TB/TD)
 {
   const index = new Map(nodes.map((n, i) => [n.id, i]));
   const hasBackEdge = edges.some((e) => (index.get(e.to) ?? 0) <= (index.get(e.from) ?? 0));
-  if (hasBackEdge && inferredShape !== 'sequence') inferredShape = 'loop';
+  const outDegree = new Map<string, number>();
+  for (const e of edges) outDegree.set(e.from, (outDegree.get(e.from) ?? 0) + 1);
+  const hasFork = [...outDegree.values()].some((d) => d >= 2);
+  if (hasBackEdge) inferredShape = 'loop';
+  else if (hasFork) inferredShape = 'branch';
 }
 const shape = shapeProp ?? inferredShape;
 

@@ -13,6 +13,8 @@ questions:
   - How do you keep the raw data on the laptop across all of these regimes?
 ---
 
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
 A system that runs on a laptop, in production, and at scale usually becomes three systems —
 three code paths, three sets of bugs, three things to keep in sync. We wanted one. The
 telemetry pipeline behind our agent dashboard runs on a laptop with no cloud account, in
@@ -34,7 +36,6 @@ system in all three. Here is the shape that makes that true.
     { from: 'core', to: 'cloud', label: 'same SQL' },
     { from: 'core', to: 'scale', label: 'later' },
   ]}
-  allowOverlap
 />
 
 ## Local without the cloud

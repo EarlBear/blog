@@ -36,6 +36,10 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-posts.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-diagrams.py"
           }
         ]
       }
