@@ -180,8 +180,46 @@ failed. In order:
 5. Runs can sit `queued` for minutes when runner/Pages capacity is constrained —
    that is not a failure. Only a `completed/failure` conclusion is.
 
+## Post-deployment validation (do this after EVERY deploy — never stop at "pushed")
+
+"Deployed" is not "correct and live." After each target, validate:
+
+**External (`blog.earlbear.com`):**
+
+```bash
+curl -sL -o /dev/null -w "home: %{http_code}\n" https://blog.earlbear.com/
+# a post that IS external → 200:
+curl -sL -o /dev/null -w "%{http_code}\n" https://blog.earlbear.com/blog/<external-slug>/
+# SECURITY: a post that is INTERNAL → must be 404 (never public):
+curl -sL -o /dev/null -w "%{http_code}\n" https://blog.earlbear.com/blog/<internal-slug>/
+```
+Home + external post = 200; **every internal post = 404**. A 200 on an internal
+post is a disclosure — treat as an incident.
+
+**Internal (`blog.internal.earlbear.com`):**
+
+```bash
+# The deployment is listed:
+dotenvx run -- wrangler pages deployment list --project-name earlbear-blog-internal
+# GATED: the domain must redirect to the CF Access login, NOT serve content off-org:
+curl -sL -o /dev/null -w "%{http_code} → %{url_effective}\n" https://blog.internal.earlbear.com/
+```
+The URL must resolve to `earlbear.cloudflareaccess.com/cdn-cgi/access/login/…`
+(a 302 → login), **not** the blog content. If it serves content off-org, the CF
+Access app isn't gating it — stop and fix the Access policy before treating it as
+private.
+
+**Both:** the deploy's own `check-audience.py --check-dist` gate already proved the
+built artifact had no cross-audience content; the live checks above confirm the
+*serving* matches. Record the outcome: mark the deploy task done with the shipped
+commit, and note both live URLs verified.
+
 ## Notes
 
-- Rollback = redeploy from an earlier `main` commit (checkout, `npm run deploy`).
-- The custom domain is preserved across deploys because `public/CNAME` is copied
-  into every build — don't remove it.
+- Rollback = redeploy from an earlier `main` commit (checkout, then the matching
+  `npm run deploy` / `deploy:internal`).
+- The external custom domain rides on `public/CNAME`; the internal deploy strips it
+  (`rm -f dist/CNAME`) so the internal artifact can't claim `blog.earlbear.com`.
+- **Deploy-script env order:** the `assert-target` guard reads `PUBLIC_AUDIENCE`, so
+  the deploy scripts set it at the *front* of the command (not only inside the build
+  sub-step) — otherwise the guard sees it unset and blocks. Keep that prefix.
