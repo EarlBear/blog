@@ -1,0 +1,195 @@
+---
+title: The logout button Cloudflare doesn't give you
+description: Cloudflare Access gates the door but renders no logout button once you're inside — that's the app's job. We had one site with a Sign-out and three without, two of which can't run the same code. Here's how we shipped one consistent login-and-logout nav across all of them without pretending a single component could cover every site.
+pubDate: 2026-07-06
+tags: [engineering, security, internal]
+authors: [omar]
+design: internal-nav
+audience: internal
+expects: [comparison, flow]
+questions:
+  - Why does an internal EarlBear app show your email and a Sign-out button, and where does that come from?
+  - If Cloudflare Access handles login, why did we have to build the logout ourselves?
+  - How do you share one nav across a React app, an Astro site with no JavaScript, and a static HTML page?
+  - Is the email in the top bar something we can trust for anything?
+draft: true
+---
+
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Someone signed into `gtm.earlbear.com`, got past the login page, and then asked the
+obvious next question: *where's the logout button?* There wasn't one. Meanwhile the
+wireframes gallery next door had a tidy Sign-out chip in its corner. Same company,
+same login wall, two different experiences depending on which app you happened to
+open.
+
+This is the story of closing that gap — and of why the fix couldn't be "just add
+the button to gtm." Once we looked, three of our four internal sites had no logout,
+and two of them can't run the same code the gallery does. The interesting part isn't
+the button. It's what Cloudflare Access does and doesn't do for you, and what that
+leaves on our plate.
+
+## The gate is not the nav
+
+Every internal EarlBear site — the wireframes gallery, the GTM app, the internal
+blog, the apps launcher — sits behind Cloudflare Access with Google sign-in
+restricted to `@earlbear.com`. That gate is genuinely all-or-nothing: an
+unauthenticated request never reaches the app. It gets a `302` to the sign-in page
+and comes back only with a valid session. We verified that live on every host; it is
+the sole security boundary, and nothing in this post changes it.
+
+But Cloudflare Access gates the **door**. It does not render anything **inside** the
+room. Once you're signed in, the page you see is entirely your app's HTML — Access
+injected no header, no account menu, no Sign-out link. So "show me who I'm signed in
+as" and "let me sign out" are entirely the app's job. The gallery had done that job.
+gtm, the blog, and the launcher hadn't. Nothing was broken, exactly — you *could*
+sign out by clearing the session manually — but there was no button, and no two apps
+agreed on what one should look like.
+
+The signing-out itself has a nice property: Cloudflare gives you a fixed endpoint,
+`/cdn-cgi/access/logout`, on every gated host. A plain link to it clears the Access
+session for that host. No backend, no library, no per-app wiring. The hard part was
+never *how to log out*. It was making every site offer it, consistently, when the
+sites are built three different ways.
+
+## Three ways to build a website, one nav to share
+
+Here's the wrinkle that shaped the whole design. Our four internal sites don't share
+a rendering model:
+
+- The **gallery** and **gtm** are React apps. They can import a shared React
+  component.
+- The **internal blog** is Astro built to ship *zero* client JavaScript — no React
+  integration at all, on purpose. It hand-ports design-system components into
+  `.astro` templates.
+- The **apps launcher** is a single static `index.html` with no bundler.
+
+So the tidy answer — "write one `EarlBearNav` component, import it everywhere" —
+is a trap. Two of the four sites can't import a React component without contradicting
+how they're deliberately built. We wrote the options down honestly before choosing,
+because the obvious one was the wrong one.
+
+<ComparisonMatrix
+  title="How to share the nav across three rendering models"
+  desc="Three ways to give every internal site the same login/logout nav, scored against the forces. The hybrid wins because it's the only one that respects the blog's zero-JS design and the launcher's no-bundler reality while still de-duplicating the React apps."
+  options={[
+    { id: 'react', label: 'One React component for all' },
+    { id: 'perapp', label: 'Plain per-app, no sharing' },
+    { id: 'hybrid', label: 'Hybrid: shared React + codified snippet', chosen: true },
+  ]}
+  criteria={[
+    { label: 'Works on the zero-JS blog', cells: { react: 'no', perapp: 'yes', hybrid: 'yes' } },
+    { label: 'Works on the static launcher', cells: { react: 'no', perapp: 'yes', hybrid: 'yes' } },
+    { label: 'One source of truth (no drift)', cells: { react: 'yes', perapp: 'no', hybrid: 'partial' } },
+    { label: 'No per-app backend', cells: { react: 'yes', perapp: 'yes', hybrid: 'yes' } },
+  ]}
+/>
+
+"One React component" fails the two non-React sites outright. Adding a React island
+to the blog just to render a logout link would contradict the reason the blog is
+zero-JS in the first place, and the static launcher has no build step to import
+anything into. "Plain per-app, no sharing" is exactly the status quo that drifted —
+duplicated markup, inconsistent copy, and easy to forget, which is how gtm shipped
+without a button at all.
+
+So we chose the **hybrid**: one shared React `EarlBearNav` component for the two
+React apps, and a matching plain-HTML/Astro Sign-out snippet — same markup, same
+Cloudflare semantics, same tooltip copy — for the blog and the launcher. One spec,
+two adaptations. We accepted a small, honest cost: the spec lives in two places
+rather than one artifact. The alternative was pretending a component could go
+somewhere it structurally can't.
+
+The shared component lives in `@earlbear/ui` — which is just our existing
+design-system package under its published name. Both React apps already linked it,
+and the gallery already had a `UserMenu` doing exactly this. We generalized that
+proven pattern into `EarlBearNav` rather than inventing anything new.
+
+## Who am I signed in as, without a backend
+
+Showing a Sign-out link needs nothing. Showing *your email* next to it needs to know
+who you are — and that's where a second trap sits. The gallery learned the email
+from `/api/me`, a small Cloudflare Pages Function that verifies the signed session
+token against Cloudflare's certificates and returns the email. It's robust. It also
+exists only in the gallery's repo. Copying it into gtm, the blog, and the launcher
+would mean four backends to maintain, just to print a string.
+
+Cloudflare Access already offers a native endpoint for this: `/cdn-cgi/access/get-identity`.
+On any gated host, past the gate, it returns the signed-in identity — including the
+email — with no per-app backend at all. So that became the default identity source
+for the nav, with an option for a site to point at its own verified `/api/me` if it
+has one (the gallery still does). If the fetch returns nothing — as it does on an
+un-gated or public build — the component simply hides the email chip and still
+renders the rest. It degrades quietly instead of breaking.
+
+Which raises the one question worth taking seriously.
+
+## Can we trust that email?
+
+For *display*, yes. For *authorization*, we made a rule.
+
+`/cdn-cgi/access/get-identity` is served by Cloudflare Access only past the gate — an
+unauthenticated visitor can never reach it — so the email it returns is exactly as
+trustworthy as the gate itself. What it does **not** do is cryptographically
+re-verify the session token the way `/api/me` does. That difference doesn't matter
+here, because the nav never makes a decision based on the email. It shows it. It gates
+nothing. Cloudflare Access remains the only thing standing between a stranger and the
+app.
+
+But a displayed email is a tempting thing to reach for later — "oh, I'll just read
+the email from the nav and use it to decide what this user can see." So we wrote the
+invariant down where it can't be missed, in the component's own code:
+
+> The email is **display-only** and must never be used for any authorization
+> decision. Any future feature that gates on identity must read a *verified* source
+> (`/api/me`), never the string in the top bar.
+
+Naming the sharp edge is cheaper than getting cut by it in six months.
+
+## The full loop
+
+Here's the whole cycle the nav now supports on every internal host — the part
+Cloudflare gives us, the part we render, and what happens when you click Sign out.
+Click a step for what it does.
+
+<FlowDiagram
+  title="Sign in, work, sign out — who does what"
+  shape="branch"
+  legend
+  desc="Cloudflare Access owns the gate and the logout endpoint; the app owns the nav that shows your identity and offers the Sign-out link. Clicking Sign out clears the Access session for that host, so the next visit is gated again."
+  nodes={[
+    { id: 'gate', label: 'CF Access gate', kind: 'external', detail: 'An unauthenticated request never reaches the app — Cloudflare Access 302s it to Google sign-in (@earlbear.com only) and returns it with a valid session. This is the only security boundary.' },
+    { id: 'nav', label: 'App renders the nav', detail: 'Past the gate, the app renders EarlBearNav (React) or the plain Astro/HTML snippet. It fetches /cdn-cgi/access/get-identity to show your email — display-only, never used for authz.' },
+    { id: 'signout', label: 'Click Sign out', detail: 'A plain link to /cdn-cgi/access/logout — Cloudflare provides this endpoint on every gated host. No backend, no library.' },
+    { id: 'cleared', label: 'CF session cleared', kind: 'store', detail: 'The Access session for this host is gone. Note: your Google account stays signed in on the browser — the tooltip says so — so a full logout means signing out of Google directly.' },
+    { id: 'regate', label: 'Next visit re-gated', kind: 'external', detail: 'With no session, the next request to the host is back to step one: 302 to sign-in. The loop is closed, and we verified it end to end on every host.' },
+  ]}
+  edges={[
+    { from: 'gate', to: 'nav', label: 'authenticated' },
+    { from: 'nav', to: 'signout' },
+    { from: 'signout', to: 'cleared' },
+    { from: 'cleared', to: 'regate' },
+    { from: 'regate', to: 'gate', label: 'unauthenticated' },
+  ]}
+/>
+
+One detail in that flow is easy to under-explain to a teammate, so the tooltip on the
+Sign-out link says it out loud: clicking Sign out clears your *EarlBear* session, but
+your Google account stays signed in on the browser. That's Cloudflare's behavior, not
+ours — but a user who clicks "Sign out" and then finds Google still logged in
+elsewhere deserves to know why. So the button's hover text explains the two-session
+distinction rather than surprising anyone.
+
+## What shipped
+
+Four sites, one behavior. The gallery and gtm render the shared `EarlBearNav`; the
+internal blog and the launcher carry the same Sign-out link and tooltip as a plain
+snippet in their own markup. Every internal host now shows who you're signed in as
+and offers a consistent way out, and we walked the full sign-in-to-sign-out-to-re-gate
+loop live on each one.
+
+The lesson we'd keep: Cloudflare Access is a door, not a room. It's excellent at
+keeping the wrong people out, and it deliberately leaves everything *inside* to us. It
+was worth being honest that our four rooms are built three different ways — because
+the tidiest-looking fix, one component to rule them all, was the one thing two of our
+sites are designed never to accept.

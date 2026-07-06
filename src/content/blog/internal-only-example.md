@@ -1,7 +1,7 @@
 ---
 title: Internal-only example post
 description: A fixture post that exists only on the internal blog, used to prove the audience split.
-pubDate: 2026-07-05
+pubDate: 2026-07-03
 tags: [meta]
 authors: [omar]
 audience: internal
