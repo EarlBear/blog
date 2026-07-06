@@ -25,6 +25,18 @@ const blog = defineCollection({
     expects: z
       .array(z.enum(['comparison', 'flow', 'use-case', 'decision']))
       .default([]),
+    // Audience gate — REQUIRED on every post, no default. Each post must state
+    // its audience explicitly: 'external' publishes to the public site
+    // (blog.earlbear.com); 'internal' publishes only to the access-gated internal
+    // site (blog.internal.earlbear.com) and is filtered out of the external build.
+    // We make this required (rather than defaulting to external) so a forgotten
+    // field can never silently ship a post to the public site — a missing audience
+    // FAILS THE BUILD instead. The build target is chosen by PUBLIC_AUDIENCE — see
+    // getPublishedPosts() in src/lib/posts.ts (an allowlist, fail-closed for
+    // external). The enum also rejects any other value. This is the schema half of
+    // the internal/external split; the check-audience guard hook enforces the same
+    // at authoring time. See docs/features/audience-split.md.
+    audience: z.enum(['external', 'internal']),
     draft: z.boolean().default(false),
   }),
 });

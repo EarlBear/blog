@@ -8,3 +8,18 @@ useDefault = true
 [[allowlists]]
 description = "Env-var references (not secrets) — e.g. ${GITHUB_PACKAGES_TOKEN} in docs describing the old .npmrc pattern"
 regexes = ['''\$\{[A-Z_][A-Z0-9_]*\}''']
+
+[[allowlists]]
+description = "dotenvx-encrypted values in .env are ciphertext (safe), not usable secrets; .env.example holds only key names"
+paths = ['''\.env\.example$''']
+regexes = [
+  # dotenvx stores CLOUDFLARE_API_TOKEN as `encrypted:...` ciphertext — never a usable secret.
+  '''encrypted:[A-Za-z0-9+/=]+''',
+]
+
+# Catch a real Cloudflare API token if one is ever staged in plaintext (dotenvx
+# ciphertext above is allowlisted; this still trips on the raw token form).
+[[rules]]
+id = "cloudflare-api-token"
+description = "Cloudflare API token (plaintext) — never commit; store via `dotenvx set` (encrypted)"
+regex = '''(?i)\bcf[a-z0-9]{37}\b'''

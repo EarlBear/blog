@@ -1,12 +1,14 @@
 # EarlBear blog — common tasks
 #
-# Static Astro site, deployed to GitHub Pages from the gh-pages branch (no CI —
-# org billing disabled). Design system is vendored (see CLAUDE.md). Run `make`
-# with no args (or `make help`) to list targets.
+# Static Astro site with two audiences: the EXTERNAL site (blog.earlbear.com,
+# GitHub Pages / gh-pages branch, public) and the INTERNAL site
+# (blog.internal.earlbear.com, Cloudflare Pages, CF Access-gated). One repo, two
+# builds selected by PUBLIC_AUDIENCE — see CLAUDE.md. No CI (org billing disabled).
+# Design system is vendored. Run `make` with no args (or `make help`) for targets.
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan dev build preview deploy sync-assets \
+.PHONY: help install install-hooks scan key-backup key-restore key-status dev build build-internal preview deploy deploy-internal audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check check \
         bench-diagram clean
 
@@ -25,19 +27,49 @@ install-hooks: ## Wire git hooks (secret scan + concurrent-change capture) — r
 scan: ## Full gitleaks secret scan of the working tree + history
 	gitleaks detect --source . --verbose
 
+# The internal deploy (`make deploy-internal`) auths wrangler with a scoped
+# CLOUDFLARE_API_TOKEN (Account:Cloudflare Pages:Edit), stored dotenvx-ENCRYPTED in
+# .env and injected via `dotenvx run --` — the auth model the earlbear-domain
+# deploy-contract audit requires (not machine wrangler OAuth). The dotenvx PRIVATE
+# key (.env.keys) is gitignored and lives only on this machine, so LastPass is its
+# source-of-truth backup. Requires the lpass CLI + an active session (`lpass login
+# <email>`). Set the token once with `npx dotenvx set CLOUDFLARE_API_TOKEN <token>`.
+key-backup: ## Back up .env.keys (dotenvx private key) to LastPass (source of truth)
+	@npm run --silent key-backup
+
+key-restore: ## Restore .env.keys from LastPass (on a fresh clone / new machine)
+	@npm run --silent key-restore
+
+key-status: ## Show whether .env.keys is backed up in LastPass + present locally
+	@npm run --silent key-status
+
 ## --- develop -------------------------------------------------------------
 
 install: ## Install dependencies (all public — no token needed)
 	npm install
 
+# Ensure node_modules is present + in sync with the lockfile before any build/deploy,
+# so a fresh checkout deploy doesn't fail on a missing local wrangler/dotenvx. Runs
+# `npm ci` only when package-lock.json is newer than node_modules (cheap no-op otherwise).
+# The earlbear-domain deploy-contract audit requires build/deploy to have this prerequisite.
+node_modules: package-lock.json
+	npm ci
+	@touch node_modules
+
 dev: ## Run the local dev server (drafts visible) at localhost:4343
 	npm run dev
 
-build: ## Production build to dist/ (drafts excluded)
-	npm run build
+build: node_modules ## Production build to dist/ (external site: drafts + internal posts excluded)
+	npm run build:external
+
+build-internal: node_modules ## Production build to dist/ for the internal site (external posts excluded)
+	npm run build:internal
 
 preview: ## Serve the built dist/ locally
 	npm run preview
+
+audience-check: ## Verify the built dist/ contains no cross-audience content (fail-closed)
+	npm run audience-check
 
 ## --- design system (vendored) --------------------------------------------
 
@@ -82,8 +114,21 @@ bench-diagram: ## A/B + perf harness for the use-case diagram → docs/diagram-b
 
 ## --- ship ----------------------------------------------------------------
 
-deploy: ## Build and push dist/ to the gh-pages branch (publishes the site)
+deploy: node_modules ## Build + guard + push dist/ to gh-pages — publishes the EXTERNAL site (blog.earlbear.com)
 	npm run deploy
+
+# The scoped Account:Pages:Edit token can't read /memberships, so wrangler must NOT resolve the
+# account itself — pass CLOUDFLARE_ACCOUNT_ID explicitly. Non-secret; owned by earlbear-domain
+# (the single source for sibling repos). Mirrors earlbear-gtm-workflow's Makefile.
+CF_ACCOUNT_ID ?= $(shell make -C ../earlbear-domain -s account-id 2>/dev/null)
+
+deploy-internal: node_modules ## Build + guard + deploy to Cloudflare Pages — publishes the INTERNAL site (blog.internal.earlbear.com)
+	@# Two fixes so `make deploy-internal` works standalone (was requiring both to be exported by hand):
+	@#  1. PUBLIC_AUDIENCE=internal — the deploy:internal script's `check-audience --assert-target internal`
+	@#     runs BEFORE build:internal sets it inline, so it must be in the env up front.
+	@#  2. CLOUDFLARE_ACCOUNT_ID — see the note above (scoped token can't read /memberships).
+	@test -n "$(CF_ACCOUNT_ID)" || (echo "FAIL: no CLOUDFLARE_ACCOUNT_ID (is ../earlbear-domain present?)" && exit 1)
+	PUBLIC_AUDIENCE=internal CLOUDFLARE_ACCOUNT_ID=$(CF_ACCOUNT_ID) npm run deploy:internal
 
 ## --- housekeeping --------------------------------------------------------
 

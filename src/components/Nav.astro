@@ -1,6 +1,13 @@
 ---
 import EarlMark from './EarlMark.astro';
 
+interface Props {
+  // True on the internal (access-gated) build — shows an "internal" marker so
+  // there is never ambiguity about which site this is.
+  internal?: boolean;
+}
+const { internal = false } = Astro.props;
+
 const links = [
   { href: '/', label: 'Posts' },
   { href: '/tags/', label: 'Tags' },
@@ -11,15 +18,47 @@ const links = [
 ---
 
 <nav class="nav">
-  <a class="brand" href="/" aria-label="EarlBear blog home">
+  <a class="brand" href="/" aria-label={internal ? 'EarlBear internal blog home' : 'EarlBear blog home'}>
     <span class="mark"><EarlMark size={24} /></span>
     <span class="brand-text">EarlBear</span>
     <span class="brand-sub">blog</span>
   </a>
+  {internal && <span class="internal-badge">internal</span>}
   <div class="links">
     {links.map((l) => <a href={l.href}>{l.label}</a>)}
   </div>
+  {internal && (
+    <div class="usermenu">
+      {/* Email filled in client-side from CF Access get-identity (below); hidden until known. */}
+      <span class="user-email" data-user-email hidden></span>
+      {/* Standard EarlBear Sign-out: clears the CF Access session on this host. Matches the shared
+          @earlbear/ui UserMenu / gallery pattern. See earlbear-domain/docs/internal-nav-design.md. */}
+      <a
+        class="signout"
+        href="/cdn-cgi/access/logout"
+        title="Sign out of EarlBear. This clears your EarlBear (Cloudflare Access) session; your Google account stays signed in on this browser (sign out of Google directly for a full logout)."
+      >Sign out</a>
+    </div>
+  )}
 </nav>
+
+{
+  /* Internal-only: show the signed-in email. This is the ONLY client JS the internal blog ships,
+     and it runs solely on the CF-Access-gated build. The email is DISPLAY-ONLY (never used for authz).
+     get-identity is reachable only past the gate, so it's absent/failing on the public build. */
+  internal && (
+    <script is:inline>
+      fetch('/cdn-cgi/access/get-identity', { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const email = d && (d.email || (d.identity && d.identity.email));
+          const el = document.querySelector('[data-user-email]');
+          if (email && el) { el.textContent = email; el.hidden = false; }
+        })
+        .catch(() => {});
+    </script>
+  )
+}
 
 <style>
   .nav {
@@ -42,6 +81,37 @@ const links = [
     text-decoration: none;
     border: none;
   }
+  /* Signed-in email + Sign-out (internal build only) — mirrors the shared @earlbear/ui UserMenu. */
+  .usermenu {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .user-email {
+    font-size: var(--fs-xs);
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+  }
+  .signout {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-sans);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    padding: 5px 12px;
+    border-radius: 9999px;
+    text-decoration: none;
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    background: var(--color-surface);
+    transition: all 150ms;
+  }
+  .signout:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
   .mark {
     color: var(--color-accent);
     display: inline-flex;
@@ -57,6 +127,18 @@ const links = [
     font-size: var(--fs-sm);
     color: var(--color-text-muted);
     font-weight: var(--fw-regular);
+  }
+  .internal-badge {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-pill);
+    padding: 2px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    line-height: 1;
   }
   .links {
     margin-left: auto;

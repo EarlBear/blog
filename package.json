@@ -7,14 +7,22 @@
     "sync-assets": "node scripts/sync-ui-assets.mjs",
     "dev": "astro dev",
     "build": "astro build",
+    "build:external": "PUBLIC_AUDIENCE=external astro build",
+    "build:internal": "PUBLIC_AUDIENCE=internal astro build",
     "preview": "astro preview",
-    "deploy": "npm run build && gh-pages -d dist --dotfiles --nojekyll -m \"Deploy blog\"",
+    "audience-check": "python3 .claude/hooks/check-audience.py --check-dist dist",
+    "deploy": "python3 .claude/hooks/check-audience.py --assert-target external && npm run build:external && npm run audience-check && gh-pages -d dist --dotfiles --nojekyll -m \"Deploy blog\"",
+    "deploy:internal": "python3 .claude/hooks/check-audience.py --assert-target internal && npm run build:internal && python3 .claude/hooks/check-audience.py --check-dist dist --audience internal && rm -f dist/CNAME && ./node_modules/.bin/dotenvx run --quiet -- ./node_modules/.bin/wrangler pages deploy dist --project-name earlbear-blog-internal --branch main --commit-dirty=true",
+    "key-backup": "scripts/lastpass-key.sh backup",
+    "key-restore": "scripts/lastpass-key.sh restore",
+    "key-status": "scripts/lastpass-key.sh status",
     "tasks-check": "python3 .claude/hooks/check-task-files.py --check",
     "posts-check": "python3 .claude/hooks/check-posts.py --check",
     "diagrams-check": "python3 .claude/hooks/check-diagrams.py --check",
     "visuals-check": "python3 .claude/hooks/check-visual-density.py --check",
     "catalog-check": "python3 .claude/hooks/check-diagram-catalog.py --check",
     "expects-check": "python3 .claude/hooks/check-visual-expectations.py --check",
+    "audience-fit-check": "python3 .claude/hooks/check-audience-fit.py --check",
     "features:check": "python3 scripts/features_check.py",
     "features:seed": "python3 scripts/features_check.py --seed",
     "regen-favicon": "node scripts/gen-favicon.mjs",
@@ -27,6 +35,8 @@
     "astro": "^5.1.1"
   },
   "devDependencies": {
-    "gh-pages": "^6.2.0"
+    "@dotenvx/dotenvx": "^1.75.1",
+    "gh-pages": "^6.2.0",
+    "wrangler": "^4.84.0"
   }
 }

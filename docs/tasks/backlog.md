@@ -30,3 +30,4 @@ Candidates that surfaced while building the diagram catalog (`enrich-post` /
 ## Deferred infra
 
 - [ ] Astro/dependency security advisories: `npm audit` reports pre-existing Astro-5 XSS/SSR classes (don't apply to this prerendered static site; fixing means an Astro 7 major upgrade). Revisit as a scoped upgrade, not a routine fix. Surfaced by the `frontend-audit` skill.
+- [ ] Internal blog one-time infra: create the `earlbear-blog-internal` Cloudflare Pages project, attach `blog.internal.earlbear.com`, and provision the CF Access app (`make -C ../earlbear-domain cf-access-app-upsert DOMAINS="blog.internal.earlbear.com,earlbear-blog-internal.pages.dev" APP='EarlBear Blog (internal)' EMAIL_DOMAIN=earlbear.com`); then run `make deploy-internal`, verify CF Access gates it, and drop `awaiting_deploy` on the domains.yaml record.

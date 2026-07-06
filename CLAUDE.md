@@ -1,7 +1,9 @@
 # earlbear-blog
 
-The EarlBear blog — a static Astro site served via GitHub Pages at
-**https://blog.earlbear.com** (Cloudflare CNAME → `earlbear.github.io`).
+The EarlBear blog — a static Astro site. It builds **two audiences from one repo**:
+the public **external** site at **https://blog.earlbear.com** (GitHub Pages,
+Cloudflare CNAME → `earlbear.github.io`) and the org-only **internal** site at
+**https://blog.internal.earlbear.com** (Cloudflare Pages, CF Access-gated).
 
 ## Architecture
 
@@ -11,6 +13,18 @@ The EarlBear blog — a static Astro site served via GitHub Pages at
   it answers, from the request that prompted it) — rendered at the top of the
   post and enforced by `check-posts.py` (a PostToolUse hook + `make posts-check`)
   in addition to the zod schema. Use the `new-post` skill to scaffold posts.
+- **Audience split (internal vs external).** Every post must declare `audience:
+  external` or `audience: internal` in frontmatter — **required, no default** (a
+  missing field fails the build and is blocked at authoring, so a forgotten marker
+  can't silently go public). The build target is chosen by `PUBLIC_AUDIENCE` and the
+  single filter lives in `getPublishedPosts()` (`src/lib/posts.ts`) — an
+  **allowlist, fail-closed for external**, so a mis-marked audience makes a post
+  vanish, never leak.
+  `astro dev` shows every audience (with an "internal" badge); the external build
+  shows external-only, the internal build internal-only (with a teal accent + an
+  "internal" chrome marker). **An internal post must never reach blog.earlbear.com**
+  — that guarantee is enforced by layered safeguards (see the Audience safety
+  section below and `docs/features/audience-split.md`).
 - **Design system**: styling comes from the EarlBear design system, **vendored**
   into this repo — `src/styles/tokens.css` (the tokens CSS) and
   `public/vendor/*.svg` (assets), both committed. We import the tokens once in
@@ -50,16 +64,45 @@ To refresh the vendored tokens/assets from the design system (requires a clone a
 
 ## Deploy
 
-No GitHub Actions (org billing is disabled). Deploy is a local build pushed to
-the `gh-pages` branch, which GitHub Pages serves via its free built-in branch
-build:
+No GitHub Actions (org billing is disabled). Deploys are local builds. There are
+**two targets**, one per audience:
 
 ```bash
-npm run deploy   # runs `astro build`, then pushes dist/ to gh-pages
+npm run deploy            # EXTERNAL → blog.earlbear.com (GitHub Pages / gh-pages)
+npm run deploy:internal   # INTERNAL → blog.internal.earlbear.com (Cloudflare Pages)
+# or, from ../earlbear-domain: make deploy HOST=blog GO=1  /  HOST=blog.internal GO=1
 ```
 
-`main` stays source-only. The `public/CNAME` and `public/.nojekyll` files ride
-along in every deploy so the custom domain and raw-file serving survive.
+- **External** (`make deploy`): builds with `PUBLIC_AUDIENCE=external`, runs the
+  audience guard, then pushes `dist/` to the `gh-pages` branch, which GitHub Pages
+  serves via its free built-in branch build. `main` stays source-only. The
+  `public/CNAME` and `public/.nojekyll` files ride along so the custom domain and
+  raw-file serving survive.
+- **Internal** (`make deploy-internal`): builds with `PUBLIC_AUDIENCE=internal`,
+  runs the guard, strips the (external) `dist/CNAME`, then `wrangler pages deploy`
+  to the `earlbear-blog-internal` Cloudflare Pages project (`--branch main` so the
+  custom domain serves the canonical deployment). The site is gated by CF Access.
+  DNS + the CF Access app are codified in `../earlbear-domain` (`domains.yaml`);
+  the one-time project/domain/Access provisioning is a manual setup step noted there.
+
+### Audience safety — internal posts must never publish externally
+
+Layered so no single mistake leaks internal content to the public site:
+
+1. **Allowlist filter (fail-closed).** `getPublishedPosts()` keeps only
+   `audience === 'external'` on the external build. A missing/typo'd value makes a
+   post *disappear*, never leak. Do not rewrite it as a denylist (`!==`).
+2. **Deploy guard — `.claude/hooks/check-audience.py`.** A PostToolUse hook rejects
+   a bad `audience` value; the deploy scripts call `--check-dist` to **grep the
+   built `dist/`** and abort the deploy if cross-audience content leaked in (it
+   checks the real artifact, so it survives a filter refactor). Run on demand with
+   `npm run audience-check` / `make audience-check`.
+3. **Schema enum** in `src/content.config.ts` fails the build on any other value.
+4. **Env-target assertion** in the deploy scripts (`--assert-target`) refuses to
+   push an internal build to gh-pages, or an external build to the internal target.
+5. **CNAME strip** on the internal deploy — the internal artifact can never claim
+   `blog.earlbear.com`.
+6. **CF Access** gates the internal site — even a known URL is unreadable off-org.
 
 ## Secret scanning
 
@@ -72,6 +115,29 @@ make install-hooks   # sets core.hooksPath to .githooks (needs: brew install git
 ```
 
 `make scan` runs a full scan on demand. Config + allowlist live in `.gitleaks.toml`.
+
+### Internal-deploy secret (Cloudflare Pages token)
+
+`make deploy-internal` needs a scoped `CLOUDFLARE_API_TOKEN` (Account → Cloudflare
+Pages → Edit) to `wrangler pages deploy` the internal build. This is the auth model
+the **`../earlbear-domain` deploy-contract audit** requires (`make -C
+../earlbear-domain audit-deploy`) — a scoped, **dotenvx-encrypted** token, not
+machine wrangler OAuth. Setup, mirroring the domain repo's pattern:
+
+```bash
+npx dotenvx set CLOUDFLARE_API_TOKEN <token>   # writes encrypted value → .env, key → .env.keys
+make key-backup                                # back .env.keys up to LastPass (source of truth)
+```
+
+- The token lives **dotenvx-encrypted** in `.env`; `deploy:internal` injects it via
+  `dotenvx run --`. Key names are documented in `.env.example`.
+- `.env` and `.env.keys` are gitignored. The dotenvx **private key** (`.env.keys`)
+  lives only on this machine, so **LastPass is its source-of-truth backup** —
+  `make key-backup` / `key-restore` / `key-status` (item `earlbear-blog/DOTENV_PRIVATE_KEY`),
+  via `scripts/lastpass-key.sh` (needs `lpass` CLI + `lpass login`). On a fresh
+  clone, `make key-restore` before deploying.
+- `.gitleaks.toml` allowlists the `encrypted:` ciphertext and still trips on a raw
+  Cloudflare token.
 
 ## Concurrent sessions (shared working dir — read before committing)
 
@@ -131,6 +197,10 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
   `FlowDiagram` shape or a new primitive): survey the catalog first, match the
   house engine (zero-dep build-time SVG, tokens, gates), prove it, and keep the
   catalog a living artifact (a `catalog-check` hook flags drift).
+- **`audience-audit`** — review which posts should be internal vs external and move
+  mis-classified ones. Complements the audience *guards* (which only honor the
+  declared value): this judges whether the declaration *fits* the content, catching
+  internal-sounding posts marked public. Run `audience-fit-check` for the short list.
 
 ## Feature docs (the "why")
 

@@ -5,6 +5,12 @@ import '../styles/tokens.css';
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
+import { isInternalBuild } from '../lib/posts';
+
+// Which site this build is: the internal (access-gated) site gets a distinct
+// accent and an "internal" chrome marker so there is never any doubt which
+// blog you are looking at. Chosen at build time by PUBLIC_AUDIENCE.
+const internal = isInternalBuild();
 
 interface Props {
   title: string;
@@ -20,20 +26,40 @@ const {
   publishedTime,
 } = Astro.props;
 
-const siteName = 'EarlBear blog';
+const siteName = internal ? 'EarlBear blog (internal)' : 'EarlBear blog';
 const fullTitle = title === siteName ? title : `${title} · ${siteName}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL('/favicon.svg', Astro.site);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-audience={internal ? 'internal' : 'external'}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
+    {internal && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
+
+    {/* Internal-site theme: re-tint the accent to a distinct teal so the
+        internal blog is unmistakable at a glance. Semantic-token override only —
+        references design-system primitives, no raw hex, no dark mode. Scoped to
+        [data-audience="internal"] so it is inert on the external build. */}
+    {internal && (
+      <style is:global>
+        {`
+          html[data-audience='internal'] {
+            --color-accent:        var(--eb-info);        /* teal 500 */
+            --color-accent-hover:  #235d66;                /* teal 600 */
+            --color-accent-press:  #1c4a52;                /* teal 700 */
+            --color-accent-soft:   var(--eb-info-bg);
+            --color-border-focus:  var(--eb-info);
+            --color-text-accent:   #235d66;
+          }
+        `}
+      </style>
+    )}
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
@@ -74,7 +100,7 @@ const ogImage = new URL('/favicon.svg', Astro.site);
     <meta name="generator" content={Astro.generator} />
   </head>
   <body>
-    <Nav />
+    <Nav internal={internal} />
     <main>
       <slot />
     </main>

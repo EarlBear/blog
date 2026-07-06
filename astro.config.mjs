@@ -3,10 +3,20 @@ import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
 
+// Which site this build is for, chosen by PUBLIC_AUDIENCE (set by the
+// build:internal / deploy:internal npm scripts). This picks the canonical
+// origin so absolute URLs (canonical, RSS, sitemap) match the host the build
+// is actually served on. Unset / anything-but-'internal' → the public site.
+const AUDIENCE = process.env.PUBLIC_AUDIENCE === 'internal' ? 'internal' : 'external';
+const site =
+  AUDIENCE === 'internal'
+    ? 'https://blog.internal.earlbear.com'
+    : 'https://blog.earlbear.com';
+
 // https://astro.build/config
 export default defineConfig({
   // Custom domain serves at the root, so no `base` path.
-  site: 'https://blog.earlbear.com',
+  site,
   // Local dev + preview run on 4343 (not Astro's default 4321) so this repo's
   // server doesn't collide with other Astro projects on the same machine.
   // `host: false` keeps it bound to localhost. Override per-run with `--port`.

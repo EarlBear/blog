@@ -8,7 +8,11 @@ interface Props {
   post: Post;
 }
 const { post } = Astro.props;
-const { title, description, pubDate, tags, authors, draft } = post.data;
+const { title, description, pubDate, tags, authors, draft, audience } = post.data;
+// Both audiences show together only on localhost (dev). There, flag internal
+// posts so authors can tell them apart in the mixed list. On the single-audience
+// prod builds every post shares the site's audience, so the badge is redundant.
+const showInternalBadge = import.meta.env.DEV && audience === 'internal';
 ---
 
 <article class="card">
@@ -19,6 +23,7 @@ const { title, description, pubDate, tags, authors, draft } = post.data;
       <span class="by"><Byline authorIds={authors} /></span>
     )}
     {draft && <span class="draft">draft</span>}
+    {showInternalBadge && <span class="internal">internal</span>}
   </div>
   <h2>
     <a href={`/blog/${post.id}/`}>{title}</a>
@@ -64,6 +69,16 @@ const { title, description, pubDate, tags, authors, draft } = post.data;
     font-size: var(--fs-xs);
     color: var(--color-warning);
     background: var(--color-warning-bg, var(--eb-warning-bg));
+    border-radius: var(--radius-xs);
+    padding: 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .internal {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--eb-info);
+    background: var(--eb-info-bg);
     border-radius: var(--radius-xs);
     padding: 0 6px;
     text-transform: uppercase;

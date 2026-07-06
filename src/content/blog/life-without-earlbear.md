@@ -5,6 +5,7 @@ pubDate: 2026-07-03
 tags: [growth, economics]
 authors: [omar]
 draft: false
+audience: external
 questions:
   - You run an ecommerce store with good traffic and early traction — how do you actually grow it from here?
   - Who would you need to hire to optimize a store by hand, and what experience should each role have?
