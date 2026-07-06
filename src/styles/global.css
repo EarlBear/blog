@@ -733,22 +733,48 @@ a:focus:not(:focus-visible) {
 .comparison-matrix tbody tr:last-child td {
   border-bottom: none;
 }
+/* Header cells fill to the top of the rounded container (no floating gap above
+   the chosen-column highlight), and all three option headers share a baseline. */
+.comparison-matrix thead th {
+  background: var(--color-surface-sunken);
+  vertical-align: middle;
+}
 .comparison-matrix .cm-corner {
   font-size: var(--fs-eyebrow);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
   color: var(--color-text-muted);
-  background: var(--color-surface-sunken);
 }
 .comparison-matrix .cm-option {
-  background: var(--color-surface-sunken);
   font-weight: var(--fw-semibold);
-  vertical-align: bottom;
   min-width: 120px;
 }
-.comparison-matrix .cm-option--chosen {
+/* Chosen column: a continuous accent tint from the header down through every
+   cell, framed with subtle side borders so it reads as one defined, intentional
+   column rather than a floating patch of color. */
+.comparison-matrix thead th.cm-option--chosen,
+.comparison-matrix .cm-cell--chosen {
   background: var(--color-accent-soft);
+  border-left: 1px solid var(--color-accent);
+  border-right: 1px solid var(--color-accent);
+}
+.comparison-matrix thead th.cm-option--chosen {
+  border-top: 1px solid var(--color-accent);
+}
+.comparison-matrix tbody tr:last-child .cm-cell--chosen {
+  border-bottom: 1px solid var(--color-accent);
+}
+/* Option label + optional badge stack, but the row of headers stays aligned:
+   the label is the baseline and the badge sits under it without pushing the
+   single-label headers out of line. */
+.comparison-matrix .cm-option-inner {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+.comparison-matrix .cm-option--chosen {
   color: var(--color-text-accent);
 }
 .comparison-matrix .cm-option-label {
@@ -756,7 +782,6 @@ a:focus:not(:focus-visible) {
 }
 .comparison-matrix .cm-chosen-badge {
   display: inline-block;
-  margin-top: var(--space-1);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--ls-eyebrow);
@@ -770,9 +795,6 @@ a:focus:not(:focus-visible) {
   font-weight: var(--fw-medium);
   color: var(--color-text);
   white-space: nowrap;
-}
-.comparison-matrix .cm-cell--chosen {
-  background: color-mix(in oklab, var(--color-accent-soft) 55%, transparent);
 }
 .comparison-matrix .cm-mark {
   font-size: var(--fs-lg);

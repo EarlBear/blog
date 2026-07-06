@@ -71,8 +71,10 @@ const MARK: Record<string, { glyph: string; label: string; cls: string }> = {
           {
             options.map((o) => (
               <th scope="col" class={o.chosen ? 'cm-option cm-option--chosen' : 'cm-option'}>
-                <span class="cm-option-label">{o.label}</span>
-                {o.chosen && <span class="cm-chosen-badge">chosen</span>}
+                <span class="cm-option-inner">
+                  <span class="cm-option-label">{o.label}</span>
+                  {o.chosen && <span class="cm-chosen-badge">chosen</span>}
+                </span>
               </th>
             ))
           }
