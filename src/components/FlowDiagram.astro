@@ -1,10 +1,9 @@
 ---
 /**
  * FlowDiagram — a directed-flow diagram (pipeline, loop, or sequence) rendered as
- * one inline SVG at build time. Zero dependencies, no client JS unless a node
- * opts into the detail modal. Mirrors UseCaseDiagram's engine: deterministic
- * layout, semantic-token gradient fills, a blocking overlap gate, reduced-motion
- * draw-in animation, and the click-to-focus modal.
+ * one inline SVG at build time. Zero client JS unless a node opts into the detail
+ * modal. Deterministic layout, semantic-token gradient fills, a blocking overlap
+ * gate, reduced-motion draw-in animation, and the click-to-focus modal.
  *
  * Shapes:
  *   - pipeline — a horizontal row A → B → C → D (linear data/handoff flow)
@@ -14,26 +13,25 @@
  * Node kinds tint/mark the box: default, store (a datastore), external (outside
  * the system), edge (a trust-boundary / sanitize-at-the-edge marker).
  *
- * Authors can write the nodes/edges spec directly, or a Mermaid flowchart string
- * that src/components/diagram/mermaid-parse.ts converts into this spec — see the
- * enrich-post skill. Either way it renders through this one engine.
+ * Authors can write the nodes/edges spec directly, or a Mermaid flowchart string.
+ * Layout, the overlap gate, and Mermaid parsing all live in the shared, framework-
+ * free engine @earlbear/ui/diagram — this component is now just the Astro renderer
+ * over that engine's output. The gtm React app renders the same engine. See
+ * earlbear-agentic-workflow/docs/diagram-engine-design.md.
  */
-export type FlowNodeKind = 'default' | 'store' | 'external' | 'edge';
-export interface FlowNode {
-  id: string;
-  label: string;
-  kind?: FlowNodeKind;
-  /** Which actor/system owns this step. Only used by shape="swimlane", where
-   *  each distinct lane becomes a labeled horizontal band. */
-  lane?: string;
-  /** Optional longer detail, surfaced in the click-to-focus modal. */
-  detail?: string;
-}
-export interface FlowEdge {
-  from: string;
-  to: string;
-  label?: string;
-}
+import {
+  computeFlowLayout,
+  kindMeaning,
+  BOX_W,
+  BOX_H,
+  PAD,
+  type FlowNode,
+  type FlowEdge,
+  type FlowNodeKind,
+} from '@earlbear/ui/diagram';
+
+export type { FlowNode, FlowEdge, FlowNodeKind };
+
 interface Props {
   title: string;
   desc?: string;
@@ -51,353 +49,28 @@ interface Props {
   legend?: boolean;
 }
 
-import { parseMermaidFlow } from './diagram/mermaid-parse';
+const { title, desc } = Astro.props;
 
+// The engine resolves the spec (native or Mermaid), infers the shape, runs the
+// content + overlap gates (throwing on a fatal spec), and returns all geometry.
 const {
-  title,
-  desc,
-  shape: shapeProp,
-  nodes: nodesProp,
-  edges: edgesProp,
-  mermaid,
-  allowOverlap = false,
-  legend = false,
-} = Astro.props;
+  shape,
+  salt,
+  nodes,
+  pos,
+  lanes,
+  svgW,
+  svgH,
+  renderedEdges,
+  gradientIds,
+  nodeDetail,
+  interactive,
+  legendKinds,
+  warnings,
+} = computeFlowLayout(Astro.props);
 
-// Resolve the spec: explicit nodes/edges, or parse the Mermaid string.
-let nodes: FlowNode[];
-let edges: FlowEdge[];
-let inferredShape: 'pipeline' | 'loop' | 'sequence' | 'branch' = 'pipeline';
-if (mermaid) {
-  const parsed = parseMermaidFlow(mermaid);
-  nodes = parsed.nodes;
-  edges = parsed.edges;
-  inferredShape = parsed.shape;
-} else {
-  nodes = nodesProp ?? [];
-  edges = edgesProp ?? [];
-}
-// Infer the shape from the graph so authors rarely need to pass `shape` — this
-// runs for both the native and Mermaid paths, in precedence order:
-//   - a back-edge to an earlier node → a cycle → `loop`
-//   - a node with 2+ outgoing edges → a fork → `branch` (wins over sequence: a
-//     top-down flowchart that forks still needs the fan-out layout)
-//   - otherwise the parser's shape stands (pipeline, or sequence for TB/TD)
-{
-  const index = new Map(nodes.map((n, i) => [n.id, i]));
-  const hasBackEdge = edges.some((e) => (index.get(e.to) ?? 0) <= (index.get(e.from) ?? 0));
-  const outDegree = new Map<string, number>();
-  for (const e of edges) outDegree.set(e.from, (outDegree.get(e.from) ?? 0) + 1);
-  const hasFork = [...outDegree.values()].some((d) => d >= 2);
-  if (hasBackEdge) inferredShape = 'loop';
-  else if (hasFork) inferredShape = 'branch';
-}
-const shape = shapeProp ?? inferredShape;
-
-const salt = title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'flow';
-
-// ---- Content-quality gates (before geometry, so a bad spec fails fast) -----
-// These catch authoring mistakes the geometry gates can't see. A dangling edge
-// is a correctness bug → throw; the rest are quality warnings.
-{
-  const ids = new Set(nodes.map((n) => n.id));
-  // (1) Dangling reference: an edge points at a node id that doesn't exist. Today
-  //     such edges are silently dropped, so a typo vanishes with no signal.
-  const dangling = edges.filter((e) => !ids.has(e.from) || !ids.has(e.to));
-  if (dangling.length) {
-    const bad = dangling
-      .map((e) => `${!ids.has(e.from) ? `"${e.from}"` : e.from} → ${!ids.has(e.to) ? `"${e.to}"` : e.to}`)
-      .join(', ');
-    throw new Error(
-      `FlowDiagram "${title}": edge references a node id that doesn't exist: ${bad}. ` +
-        `Check the from/to ids against your nodes list.`
-    );
-  }
-  if (!allowOverlap) {
-    // (2) Accessibility: a diagram with no title/desc is invisible to a screen
-    //     reader. title is required by the type; nudge for desc.
-    if (!desc || !desc.trim()) {
-      console.warn(
-        `[flow-diagram] warning: "${title}" has no desc — add desc= so screen ` +
-          `readers get an accessible description (rendered as the SVG <desc>).`
-      );
-    }
-    // (3) Disconnected node: a node no edge touches is usually a mistake (added a
-    //     node, forgot to wire it). A single lone node is a legitimate 1-box flow.
-    if (nodes.length > 1) {
-      const touched = new Set(edges.flatMap((e) => [e.from, e.to]));
-      for (const n of nodes) {
-        if (!touched.has(n.id)) {
-          console.warn(
-            `[flow-diagram] warning: "${title}" node "${n.id}" (${n.label}) has ` +
-              `no edges — it renders floating. Connect it or remove it.`
-          );
-        }
-      }
-    }
-    // (4) Legibility: a label too long for its box will clip. ~13 chars fit a
-    //     168px box at 14px; warn past a generous threshold.
-    for (const n of nodes) {
-      if (n.label.length > 22) {
-        console.warn(
-          `[flow-diagram] warning: "${title}" label "${n.label}" is long and may ` +
-            `clip its box — shorten it or move detail into the node's \`detail\`.`
-        );
-      }
-    }
-  }
-}
-
-// ---- Geometry -------------------------------------------------------------
-const BOX_W = 168;
-const BOX_H = 68;
-const GAP = 72; // gap between boxes along the flow
-const PAD = 32; // outer padding
-const horizontal = shape === 'pipeline' || shape === 'loop';
-const LANE_LABEL_W = 128; // left gutter for lane labels (swimlane only)
-
-// Swimlane bands, computed up front so both layout and rendering can use them.
-interface Lane {
-  name: string;
-  top: number;
-  height: number;
-}
-const lanes: Lane[] = [];
-
-const pos = new Map<string, { cx: number; cy: number }>();
-if (shape === 'swimlane') {
-  // Rows = lanes (distinct `lane` values, first-appearance order). Columns =
-  // flow order (longest-path rank), so a handoff reads left→right and the edge
-  // that jumps between lanes is the visible cross-lane hop.
-  const laneNames: string[] = [];
-  for (const n of nodes) {
-    const ln = n.lane ?? '—';
-    if (!laneNames.includes(ln)) laneNames.push(ln);
-  }
-  // Column rank = longest-path over the FORWARD edges only. A back-edge (the
-  // cycle-closer, e.g. the loop's return arrow) is skipped for ranking — left in,
-  // it would push ranks up every pass and blow the width out. Then columns are
-  // compressed to remove gaps, so N nodes never span more than N columns.
-  const order = new Map(nodes.map((n, i) => [n.id, i]));
-  const forward = edges.filter((e) => (order.get(e.to) ?? 0) > (order.get(e.from) ?? 0));
-  const rank = new Map<string, number>();
-  for (const n of nodes) rank.set(n.id, 0);
-  let changed = true;
-  let guard = 0;
-  while (changed && guard++ <= nodes.length) {
-    changed = false;
-    for (const e of forward) {
-      const cf = rank.get(e.from) ?? 0;
-      const ct = rank.get(e.to) ?? 0;
-      if (ct < cf + 1) {
-        rank.set(e.to, cf + 1);
-        changed = true;
-      }
-    }
-  }
-  // Compress ranks to consecutive integers (0,1,2,…) so unused columns collapse.
-  const usedRanks = [...new Set([...rank.values()])].sort((a, b) => a - b);
-  const compress = new Map(usedRanks.map((r, i) => [r, i]));
-  const col = new Map([...rank].map(([id, r]) => [id, compress.get(r) ?? 0]));
-  const laneH = BOX_H + PAD; // band height: one box plus breathing room
-  laneNames.forEach((name, r) => {
-    lanes.push({ name, top: PAD + r * laneH, height: laneH });
-  });
-  const laneRow = new Map(laneNames.map((n, r) => [n, r]));
-  for (const n of nodes) {
-    const r = laneRow.get(n.lane ?? '—') ?? 0;
-    const c = col.get(n.id) ?? 0;
-    pos.set(n.id, {
-      cx: LANE_LABEL_W + PAD + BOX_W / 2 + c * (BOX_W + GAP),
-      cy: PAD + r * laneH + laneH / 2,
-    });
-  }
-} else if (shape === 'loop') {
-  // Arrange nodes evenly around an ellipse so the last→first edge closes cleanly.
-  const n = nodes.length;
-  const rx = Math.max(BOX_W, (n * (BOX_W + GAP)) / (2 * Math.PI));
-  const ry = Math.max(BOX_H * 1.6, (n * (BOX_H + GAP)) / (2 * Math.PI));
-  const cxC = PAD + rx + BOX_W / 2;
-  const cyC = PAD + ry + BOX_H / 2;
-  nodes.forEach((node, i) => {
-    // Start at the top, go clockwise.
-    const a = -Math.PI / 2 + (i / n) * 2 * Math.PI;
-    pos.set(node.id, { cx: cxC + Math.cos(a) * rx, cy: cyC + Math.sin(a) * ry });
-  });
-} else if (shape === 'branch') {
-  // Layered top-down layout: a node's LEVEL is the longest edge-path to it from a
-  // root, so a fork's outcomes sit on the level below it, spread horizontally.
-  // Trunk levels (one node) stay centered; a level with siblings fans them out.
-  const level = new Map<string, number>();
-  const adj = new Map<string, string[]>();
-  for (const n of nodes) {
-    level.set(n.id, 0);
-    adj.set(n.id, []);
-  }
-  for (const e of edges) if (adj.has(e.from)) adj.get(e.from)!.push(e.to);
-  // Longest-path levelling (the graph is a DAG for branch flows; a stray back-edge
-  // is ignored for levelling and just draws across).
-  let changed = true;
-  let guard = 0;
-  while (changed && guard++ < nodes.length + 2) {
-    changed = false;
-    for (const e of edges) {
-      const lf = level.get(e.from) ?? 0;
-      const lt = level.get(e.to) ?? 0;
-      if (lt < lf + 1) {
-        level.set(e.to, lf + 1);
-        changed = true;
-      }
-    }
-  }
-  // Group node ids by level, preserving input order within a level.
-  const byLevel = new Map<number, string[]>();
-  for (const n of nodes) {
-    const l = level.get(n.id) ?? 0;
-    if (!byLevel.has(l)) byLevel.set(l, []);
-    byLevel.get(l)!.push(n.id);
-  }
-  const widest = Math.max(...[...byLevel.values()].map((ids) => ids.length));
-  const rowW = widest * BOX_W + (widest - 1) * GAP;
-  for (const [l, ids] of byLevel) {
-    const levelW = ids.length * BOX_W + (ids.length - 1) * GAP;
-    const startX = PAD + (rowW - levelW) / 2;
-    ids.forEach((id, i) => {
-      pos.set(id, {
-        cx: startX + BOX_W / 2 + i * (BOX_W + GAP),
-        cy: PAD + BOX_H / 2 + l * (BOX_H + GAP),
-      });
-    });
-  }
-} else {
-  nodes.forEach((node, i) => {
-    const cx = horizontal ? PAD + BOX_W / 2 + i * (BOX_W + GAP) : PAD + BOX_W / 2;
-    const cy = horizontal ? PAD + BOX_H / 2 : PAD + BOX_H / 2 + i * (BOX_H + GAP);
-    pos.set(node.id, { cx, cy });
-  });
-}
-
-const svgW =
-  shape === 'loop' || shape === 'branch' || shape === 'swimlane'
-    ? Math.max(...[...pos.values()].map((p) => p.cx)) + BOX_W / 2 + PAD
-    : horizontal
-      ? PAD * 2 + nodes.length * BOX_W + (nodes.length - 1) * GAP
-      : PAD * 2 + BOX_W;
-const svgH =
-  shape === 'swimlane'
-    ? PAD + lanes.reduce((h, l) => h + l.height, 0) + PAD
-    : shape === 'loop' || shape === 'branch'
-      ? Math.max(...[...pos.values()].map((p) => p.cy)) + BOX_H / 2 + PAD
-      : horizontal
-        ? PAD * 2 + BOX_H
-        : PAD * 2 + nodes.length * BOX_H + (nodes.length - 1) * GAP;
-
-// ---- Edge geometry: line from box rim to box rim --------------------------
-function rimPoint(cx: number, cy: number, tx: number, ty: number) {
-  // Intersection of the box border with the line toward (tx, ty).
-  const dx = tx - cx;
-  const dy = ty - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  const hw = BOX_W / 2;
-  const hh = BOX_H / 2;
-  const scale = 1 / Math.max(Math.abs(dx) / hw, Math.abs(dy) / hh);
-  return { x: cx + dx * scale, y: cy + dy * scale };
-}
-
-interface Rendered {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  mx: number;
-  my: number;
-  len: number;
-  label?: string;
-  curve: boolean;
-}
-const renderedEdges: Rendered[] = [];
-for (const edge of edges) {
-  const a = pos.get(edge.from);
-  const b = pos.get(edge.to);
-  if (!a || !b) continue; // skip dangling refs
-  const s = rimPoint(a.cx, a.cy, b.cx, b.cy);
-  const e = rimPoint(b.cx, b.cy, a.cx, a.cy);
-  const len = Math.hypot(e.x - s.x, e.y - s.y);
-  renderedEdges.push({
-    x1: s.x,
-    y1: s.y,
-    x2: e.x,
-    y2: e.y,
-    mx: (s.x + e.x) / 2,
-    my: (s.y + e.y) / 2,
-    len,
-    label: edge.label,
-    curve: shape === 'loop',
-  });
-}
-
-// ---- Overlap gate (build-time, blocking) — same contract as UseCaseDiagram --
-const OVERLAP_MIN_CLEAR = 0.75;
-function segmentsCross(a: Rendered, b: Rendered): boolean {
-  const o = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) =>
-    Math.sign((qy - py) * (rx - qx) - (qx - px) * (ry - qy));
-  const near = (p: number, q: number) => Math.abs(p - q) < 0.5;
-  const shareEndpoint =
-    (near(a.x1, b.x1) && near(a.y1, b.y1)) ||
-    (near(a.x1, b.x2) && near(a.y1, b.y2)) ||
-    (near(a.x2, b.x1) && near(a.y2, b.y1)) ||
-    (near(a.x2, b.x2) && near(a.y2, b.y2));
-  if (shareEndpoint) return false;
-  const o1 = o(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
-  const o2 = o(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
-  const o3 = o(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);
-  const o4 = o(b.x1, b.y1, b.x2, b.y2, a.x2, a.y2);
-  return o1 !== o2 && o3 !== o4;
-}
-// Curved loop edges aren't straight segments; the crossing test is for straight
-// pipeline/sequence flows. Loops are laid out on a ring and don't self-cross.
-if (shape !== 'loop') {
-  const crossed = new Set<number>();
-  for (let i = 0; i < renderedEdges.length; i++) {
-    for (let j = i + 1; j < renderedEdges.length; j++) {
-      if (segmentsCross(renderedEdges[i], renderedEdges[j])) {
-        crossed.add(i);
-        crossed.add(j);
-      }
-    }
-  }
-  const clear = renderedEdges.length === 0 ? 1 : 1 - crossed.size / renderedEdges.length;
-  if (clear < OVERLAP_MIN_CLEAR) {
-    const msg =
-      `FlowDiagram "${title}": only ${Math.round(clear * 100)}% of edges are ` +
-      `crossing-free (need ≥${OVERLAP_MIN_CLEAR * 100}%). Reorder nodes so the ` +
-      `flow reads left-to-right (or top-to-bottom) without backtracking, or split ` +
-      `the diagram. See the enrich-post skill.`;
-    if (allowOverlap) console.warn(`[flow-diagram] warning (allowOverlap set): ${msg}`);
-    else throw new Error(`${msg} To ship anyway, pass allowOverlap.`);
-  }
-}
-
-const gradientIds = nodes.map((_, i) => `${salt}-g${i}`);
-
-// ---- Modal data (progressive enhancement) ---------------------------------
-const nodeLabel = new Map(nodes.map((n) => [n.id, n.label]));
-const nodeDetail = nodes.map((n) => {
-  const to = edges.filter((e) => e.from === n.id).map((e) => nodeLabel.get(e.to)!).filter(Boolean);
-  const from = edges.filter((e) => e.to === n.id).map((e) => nodeLabel.get(e.from)!).filter(Boolean);
-  return { id: n.id, label: n.label, detail: n.detail ?? '', to, from };
-});
-const interactive = nodeDetail.some((d) => d.detail);
-
-// ---- Legend: explain the special node kinds that actually appear -----------
-const KIND_MEANING: Record<string, string> = {
-  store: 'datastore',
-  external: 'outside the system',
-  edge: 'trust boundary',
-};
-const legendKinds = legend
-  ? (['edge', 'store', 'external'] as const).filter((k) => nodes.some((n) => n.kind === k))
-  : [];
+// Surface the engine's non-fatal advisories exactly as before (build-time console).
+for (const w of warnings) console.warn(`[flow-diagram] warning: ${w}`);
 ---
 
 <figure class={`flow-diagram flow-diagram--${shape}`} data-flow={salt}>
@@ -565,7 +238,7 @@ const legendKinds = legend
                 fill="var(--color-surface-sunken)"
               />
             </svg>
-            <span class="flow-legend-label">{KIND_MEANING[k]}</span>
+            <span class="flow-legend-label">{kindMeaning(k)}</span>
           </li>
         ))}
       </ul>
