@@ -1,23 +1,80 @@
 ---
 name: deploy
-description: Deploy the EarlBear blog to GitHub Pages. Use when the user says "deploy", "publish the blog", "push to production", "ship it", "put it live", or asks to debug a failed Pages deploy. Runs pre-flight checks, builds, pushes the built site to the gh-pages branch, then watches the Pages deployment run to completion (via gh CLI) and verifies the new content is actually live — with a recovery path when the deploy fails. Never pushes without explicit confirmation.
+description: Deploy the EarlBear blog. It has TWO targets — the public EXTERNAL site (blog.earlbear.com, GitHub Pages) and the org-gated INTERNAL site (blog.internal.earlbear.com, Cloudflare Pages). Use when the user says "deploy", "publish the blog", "push to production", "ship it", "put it live", or asks to debug a failed deploy. ALWAYS asks (via AskUserQuestion) whether to deploy external, internal, or both, runs the right build+guard+deploy for each, verifies the result, and has a recovery path. Never deploys without explicit confirmation.
 ---
 
 # Deploy the blog
 
-The blog deploys to GitHub Pages **from the `gh-pages` branch** (no GitHub
-Actions — org billing is disabled). `npm run deploy` builds and force-pushes
-`dist/` to `gh-pages`; GitHub's free built-in branch build serves it at
-`https://blog.earlbear.com`. `main` stays source-only.
+The blog builds **two audiences from one repo** (see `docs/features/audience-split.md`),
+so there are two deploy targets:
+
+- **External** → `https://blog.earlbear.com` (GitHub Pages, `gh-pages` branch).
+  `npm run deploy` builds with `PUBLIC_AUDIENCE=external`, runs the audience guard,
+  and force-pushes `dist/` to `gh-pages`.
+- **Internal** → `https://blog.internal.earlbear.com` (Cloudflare Pages, gated by
+  Cloudflare Access). `npm run deploy:internal` builds with
+  `PUBLIC_AUDIENCE=internal`, runs the guard, strips the external CNAME, and
+  `wrangler pages deploy`s to the `earlbear-blog-internal` project (auth via a
+  dotenvx-encrypted `CLOUDFLARE_API_TOKEN`).
+
+`main` stays source-only. The **external site shows only published external posts**;
+the **internal site shows all internal posts including drafts** (the org-private
+working ground).
+
+## Step 0 — ask which target(s) to deploy
+
+**Always start by asking, with AskUserQuestion:** external, internal, or both?
+The two sites publish independently and to different audiences, so never assume —
+a reader who says "deploy" may mean one, the other, or both. Then run the matching
+path(s) below. If they want **both**, do external first (lower risk), verify it,
+then internal.
+
+```
+AskUserQuestion: "Which site(s) should I deploy?"
+  - External only (blog.earlbear.com — public)
+  - Internal only (blog.internal.earlbear.com — org-gated)
+  - Both
+```
 
 ## Guardrails
 
-- **Confirm before pushing.** Deploying publishes public content. State what will
-  ship and ask for an explicit yes (AskUserQuestion) before `npm run deploy`.
-- Deploy from a clean, committed `main` — don't ship uncommitted local changes
-  silently.
+- **Confirm the target(s) AND confirm before pushing.** Deploying external
+  publishes *public* content — state exactly what will ship and get an explicit yes.
+- Deploy from a clean, committed `main` — don't ship uncommitted changes silently.
+- **The audience guard is mandatory, not optional.** Every deploy path runs
+  `check-audience.py` against the built `dist/` before publishing; an internal post
+  in an external build (or vice versa) aborts the deploy. Do not skip it.
 
-## Pre-flight
+## Internal deploy (Cloudflare Pages)
+
+For the **internal** target:
+
+```bash
+npm run deploy:internal
+```
+
+This asserts the target, builds internal, runs the leak gate
+(`--check-dist dist --audience internal`), strips `dist/CNAME`, then
+`dotenvx run -- wrangler pages deploy dist --project-name earlbear-blog-internal`.
+
+Prerequisites (check before the first internal deploy):
+- **The dotenvx key** — `make key-status` should show `.env.keys present` and the
+  LastPass backup; if a fresh clone, `make key-restore` (needs `lpass login`).
+  `CLOUDFLARE_API_TOKEN` in `.env` must be `encrypted:…`, not empty.
+- **The Cloudflare Pages project** — `earlbear-blog-internal` with
+  `blog.internal.earlbear.com` attached, plus the CF Access app. Verify with
+  `dotenvx run -- wrangler pages project list`. One-time provisioning is codified in
+  the sibling `earlbear-domain` repo (tracked in `docs/tasks/backlog.md`).
+
+Verify after: the deployment lists under `wrangler pages deployment list`, and the
+site is reachable but **gated** — `blog.internal.earlbear.com` should return a
+Cloudflare Access login, not the content, when off-org.
+
+## External deploy (GitHub Pages)
+
+For the **external** target, work through the pre-flight then deploy.
+
+### Pre-flight
 
 1. **Working tree state.** `git status --short`. If there are uncommitted source
    changes, surface them and ask whether to commit first (deploy ships the build
@@ -42,7 +99,7 @@ Actions — org billing is disabled). `npm run deploy` builds and force-pushes
    Confirm `dist/` contains `CNAME`, `.nojekyll`, `rss.xml`, `sitemap-index.xml`,
    `404.html`, `favicon.svg`, and `vendor/`. Spot-check the preview.
 
-## Deploy
+### Deploy
 
 4. **Confirm, then push:**
 
@@ -50,11 +107,11 @@ Actions — org billing is disabled). `npm run deploy` builds and force-pushes
    npm run deploy
    ```
 
-   This runs `astro build` then `gh-pages -d dist --dotfiles --nojekyll`. The
-   `--dotfiles` flag is what carries `.nojekyll`; `CNAME` rides along from
-   `public/`.
+   This asserts the external target, builds with `PUBLIC_AUDIENCE=external`, runs
+   the audience guard, then `gh-pages -d dist --dotfiles --nojekyll`. The
+   `--dotfiles` flag carries `.nojekyll`; `CNAME` rides along from `public/`.
 
-## Watch the deployment to completion (don't stop at "pushed")
+### Watch the deployment to completion (don't stop at "pushed")
 
 Pushing to `gh-pages` is not the same as publishing. Even with Actions billing
 off, GitHub auto-runs a `pages-build-deployment` workflow on every `gh-pages`
@@ -103,7 +160,7 @@ content**.
 7. Record the deploy: if a "Deploy" task was open, mark it done; note the shipped
    commit.
 
-## When the deploy fails
+### When the external (GitHub Pages) deploy fails
 
 The `gh-pages` branch already has the new build (verify with
 `git ls-tree -r origin/gh-pages --name-only | grep <slug>`); only the *publish*
