@@ -178,6 +178,28 @@ def scan_dist(root: Path, dist_dir: Path, build_audience: str):
     if build_audience == "external" and re.search(r"audience['\"]?\s*:\s*internal", blob):
         hits.append("the literal marker `audience: internal` appears in the external output")
 
+    # 4. Standalone INTERNAL-only pages (not blog posts, so not covered by the
+    #    post allowlist above). These are self-guarded to 404 on the external
+    #    build (e.g. src/pages/repo-map.astro checks isInternalBuild), but this is
+    #    the belt-and-suspenders dist check that survives a guard refactor: on the
+    #    external build, neither a rendered page directory nor a sitemap/HTML link
+    #    for the route may exist. Add a route here whenever a new internal-only
+    #    standalone page ships. See docs/features/audience-split.md.
+    INTERNAL_ONLY_ROUTES = ["repo-map"]
+    if build_audience == "external":
+        for route in INTERNAL_ONLY_ROUTES:
+            page = dist_dir / route / "index.html"
+            if page.exists() or (dist_dir / f"{route}.html").exists():
+                hits.append(
+                    f"internal-only page '/{route}/' has a rendered page in "
+                    f"{dist_dir} — it must NOT appear on the external site"
+                )
+            if re.search(rf"/{re.escape(route)}/", blob):
+                hits.append(
+                    f"internal-only route '/{route}/' is linked in the external "
+                    "output (HTML/sitemap) — it must not leak publicly"
+                )
+
     # De-dupe while preserving order.
     seen, uniq = set(), []
     for h in hits:

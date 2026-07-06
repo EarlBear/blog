@@ -8,8 +8,8 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan key-backup key-restore key-status dev build build-internal preview deploy deploy-internal audience-check sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check check \
+.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status dev build build-internal preview deploy deploy-internal audience-check sync-assets \
+        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check check \
         bench-diagram clean
 
 help: ## List available targets
@@ -33,7 +33,23 @@ scan: ## Full gitleaks secret scan of the working tree + history
 # deploy-contract audit requires (not machine wrangler OAuth). The dotenvx PRIVATE
 # key (.env.keys) is gitignored and lives only on this machine, so LastPass is its
 # source-of-truth backup. Requires the lpass CLI + an active session (`lpass login
-# <email>`). Set the token once with `npx dotenvx set CLOUDFLARE_API_TOKEN <token>`.
+# <email>`).
+#
+# Set/rotate the token with the same codified flow as earlbear-domain:
+#   make collect-secret VARS=CLOUDFLARE_API_TOKEN   # seeds a placeholder in .env, opens it
+#   # paste the value, then:
+#   make encrypt        # plaintext → dotenvx ciphertext (safe to commit)
+#   make key-backup     # back the private key up to LastPass
+collect-secret: ## Seed placeholder(s) for VARS=<name...> in .env (gitignored), open to paste, then `make encrypt`
+	@test -n "$(VARS)" || { echo "Usage: make collect-secret VARS=\"CLOUDFLARE_API_TOKEN\""; exit 2; }
+	@scripts/collect-secret.sh $(VARS)
+
+encrypt: ## Encrypt .env in place (after pasting a secret — plaintext → dotenvx ciphertext)
+	./node_modules/.bin/dotenvx encrypt
+
+decrypt: ## Decrypt .env locally (rarely needed; requires .env.keys)
+	./node_modules/.bin/dotenvx decrypt
+
 key-backup: ## Back up .env.keys (dotenvx private key) to LastPass (source of truth)
 	@npm run --silent key-backup
 
@@ -104,6 +120,9 @@ catalog-check: ## Nudge: flag diagram components/shapes missing from the catalog
 
 expects-check: ## Nudge: flag a post whose frontmatter `expects` a visual it lacks (advisory)
 	npm run expects-check
+
+repo-map-check: ## Check the internal Repo Map (src/repo-map/artifact.html) data against the live earlbear-* ecosystem (drift → exit 1)
+	@node .claude/skills/manage-repo-map/scripts/scan-repos.mjs
 
 check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check ## Run all governance checks
 

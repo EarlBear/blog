@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<!--
+  EarlBear Repo Map — vendored artifact (INTERNAL ONLY).
+
+  Ported from earlbear-sites/claude-artifacts/repo-map/artifact.html. Served by
+  src/pages/repo-map.astro, which renders it ONLY on the internal build
+  (blog.internal.earlbear.com) and 404s on the external build — a standalone page
+  is NOT covered by the blog-post audience allowlist, so the page self-guards.
+
+  Keep the embedded REPOS/EDGES data honest with the `manage-repo-map` skill
+  (`/manage-repo-map`, or `make repo-map-check`). This is a curated snapshot: purpose
+  and edge-reason prose are hand-written; the skill only flags STRUCTURAL drift.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EarlBear Repo Map — Ecosystem &amp; Interconnections</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<!-- EB_TOKENS: the blog's vendored design-system tokens are inlined here at
+     build time by src/pages/repo-map.astro (readFileSync of src/styles/tokens.css).
+     Original sites artifact linked ../earlbear-tokens.css; the blog inlines instead
+     so the page is fully self-contained. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    background: var(--eb-ivory);
+    color: var(--eb-graphite);
+    font-size: var(--fs-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 1280px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  /* ---- Header ---- */
+  header { margin-bottom: 28px; }
+  .eyebrow {
+    font-size: var(--fs-eyebrow);
+    letter-spacing: var(--ls-eyebrow);
+    text-transform: uppercase;
+    color: var(--eb-earl-500);
+    font-weight: var(--fw-semibold);
+    margin-bottom: 8px;
+  }
+  h1 {
+    font-size: var(--fs-h1);
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-tight);
+    line-height: 1.1;
+    margin-bottom: 10px;
+  }
+  .subtitle {
+    font-size: var(--fs-lg);
+    color: var(--eb-stone-600);
+    max-width: 720px;
+  }
+
+  /* ---- Legend / controls ---- */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    margin: 24px 0 16px;
+    padding: 14px 18px;
+    background: var(--eb-oat);
+    border: 1px solid var(--eb-hairline);
+    border-radius: 12px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--eb-stone-600); }
+  .swatch { width: 13px; height: 13px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.12); }
+  .hint {
+    margin-left: auto;
+    font-size: var(--fs-sm);
+    color: var(--eb-stone-400);
+    font-style: italic;
+  }
+
+  /* ---- Diagram ---- */
+  .diagram-wrap {
+    background: #FFFFFF;
+    border: 1px solid var(--eb-hairline);
+    border-radius: 16px;
+    padding: 24px;
+    overflow-x: auto;
+    box-shadow: 0 1px 2px rgba(32,30,26,0.04), 0 8px 24px rgba(32,30,26,0.05);
+  }
+  .diagram-wrap .mermaid {
+    display: flex;
+    justify-content: center;
+    min-width: 900px;
+  }
+  .mermaid svg { max-width: 100%; height: auto; }
+  /* Clickable nodes */
+  .mermaid .node { cursor: pointer; transition: filter var(--dur-fast) var(--ease-standard); }
+  .mermaid .node:hover { filter: brightness(0.97) drop-shadow(0 2px 6px rgba(177,71,38,0.25)); }
+  .mermaid .node.rm-active rect,
+  .mermaid .node.rm-active polygon { stroke: var(--eb-earl-500) !important; stroke-width: 3px !important; }
+
+  .footnote {
+    margin-top: 18px;
+    font-size: var(--fs-sm);
+    color: var(--eb-stone-400);
+  }
+  .footnote code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--fs-xs);
+    background: var(--eb-cream);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* ---- Drawer ---- */
+  .scrim {
+    position: fixed; inset: 0;
+    background: rgba(15,14,11,0.38);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--dur-normal) var(--ease-standard);
+    z-index: 90;
+  }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 440px; max-width: 92vw;
+    background: var(--eb-ivory);
+    border-left: 1px solid var(--eb-hairline);
+    box-shadow: -16px 0 48px rgba(32,30,26,0.18);
+    transform: translateX(100%);
+    transition: transform var(--dur-normal) var(--ease-decelerate);
+    z-index: 100;
+    display: flex; flex-direction: column;
+  }
+  .drawer.open { transform: translateX(0); }
+
+  .drawer-head {
+    padding: 26px 26px 20px;
+    border-bottom: 1px solid var(--eb-hairline);
+    position: relative;
+  }
+  .drawer-close {
+    position: absolute; top: 18px; right: 18px;
+    width: 32px; height: 32px;
+    border: 1px solid var(--eb-hairline);
+    background: var(--eb-oat);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px; line-height: 1;
+    color: var(--eb-stone-600);
+    transition: all var(--dur-fast) var(--ease-standard);
+  }
+  .drawer-close:hover { background: var(--eb-cream); color: var(--eb-graphite); }
+  .drawer-icon { font-size: 34px; line-height: 1; margin-bottom: 12px; display: block; }
+  .drawer-name {
+    font-size: var(--fs-h3);
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-tight);
+    margin-bottom: 6px;
+    padding-right: 36px;
+  }
+  .drawer-remote {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--fs-xs);
+    color: var(--eb-stone-400);
+    word-break: break-all;
+  }
+  .group-tag {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: var(--fs-eyebrow);
+    letter-spacing: var(--ls-eyebrow);
+    text-transform: uppercase;
+    font-weight: var(--fw-semibold);
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+  }
+
+  .drawer-body { padding: 22px 26px 32px; overflow-y: auto; flex: 1; }
+  .section { margin-bottom: 24px; }
+  .section-label {
+    font-size: var(--fs-eyebrow);
+    letter-spacing: var(--ls-eyebrow);
+    text-transform: uppercase;
+    color: var(--eb-stone-400);
+    font-weight: var(--fw-semibold);
+    margin-bottom: 8px;
+  }
+  .purpose { font-size: var(--fs-body); color: var(--eb-graphite); }
+  .stack-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .stack-chip {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: var(--eb-oat);
+    border: 1px solid var(--eb-hairline);
+    color: var(--eb-stone-600);
+  }
+  .edge-list { display: flex; flex-direction: column; gap: 8px; }
+  .edge-item {
+    border: 1px solid var(--eb-hairline);
+    border-radius: 9px;
+    padding: 10px 12px;
+    background: #fff;
+    cursor: pointer;
+    transition: all var(--dur-fast) var(--ease-standard);
+  }
+  .edge-item:hover { border-color: var(--eb-earl-200); background: var(--eb-cream); }
+  .edge-target {
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-sm);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .edge-reason { font-size: var(--fs-xs); color: var(--eb-stone-500, var(--eb-stone-600)); margin-top: 3px; }
+  .edge-empty { font-size: var(--fs-sm); color: var(--eb-stone-400); font-style: italic; }
+  .arrow-out { color: var(--eb-earl-500); }
+  .arrow-in { color: var(--eb-info); }
+
+  .back-link { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+  .back-link:hover { border-bottom-color: currentColor; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="eyebrow"><a class="back-link" href="/">← EarlBear blog</a> · Architecture</div>
+      <h1>Repo Map</h1>
+      <p class="subtitle">Every repository in the EarlBear ecosystem and how it connects — build-time dependencies, content sync, publishing, and shared infrastructure. Click any box for detail.</p>
+    </header>
+
+    <div class="toolbar">
+      <div class="legend" id="legend"></div>
+      <div class="hint">Click a repo node to open its detail panel →</div>
+    </div>
+
+    <div class="diagram-wrap">
+      <div class="mermaid" id="graph"></div>
+    </div>
+
+    <p class="footnote">
+      Snapshot of the local <code>~/Workspace/git/earlbear-*</code> ecosystem. Solid arrows = build/runtime dependency · dotted = sync/publish/distribution. Regenerate with the <code>manage-repo-map</code> skill when repos change.
+    </p>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <button class="drawer-close" id="drawerClose" aria-label="Close">✕</button>
+      <span class="drawer-icon" id="dIcon">📦</span>
+      <div class="drawer-name" id="dName">—</div>
+      <div class="drawer-remote" id="dRemote"></div>
+      <span class="group-tag" id="dGroup"></span>
+    </div>
+    <div class="drawer-body">
+      <div class="section">
+        <div class="section-label">Purpose</div>
+        <div class="purpose" id="dPurpose"></div>
+      </div>
+      <div class="section">
+        <div class="section-label">Stack</div>
+        <div class="stack-row" id="dStack"></div>
+      </div>
+      <div class="section">
+        <div class="section-label"><span class="arrow-out">→</span> Depends on / publishes to</div>
+        <div class="edge-list" id="dOut"></div>
+      </div>
+      <div class="section">
+        <div class="section-label"><span class="arrow-in">←</span> Consumed by</div>
+        <div class="edge-list" id="dIn"></div>
+      </div>
+    </div>
+  </aside>
+
+<script>
+/* =========================================================================
+   DATA — EarlBear repo inventory + directed interconnections.
+   Assembled from each repo's README/CLAUDE.md + package.json file: deps.
+   Keep this in sync via the manage-repo-map skill.
+   ========================================================================= */
+
+// Sibling dirs the scanner should NOT flag as "missing from the map" — local
+// aliases / non-repos that intentionally don't get their own node. Read by the
+// manage-repo-map skill so a deliberate omission isn't perpetual drift.
+// earlbear-gallery is a local folder alias pointing at the same EarlBear/gallery
+// remote as `earlbear`; mapping both would duplicate one node.
+var IGNORE_REPOS = ["earlbear-gallery"];
+
+var GROUPS = {
+  frontend:  { label: 'Frontend & Assets', color: '#B14726' },
+  shopify:   { label: 'Shopify',           color: '#2A6F7A' },
+  cli:       { label: 'CLIs & Agent',      color: '#7A5C2A' },
+  ops:       { label: 'Content & Ops',     color: '#5A554C' },
+  dist:      { label: 'Distribution',      color: '#4A6B3A' },
+  plugins:   { label: 'Plugins & Skills',  color: '#6B4A7A' }
+};
+
+var REPOS = {
+  "earlbear-sites":        { icon: "🎨", group: "frontend", remote: "EarlBear/sites",
+    stack: ["TypeScript", "React", "Vite", "Docker", "Cloudflare", "Supabase"],
+    purpose: "All frontend & visual assets: 12-theme wireframes, ecommerce store mockups, dashboards, Claude artifacts, the A/B proxy Worker, CF Pages Functions, and the StatiCrypt dist/publish pipeline. The sole publisher of the gallery." },
+  "earlbear-design-system":{ icon: "🧩", group: "frontend", remote: "EarlBear/design-system",
+    stack: ["TypeScript", "React", "tsup"],
+    purpose: "Brand foundations. Publishes the @earlbear/ui npm package — React component library plus the colors_and_type.css token file consumed across every surface." },
+  "earlbear-blog":         { icon: "📝", group: "frontend", remote: "EarlBear/blog",
+    stack: ["Astro", "TypeScript", "GitHub Pages", "Cloudflare", "Python"],
+    purpose: "The EarlBear blog — a static Astro site that builds two audiences from one repo: a public external site on GitHub Pages and an org-only internal site on Cloudflare Pages behind CF Access." },
+  "earlbear-agentic-workflow": { icon: "🔄", group: "frontend", remote: "EarlBear/gtm-workflow",
+    stack: ["TypeScript", "React", "Vite", "Cloudflare", "Supabase", "Chart.js"],
+    purpose: "The site behind gtm.earlbear.com: the agentic go-to-market loop, a consolidated metrics dashboard, and a viewer for the Claude Code transcripts that power the numbers. Renders diagrams from the shared @earlbear/ui engine extracted from the blog." },
+
+  "earlbear-shopify-sites":      { icon: "🛍️", group: "shopify", remote: "EarlBear/shopify-sites",
+    stack: ["Python", "YAML", "Docker", "GraphQL"],
+    purpose: "Declarative source of truth for Shopify store configs (sites/<handle>/). Syncs products, collections, themes, and experiments to the Shopify Admin API via Python apply scripts." },
+  "earlbear-headless-shopify-sites": { icon: "⚡", group: "shopify", remote: "EarlBear/earlbear-headless-shopify-sites",
+    stack: ["TypeScript", "React Router", "Hydrogen", "Vite", "Cloudflare"],
+    purpose: "Headless Shopify storefronts (one Hydrogen app per store) reading live store data via the Storefront API, deployed publicly to Cloudflare Pages. Read-only on store config." },
+  "earlbear-shopify-theme":      { icon: "🎭", group: "shopify", remote: "EarlBear/earlbear-shopify-theme",
+    stack: ["Liquid", "YAML", "Shopify Theme"],
+    purpose: "Master Liquid theme — one theme, many client stores. Brand identity comes from store-specific manifests; pushed via Theme Access tokens." },
+  "earlbear-shopify-app-cli":    { icon: "🔑", group: "shopify", remote: "(local only)",
+    stack: ["TypeScript", "React Router", "Shopify CLI"],
+    purpose: "Shopify app template (React Router based) that generates short-lived OAuth tokens for store access." },
+
+  "earlbear-clis":         { icon: "⌨️", group: "cli", remote: "EarlBear/clis",
+    stack: ["Python", "Docker", "Typer"],
+    purpose: "Shared CLI implementations: ebshop (Shopify Admin), ebjira (Jira Cloud), ebdocs (Google Docs/Drive), ebimg (image gen). All Docker-containerized." },
+  "earlbear-claude-agent": { icon: "🤖", group: "cli", remote: "EarlBear/agent-watson",
+    stack: ["Python", "Docker", "Claude API"],
+    purpose: "Cloud agent packaging (Watson) for scheduled/autonomous work. Syncs CLI source from earlbear-clis (marked DO-NOT-EDIT) on each run." },
+  "earlbear-mcps":         { icon: "🔌", group: "cli", remote: "bytesofpurpose/earlbear-mcps",
+    stack: ["JavaScript", "Cloudflare Workers", "OAuth"],
+    purpose: "MCP servers on Cloudflare Workers (e.g. gdocs MCP). OAuth-gated, no anonymous access." },
+  "earlbear-deck-generator": { icon: "📊", group: "cli", remote: "(local only)",
+    stack: ["Python", "Node", "Docker", "Marp"],
+    purpose: "AI-friendly presentation generation: YAML → PPTX/PDF/Slidev via Marp, python-pptx, and a Figma Slides plugin." },
+  "earlbear-judge":        { icon: "⚖️", group: "cli", remote: "(local only)",
+    stack: ["JavaScript", "Playwright", "Lighthouse"],
+    purpose: "Claude agent that audits ecommerce sites for health — grades funnel stages, finds friction, and designs experiments. Includes Playwright + Lighthouse/SEO audits." },
+
+  "earlbear":              { icon: "🐻", group: "ops", remote: "EarlBear/gallery",
+    stack: ["Python", "Shell", "YAML", "Make"],
+    purpose: "The ops hub: CLI build orchestration, cloud-agent wiring, MCP, and Jira/Shopify manifests. Hosts the gh-pages branch that earlbear-sites publishes the gallery into." },
+  "earlbear-content":      { icon: "📚", group: "ops", remote: "bytesofpurpose/earlbear-content",
+    stack: ["YAML", "Markdown", "Git LFS"],
+    purpose: "Version-controlled content synced from Jira & Google Drive — the canonical source of truth for structured content (stories, docs, binary assets)." },
+  "earlbear-domain":       { icon: "🌐", group: "ops", remote: "EarlBear/earlbear-domain",
+    stack: ["Make", "Bash", "Cloudflare API", "dotenvx", "YAML"],
+    purpose: "Codified DNS + domain management for earlbear.com — the single home for domain identity, Cloudflare DNS, and CF Access provisioning that sibling deploy pipelines (blog, sites, landing) call into." },
+
+  "earlbear-homebrew":     { icon: "🍺", group: "dist", remote: "EarlBear/homebrew-tap",
+    stack: ["Ruby", "Homebrew"],
+    purpose: "Homebrew tap for Mac installation of the EarlBear CLI tools (ebdeck, ebjira, ebdocs, ebshop) and the installer cask." },
+  "earlbear-apps":         { icon: "💻", group: "dist", remote: "EarlBear/apps",
+    stack: ["Bash", "Automator", "Tart VM"],
+    purpose: "Mac developer tooling — the EarlBear installer wizard, Automator app, and Tart VM validation. Releases are indexed by the homebrew cask." },
+  "earlbear-landing":      { icon: "🚀", group: "dist", remote: "EarlBear/landing",
+    stack: ["HTML", "CSS", "JavaScript", "GitHub Pages"],
+    purpose: "A published, dependency-free static mirror of the EarlBear marketing site, served via GitHub Pages at discover.earlbear.com and synced from an upstream source repo. No build step." },
+
+  "earlbear-claude-plugin-marketplace": { icon: "🎁", group: "plugins", remote: "EarlBear/marketplace-claude-plugins",
+    stack: ["Claude Skills", "YAML", "Markdown"],
+    purpose: "Claude skills bundle: deck-manager, wireframe-manager, artifact-manager, jira-manager, shopify-manager, cloud-agent-manager, earlbear-docs-manager. Skills orchestrate sibling-repo workflows." }
+};
+
+/* Directed edges: from --> to. kind: 'dep' (solid) | 'flow' (dotted). */
+var EDGES = [
+  { from: "earlbear-sites", to: "earlbear-design-system", kind: "dep",
+    reason: "All apps/* consume @earlbear/ui via a file: dependency." },
+  { from: "earlbear-sites", to: "earlbear", kind: "flow",
+    reason: "Sole publisher of the gallery to the EarlBear/gallery gh-pages branch via a cross-repo git worktree." },
+  { from: "earlbear-headless-shopify-sites", to: "earlbear-sites", kind: "flow",
+    reason: "Storefronts use the ab-proxy Worker deployed from earlbear-sites/workers/ab-proxy/." },
+  { from: "earlbear-headless-shopify-sites", to: "earlbear-shopify-sites", kind: "flow",
+    reason: "Reads live store data; store config is read-only here (edit it in shopify-sites)." },
+  { from: "earlbear-shopify-sites", to: "earlbear-sites", kind: "flow",
+    reason: "Shares the ab-proxy Worker + the ab_events Supabase table owned by earlbear-sites." },
+  { from: "earlbear-shopify-sites", to: "earlbear-shopify-theme", kind: "flow",
+    reason: "Stores deploy the master Liquid theme, customized per store via manifests." },
+  { from: "earlbear-shopify-sites", to: "earlbear-clis", kind: "flow",
+    reason: "Uses the ebshop CLI to provision/manage store catalog and theme assignments." },
+  { from: "earlbear-shopify-theme", to: "earlbear-clis", kind: "flow",
+    reason: "Theme provisioning is driven by the ebshop CLI." },
+  { from: "earlbear-claude-agent", to: "earlbear-clis", kind: "flow",
+    reason: "Syncs jira-cli / gdocs-cli / shopify-cli source from earlbear-clis (overwritten on each sync)." },
+  { from: "earlbear-claude-agent", to: "earlbear-content", kind: "flow",
+    reason: "Watson reads structured/binary context from $CONTENT_DIR for decisions and reporting." },
+  { from: "earlbear-claude-agent", to: "earlbear-shopify-sites", kind: "flow",
+    reason: "Invokes shopify-manager skills (via synced shopify-cli) to mutate stores." },
+  { from: "earlbear-clis", to: "earlbear-content", kind: "flow",
+    reason: "ebjira sync / ebdocs sync keep Jira & Drive content versioned in earlbear-content." },
+  { from: "earlbear", to: "earlbear-clis", kind: "flow",
+    reason: "Ops hub builds/rebuilds CLI Docker images via make *-cli-* targets." },
+  { from: "earlbear-clis", to: "earlbear-homebrew", kind: "flow",
+    reason: "ebdeck/ebjira/ebdocs/ebshop formulas are distributed through the homebrew tap." },
+  { from: "earlbear-apps", to: "earlbear-homebrew", kind: "flow",
+    reason: "Installer DMG releases are linked by the homebrew cask formula." },
+  { from: "earlbear-claude-plugin-marketplace", to: "earlbear-shopify-sites", kind: "flow",
+    reason: "shopify-manager plugin provides conform-store / validate-site skills used here." },
+  { from: "earlbear-claude-plugin-marketplace", to: "earlbear-deck-generator", kind: "flow",
+    reason: "deck-manager plugin invokes the deck generation workflows." },
+  { from: "earlbear-judge", to: "earlbear-headless-shopify-sites", kind: "flow",
+    reason: "Audits deployed storefronts and produces graded reports + experiment backlogs." },
+
+  { from: "earlbear-blog", to: "earlbear-design-system", kind: "dep",
+    reason: "Consumes @earlbear/ui via a file: dependency (the shared diagram engine) and vendors its tokens/assets via npm run sync-assets." },
+  { from: "earlbear-agentic-workflow", to: "earlbear-design-system", kind: "dep",
+    reason: "Consumes @earlbear/ui via a file: dependency and vendors its tokens, recording the source commit in .sync-source.json." },
+  { from: "earlbear-agentic-workflow", to: "earlbear-blog", kind: "flow",
+    reason: "Renders the same flow diagrams from the @earlbear/ui engine extracted out of the blog FlowDiagram component (one engine, two renderers)." },
+  { from: "earlbear-agentic-workflow", to: "earlbear-sites", kind: "flow",
+    reason: "make demos collects CX demo artifacts from earlbear-sites/claude-artifacts; CF Access + first-time setup follow the earlbear-sites pattern." },
+  { from: "earlbear-blog", to: "earlbear-domain", kind: "flow",
+    reason: "The internal site DNS + CF Access app are codified in earlbear-domain; the deploy must pass its deploy-contract audit." },
+  { from: "earlbear-agentic-workflow", to: "earlbear-domain", kind: "flow",
+    reason: "Cloudflare Pages / domain + CF Access provisioning for gtm.earlbear.com follows the earlbear-domain flow." },
+  { from: "earlbear-landing", to: "earlbear-domain", kind: "flow",
+    reason: "DNS for discover.earlbear.com is a Cloudflare CNAME → earlbear.github.io, a record earlbear-domain manages." }
+];
+
+/* =========================================================================
+   MERMAID GRAPH BUILD
+   ========================================================================= */
+function nodeId(slug) { return "n_" + slug.replace(/-/g, "_"); }
+
+function buildGraph() {
+  var lines = ["flowchart LR"];
+  // subgraphs by group
+  Object.keys(GROUPS).forEach(function (g) {
+    lines.push('  subgraph sg_' + g + '["' + GROUPS[g].label + '"]');
+    Object.keys(REPOS).forEach(function (slug) {
+      if (REPOS[slug].group === g) {
+        var r = REPOS[slug];
+        var label = r.icon + " " + slug.replace("earlbear-", "");
+        lines.push('    ' + nodeId(slug) + '["' + label + '"]');
+      }
+    });
+    lines.push('  end');
+  });
+  // edges
+  EDGES.forEach(function (e) {
+    var arrow = e.kind === "dep" ? "-->" : "-.->";
+    lines.push('  ' + nodeId(e.from) + ' ' + arrow + ' ' + nodeId(e.to));
+  });
+  // class styling per group
+  Object.keys(GROUPS).forEach(function (g) {
+    lines.push('  classDef cls_' + g + ' fill:' + tint(GROUPS[g].color) + ',stroke:' + GROUPS[g].color + ',stroke-width:1.5px,color:#201E1A;');
+  });
+  Object.keys(REPOS).forEach(function (slug) {
+    lines.push('  class ' + nodeId(slug) + ' cls_' + REPOS[slug].group + ';');
+  });
+  // click bindings -> global handler
+  Object.keys(REPOS).forEach(function (slug) {
+    lines.push('  click ' + nodeId(slug) + ' call rmSelect("' + slug + '")');
+  });
+  return lines.join("\n");
+}
+
+// lighten a hex toward paper for node fill
+function tint(hex) {
+  var h = hex.replace("#", "");
+  var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+  var mix = 0.84;
+  r = Math.round(r + (251 - r) * mix);
+  g = Math.round(g + (249 - g) * mix);
+  b = Math.round(b + (245 - b) * mix);
+  return "#" + [r, g, b].map(function (v) { return ("0" + v.toString(16)).slice(-2); }).join("");
+}
+
+/* =========================================================================
+   DRAWER
+   ========================================================================= */
+var drawer = document.getElementById("drawer");
+var scrim = document.getElementById("scrim");
+var activeSlug = null;
+
+function edgesOut(slug) { return EDGES.filter(function (e) { return e.from === slug; }); }
+function edgesIn(slug)  { return EDGES.filter(function (e) { return e.to === slug; }); }
+
+function renderEdgeList(container, edges, dir) {
+  container.innerHTML = "";
+  if (!edges.length) {
+    var empty = document.createElement("div");
+    empty.className = "edge-empty";
+    empty.textContent = dir === "out" ? "No outbound dependencies." : "Not consumed by any repo in the map.";
+    container.appendChild(empty);
+    return;
+  }
+  edges.forEach(function (e) {
+    var other = dir === "out" ? e.to : e.from;
+    var r = REPOS[other];
+    var item = document.createElement("div");
+    item.className = "edge-item";
+    var t = document.createElement("div");
+    t.className = "edge-target";
+    t.innerHTML = '<span>' + (r ? r.icon : "📦") + '</span><span>' + other.replace("earlbear-", "") + '</span>';
+    var reason = document.createElement("div");
+    reason.className = "edge-reason";
+    reason.textContent = e.reason;
+    item.appendChild(t);
+    item.appendChild(reason);
+    item.addEventListener("click", function () { rmSelect(other); });
+    container.appendChild(item);
+  });
+}
+
+function rmSelect(slug) {
+  var r = REPOS[slug];
+  if (!r) return;
+  activeSlug = slug;
+  var grp = GROUPS[r.group];
+
+  document.getElementById("dIcon").textContent = r.icon;
+  document.getElementById("dName").textContent = slug;
+  var remoteEl = document.getElementById("dRemote");
+  remoteEl.textContent = r.remote && r.remote.indexOf("(") !== 0 ? "github.com/" + r.remote : r.remote;
+  document.getElementById("dPurpose").textContent = r.purpose;
+
+  var gt = document.getElementById("dGroup");
+  gt.textContent = grp.label;
+  gt.style.color = grp.color;
+
+  var stack = document.getElementById("dStack");
+  stack.innerHTML = "";
+  r.stack.forEach(function (s) {
+    var chip = document.createElement("span");
+    chip.className = "stack-chip";
+    chip.textContent = s;
+    stack.appendChild(chip);
+  });
+
+  renderEdgeList(document.getElementById("dOut"), edgesOut(slug), "out");
+  renderEdgeList(document.getElementById("dIn"), edgesIn(slug), "in");
+
+  highlightNode(slug);
+
+  drawer.classList.add("open");
+  scrim.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
+}
+// mermaid 'call' bindings need the handler on window
+window.rmSelect = rmSelect;
+
+function highlightNode(slug) {
+  document.querySelectorAll(".mermaid .node.rm-active").forEach(function (n) { n.classList.remove("rm-active"); });
+  // mermaid assigns node ids containing our nodeId; match flexibly
+  var target = nodeId(slug);
+  document.querySelectorAll(".mermaid .node").forEach(function (n) {
+    if ((n.id || "").indexOf(target) !== -1) n.classList.add("rm-active");
+  });
+}
+
+function closeDrawer() {
+  drawer.classList.remove("open");
+  scrim.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+  document.querySelectorAll(".mermaid .node.rm-active").forEach(function (n) { n.classList.remove("rm-active"); });
+  activeSlug = null;
+}
+document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+scrim.addEventListener("click", closeDrawer);
+document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+
+/* =========================================================================
+   LEGEND
+   ========================================================================= */
+(function buildLegend() {
+  var el = document.getElementById("legend");
+  Object.keys(GROUPS).forEach(function (g) {
+    var item = document.createElement("div");
+    item.className = "legend-item";
+    var sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = tint(GROUPS[g].color);
+    sw.style.borderColor = GROUPS[g].color;
+    item.appendChild(sw);
+    item.appendChild(document.createTextNode(GROUPS[g].label));
+    el.appendChild(item);
+  });
+})();
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: "loose",
+  theme: "base",
+  themeVariables: {
+    fontFamily: "'IBM Plex Sans', sans-serif",
+    fontSize: "13px",
+    lineColor: "#8A8377",
+    clusterBkg: "#FBF9F5",
+    clusterBorder: "#E3DCCF",
+    titleColor: "#5A554C",
+    edgeLabelBackground: "#FBF9F5"
+  },
+  flowchart: { curve: "basis", htmlLabels: true, nodeSpacing: 28, rankSpacing: 70, padding: 10 }
+});
+
+(async function render() {
+  var def = buildGraph();
+  var el = document.getElementById("graph");
+  try {
+    var out = await mermaid.render("repoMapSvg", def);
+    el.innerHTML = out.svg;
+    if (out.bindFunctions) out.bindFunctions(el);
+  } catch (err) {
+    el.innerHTML = '<pre style="color:var(--eb-error);white-space:pre-wrap">Diagram failed to render: ' + (err && err.message) + '</pre>';
+    console.error("[repo-map] mermaid render error", err);
+  }
+})();
+</script>
+</body>
+</html>

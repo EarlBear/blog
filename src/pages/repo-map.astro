@@ -1,0 +1,61 @@
+---
+/**
+ * Repo Map — a standalone INTERNAL reference page.
+ *
+ * The interactive map of every earlbear-* repo and how it interconnects. Ported
+ * from earlbear-sites/claude-artifacts/repo-map/ (see src/repo-map/artifact.html),
+ * it is a self-contained document (its own <head>, an aggressive CSS reset, a
+ * full-viewport drawer, and Mermaid via CDN), so it is served AS-IS rather than
+ * wrapped in BaseLayout — the blog chrome would fight the artifact's reset and it
+ * needs to own the viewport.
+ *
+ * AUDIENCE GUARD (security-critical). The blog's audience allowlist only gates
+ * `getCollection('blog')` posts (getPublishedPosts in src/lib/posts.ts). A
+ * standalone page like this is NOT covered by that filter, so it would otherwise
+ * render on the EXTERNAL build too. We therefore self-guard here, mirroring the
+ * PROD-404 idiom in src/pages/bench/diagram.astro: on a production EXTERNAL build
+ * this route returns 404 and emits nothing. On `astro dev` it renders (dev shows
+ * every audience). The deploy guard (.claude/hooks/check-audience.py --check-dist)
+ * additionally fails the external deploy if a /repo-map/ page ever leaks into the
+ * external dist — belt and suspenders. See docs/features/audience-split.md.
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { isInternalBuild } from '../lib/posts';
+
+// Fail-closed: only the internal production build serves this page.
+if (import.meta.env.PROD && !isInternalBuild()) {
+  return new Response(null, { status: 404 });
+}
+
+// Read the vendored artifact + the blog's tokens at build time, and inline the
+// tokens where the artifact left the EB_TOKENS placeholder so the document is
+// fully self-contained (no external token stylesheet to resolve). Resolve from
+// the project root (process.cwd() during `astro build`/`dev`) rather than
+// import.meta.url, which points at the compiled chunk in dist/ at build time.
+const root = process.cwd();
+const artifactPath = join(root, 'src/repo-map/artifact.html');
+const tokensPath = join(root, 'src/styles/tokens.css');
+
+let html = readFileSync(artifactPath, 'utf8');
+const tokens = readFileSync(tokensPath, 'utf8');
+
+const TOKENS_MARKER = '<!-- EB_TOKENS:';
+const markerStart = html.indexOf(TOKENS_MARKER);
+if (markerStart === -1) {
+  throw new Error(
+    'repo-map: EB_TOKENS marker not found in src/repo-map/artifact.html — the token ' +
+      'inlining anchor is missing (did the vendored artifact change?).',
+  );
+}
+const markerEnd = html.indexOf('-->', markerStart) + 3;
+html =
+  html.slice(0, markerStart) +
+  `<style>\n/* Vendored EarlBear design-system tokens (src/styles/tokens.css) */\n${tokens}\n</style>` +
+  html.slice(markerEnd);
+
+return new Response(html, {
+  status: 200,
+  headers: { 'content-type': 'text/html; charset=utf-8' },
+});
+---

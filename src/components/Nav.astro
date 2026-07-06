@@ -14,6 +14,11 @@ const links = [
   { href: '/authors/', label: 'Authors' },
   { href: '/about/', label: 'About' },
   { href: '/rss.xml', label: 'RSS' },
+  // Repo Map is an INTERNAL-only reference page (src/pages/repo-map.astro
+  // self-guards to 404 on the external build). Only link it on the internal
+  // build so the external nav never advertises it — one more layer alongside
+  // the page guard and the sitemap filter. See docs/features/audience-split.md.
+  ...(internal ? [{ href: '/repo-map/', label: 'Repo Map' }] : []),
 ];
 ---
 

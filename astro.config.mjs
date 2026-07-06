@@ -24,7 +24,20 @@ export default defineConfig({
   // mdx lets a post embed Astro components inline (e.g. <UseCaseDiagram/>).
   // Plain markdown posts still render through the same pipeline; mdx only kicks
   // in for .mdx files. No client JS is added — components render at build time.
-  integrations: [mdx(), sitemap()],
+  integrations: [
+    mdx(),
+    sitemap({
+      // /repo-map/ is an INTERNAL-only standalone page (src/pages/repo-map.astro
+      // self-guards to 404 on the external build). The sitemap integration
+      // enumerates routes before that runtime guard runs, so on the EXTERNAL
+      // build we must drop the URL here — otherwise the public sitemap would
+      // advertise an internal-only URL that 404s. It stays in the internal
+      // sitemap. This is part of the audience safety net; see
+      // docs/features/audience-split.md and .claude/hooks/check-audience.py.
+      filter: (page) =>
+        AUDIENCE === 'internal' || !/\/repo-map\/?$/.test(page),
+    }),
+  ],
   markdown: {
     shikiConfig: {
       // Warm light theme; the code-block container is re-skinned to
