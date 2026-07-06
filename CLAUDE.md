@@ -122,11 +122,14 @@ make install-hooks   # sets core.hooksPath to .githooks (needs: brew install git
 Pages → Edit) to `wrangler pages deploy` the internal build. This is the auth model
 the **`../earlbear-domain` deploy-contract audit** requires (`make -C
 ../earlbear-domain audit-deploy`) — a scoped, **dotenvx-encrypted** token, not
-machine wrangler OAuth. Setup, mirroring the domain repo's pattern:
+machine wrangler OAuth. Set (or rotate) the token with the **same codified flow as
+`../earlbear-domain`** — `collect-secret` → `encrypt` → `key-backup`:
 
 ```bash
-npx dotenvx set CLOUDFLARE_API_TOKEN <token>   # writes encrypted value → .env, key → .env.keys
-make key-backup                                # back .env.keys up to LastPass (source of truth)
+make collect-secret VARS=CLOUDFLARE_API_TOKEN   # seeds a placeholder in .env (gitignored), opens it to paste
+# paste the token value next to CLOUDFLARE_API_TOKEN=, then:
+make encrypt                                    # plaintext → dotenvx ciphertext (safe to commit)
+make key-backup                                 # back .env.keys up to LastPass (source of truth)
 ```
 
 - The token lives **dotenvx-encrypted** in `.env`; `deploy:internal` injects it via
@@ -201,6 +204,12 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
   mis-classified ones. Complements the audience *guards* (which only honor the
   declared value): this judges whether the declaration *fits* the content, catching
   internal-sounding posts marked public. Run `audience-fit-check` for the short list.
+- **`external-post-review`** — a finer, section-level pass on a *correctly-public*
+  post: does any passage over-share proprietary "secret sauce" (verbatim prompts,
+  full configs, exact tuning knobs, internal economics) and turn the post into a
+  clone-us handbook? Recommends *softer rewrites* that keep the marketing value,
+  rather than moving the post. Run `secret-sauce-check` for the tells; use
+  `audience-audit` when the fix is a move, not a softening.
 
 ## Feature docs (the "why")
 

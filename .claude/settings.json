@@ -60,6 +60,10 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-audience-fit.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-secret-sauce.py"
           }
         ]
       }
