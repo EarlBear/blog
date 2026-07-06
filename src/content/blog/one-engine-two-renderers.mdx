@@ -1,0 +1,178 @@
+---
+title: "One engine, two renderers: sharing a diagram layout across Astro and React"
+description: We had two codebases drawing the same flow diagrams — one deterministic and clean, one that measured the DOM and tangled. Rather than copy the good one, we extracted its pure layout engine so both render from it. The options we weighed, the factor that decided it, and the moment the overlap gate refused to draw our own diagram.
+pubDate: 2026-07-06
+tags: [engineering, agents]
+expects: [flow]
+authors: [omar]
+draft: true
+design: shared-diagram-engine
+audience: internal
+questions:
+  - Two repos draw the same kind of diagram and have drifted apart — do you copy the better one, or share it?
+  - How do you share layout code between an Astro site (build-time, zero JS) and a React app (runtime) without forcing one framework on the other?
+  - What makes a hand-rolled diagram tangle its own edges, and how do you stop it by construction?
+  - When would extracting a shared engine be the wrong call?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+We ended up drawing the same picture twice. The blog you are reading renders flow diagrams —
+pipelines, loops, architectures — from a small build-time engine that lays nodes out
+deterministically and refuses to ship a diagram whose edges tangle. Separately, our internal
+go-to-market app drew *the same loop of agents* with its own hand-rolled diagram code. Same
+shapes, same brand, two implementations. And they had drifted: the app's version measured the
+rendered DOM at runtime to place its edges, and on the architecture view it produced a mess —
+edges cutting diagonally across a wrapping grid, because a node in the top-right connected to a
+node in the bottom-left and the line just went straight there.
+
+Two versions of one thing, one of them worse. That is the setup for a decision every codebase
+eventually faces: **when you have the same capability in two places, do you copy the good one,
+or do you share it?**
+
+## The forces
+
+Four things pulled on the answer:
+
+- **One visual language.** A diagram on the blog and a diagram in the app should look like they
+  came from the same house. Two implementations guarantee they will drift.
+- **One place to fix a bug.** When the layout is wrong, we want to fix it once — not find and
+  patch the same bug in two codebases.
+- **Two different frameworks.** The blog is Astro: diagrams are inline SVG generated at build
+  time, with a zero-JavaScript baseline. The app is React, rendering at runtime. Whatever we
+  share cannot drag one framework into the other.
+- **The good version was almost pure already.** The blog's engine — the layout math, the
+  crossing check, the Mermaid parser — turned out to be about ninety percent plain TypeScript.
+  Only the last mile, turning geometry into markup, was framework-specific.
+
+That last force is the one that mattered, but we did not assume it. We weighed three options.
+
+## Three options
+
+**Option A — just fix the app's diagram in place.** Straighten the tangled edges, lock the loop
+to a fixed number of columns, and leave two independent systems. Cheapest by far. But it does
+not answer the actual question — the two systems keep drifting — and it leaves the app's diagram
+with no crossing check, so it can re-tangle the next time someone edits the data.
+
+**Option B — copy the blog's engine into the app as a React component.** Now the app gets the
+*good* engine: deterministic layout, the crossing check. Nothing new to publish. But it creates
+a second copy of the engine to keep in sync with the blog's — which is the exact drift we are
+trying to end, just relocated to a new pair of files.
+
+**Option C — extract the pure engine into our shared component library, and render it from thin,
+per-framework wrappers.** The layout, the crossing check, and the parser move into a
+framework-free module. The blog's Astro component and a new React component both become dumb
+renderers over the one engine's output. Most work; touches three repos; the blog picks up a new
+dependency. But it is the only option that actually *ends* the divergence instead of relocating
+or ignoring it.
+
+We chose C. The deciding factor was that last force from above: because the engine was already
+almost entirely pure, the extraction was far cheaper than it looked — the seam between "compute
+the geometry" and "draw the markup" was already there in the code, waiting to be cut. Given that,
+B's "just copy it" savings were illusory: you pay them back forever in sync cost. A was never
+really on the table; it ignores the question.
+
+The shape we landed on is one engine feeding two renderers:
+
+<FlowDiagram
+  title="One engine, two renderers"
+  shape="branch"
+  legend
+  desc="A single framework-free layout engine computes node positions, edge geometry, and a crossing check. Two thin renderers — an Astro one for the blog, a React one for the app — draw that same geometry as SVG in their own framework."
+  nodes={[
+    { id: 'engine', label: 'Layout engine', kind: 'edge', detail: 'Pure TypeScript: deterministic node placement, edge geometry, the overlap gate, and the Mermaid parser. No React, no Astro, no DOM. Same spec in, same geometry out.' },
+    { id: 'astro', label: 'Astro renderer', kind: 'default', detail: 'The blog. Calls the engine at build time and emits inline SVG — the zero-JavaScript path, unchanged from before the extraction.' },
+    { id: 'react', label: 'React renderer', kind: 'default', detail: 'The internal app. Calls the same engine and draws the geometry as React SVG, with the app’s richer interactive node cards on top.' },
+    { id: 'blogfig', label: 'Blog diagrams', kind: 'store', detail: 'Every flow figure in these posts — including the ones on this page — is drawn by the Astro renderer over the shared engine.' },
+    { id: 'appfig', label: 'App diagrams', kind: 'store', detail: 'The loop, architecture, and swimlane views in the go-to-market app, now all drawn by the React renderer over the same engine.' },
+  ]}
+  edges={[
+    { from: 'engine', to: 'astro', label: 'geometry' },
+    { from: 'engine', to: 'react', label: 'geometry' },
+    { from: 'astro', to: 'blogfig' },
+    { from: 'react', to: 'appfig' },
+  ]}
+/>
+
+The engine returns *data* — node positions, edge paths, the result of the crossing check — and
+never a single tag of markup. That is what lets an Astro build and a React app both consume it:
+neither has to adopt the other's rendering model. It is exported on its own sub-path so a
+consumer that only wants the layout math never pulls in React.
+
+## The part that earned the whole thing
+
+Here is the moment that justified choosing the *good* engine over merely fixing the bad one.
+
+The blog's engine carries a **blocking overlap gate**: after it computes where every edge goes,
+it counts how many edges cross another edge. If too few are crossing-free, it does not draw a
+tangle — it throws, and the build fails, with a message telling you to reorder the nodes.[^gate]
+The app's old hand-rolled diagram had no such check. It measured the DOM and drew whatever line
+connected two boxes, crossings and all. That is *why* it tangled: nothing was watching.
+
+When we pointed the app's new React renderer at the shared engine and asked it to draw the
+business-process view as swimlanes, the engine refused. It reported that only 63% of the edges
+were crossing-free, below its threshold, and stopped.[^refused] Our own diagram, the one that had
+been shipping tangled for weeks, failed the gate the moment a gate existed.
+
+And the gate was right. The offender was the loop-closing "feedback" edge — the arrow from the
+last agent back to the first, which is true and important in the *loop* view but, drawn across a
+left-to-right swimlane, backtracks across every lane and crosses everything. The honest fix was
+not to silence the gate; it was to recognize that a swimlane is a forward-journey view and the
+back-edge does not belong in it. So the app's swimlane drops the feedback edge; the loop and
+architecture views — which are laid out on a ring, where a return arrow closes the circle
+cleanly — keep it.
+
+<FlowDiagram
+  title="The loop keeps the return edge; the swimlane drops it"
+  shape="loop"
+  desc="On a ring, the last-to-first feedback arrow closes the loop without crossing anything. Laid out as a left-to-right swimlane, that same arrow backtracks across every lane and tangles the diagram — so the forward-journey view leaves it out."
+  nodes={[
+    { id: 'scan', label: 'Discovery', detail: 'Scan and score stores.' },
+    { id: 'reach', label: 'Outreach', detail: 'Personalized pitch per store.' },
+    { id: 'onboard', label: 'Onboarding', detail: 'Zero context to a dev-ready bundle.' },
+    { id: 'review', label: 'Review', detail: 'Site analysis and scored findings.' },
+    { id: 'enhance', label: 'Enhancement', detail: 'Ship the wins, then feed learnings back to Discovery — the return edge that closes the loop.' },
+  ]}
+  edges={[
+    { from: 'scan', to: 'reach' },
+    { from: 'reach', to: 'onboard' },
+    { from: 'onboard', to: 'review' },
+    { from: 'review', to: 'enhance' },
+    { from: 'enhance', to: 'scan' },
+  ]}
+/>
+
+A hand-rolled diagram cannot catch this, because catching it requires a layout that knows where
+everything is *before* it draws — which is exactly what the deterministic engine has and the
+runtime-measuring version did not. The gate is not a nicety bolted on top; it is a property you
+only get from computing the whole layout as pure data first.
+
+## What it bought, concretely
+
+The blog's diagram component lost about five hundred lines — all the layout and parsing moved to
+the shared engine, leaving a thin renderer.[^lines] Every flow figure in every post, including
+the two on this page, now comes from that engine. The app deleted three separate diagram
+components and the runtime-measurement code entirely, and its architecture view is now a clean
+ring instead of a diagonal tangle. A layout change — a new shape, a spacing tweak, a smarter
+crossing heuristic — now lands in one place and shows up in both.
+
+We proved the blog's output did not change by building a fixed set of diagrams before and after
+the switch and diffing the rendered SVG: identical, to the byte. A refactor that touches the
+rendering path for every diagram on the site, with zero visible change, is the good kind of
+boring.
+
+## When this would be the wrong call
+
+Extraction was right *because* the engine was nearly pure and the two renderers needed the same
+geometry — only different markup. If that stopped being true — if the blog and the app needed
+materially different *layouts*, not just different serializations of the same layout — the shared
+engine would start growing branches for each consumer, and a single copy per repo would become
+the cleaner answer. The shared spec and the Mermaid parser would still be worth consolidating;
+the layout would not. That is the signal to watch: the day the engine sprouts an `if renderer ===`
+is the day this decision starts to expire.
+
+[^gate]: The threshold is 75% of edges crossing-free. Loops are exempt — they are laid out on a ring by construction and a return edge closing the circle is expected, not a tangle. The gate can be downgraded from a build failure to a warning per-diagram with an explicit `allowOverlap`, which is a deliberate, visible decision rather than a silent one.
+
+[^refused]: 63% crossing-free is a derived measurement from our own layout of the go-to-market pipeline's eight stages as three swimlanes — the count of edges involved in at least one crossing, over the total edge count, for that specific graph. It is not an external benchmark.
+
+[^lines]: The blog's `FlowDiagram` component went from roughly 620 lines to about 120 — a net removal of around 500 lines, which moved into the shared engine (where they are written once rather than twice). The number is the diff of that one file, not a whole-repo count.

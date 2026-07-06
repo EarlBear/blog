@@ -38,8 +38,8 @@ upgrade. The full decision rule and parser scope live in the `enrich-post` skill
 
 ## Code
 <!-- Anchors seeded post-commit via feature-docs / `npm run features:seed`. -->
-- src/components/FlowDiagram.astro — pipeline/loop/sequence flows; gradient nodes; blocking overlap gate; draw-in animation; click-to-focus modal; accepts a native spec or a Mermaid string
-- src/components/diagram/mermaid-parse.ts — zero-dep parser for the Mermaid flowchart subset → FlowDiagram nodes/edges
+- @earlbear/ui/diagram (earlbear-design-system/src/diagram/) — the SHARED, framework-free layout engine: deterministic node placement, edge geometry, the blocking overlap gate, and the Mermaid flowchart parser. No React, no Astro, no DOM. Extracted so the blog's Astro renderer AND the go-to-market app's React renderer draw from one engine. See the `one-engine-two-renderers` post.
+- src/components/FlowDiagram.astro — the blog's thin Astro *renderer*: calls the shared engine (computeFlowLayout) and emits inline SVG (gradient nodes, draw-in animation, click-to-focus modal). Layout/gate/parsing no longer live here.
 - src/components/Accordion.astro — native `<details>`/`<summary>` foldable option list (decision posts), zero JS
 - src/styles/global.css — `.flow-diagram` and `.eb-accordion` styling + animation (reduced-motion safe)
 - .claude/skills/enrich-post/SKILL.md + catalog.md — the enrich process and the living technique catalog
