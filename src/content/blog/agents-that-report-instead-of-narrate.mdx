@@ -1,0 +1,238 @@
+---
+title: "Agents that report instead of narrate"
+description: "When an agent reviews a website, its findings usually die as prose in a transcript. We made the reporting a tool call instead — so a dashboard can stream the review live and the telemetry pipeline can roll it up. The design choices, and what turning findings into structured events buys you."
+pubDate: 2026-07-08
+tags: [engineering, agents]
+expects: [flow]
+authors: [omar]
+draft: true
+design: agent-reporting
+audience: internal
+questions:
+  - When an agent reviews something, where do its findings actually go — and can anyone read them without reading the whole transcript?
+  - If you want to watch an agent's review stream in live, what has to be true about how it records what it sees?
+  - Why make each observation a typed tool call instead of just asking the agent for a summary at the end?
+  - How do you keep a report that carries a screenshot or a GIF safe to read while the file is still being written?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+We asked an agent to review a Shopify storefront the way a first-time shopper would. It did a
+genuinely good job: it found that the two products you reach first from the men's collection
+were both sold out with the Add-to-Cart button disabled, that the PDP had no reviews to
+reassure a new buyer, and that a prominent "up to 2-week shipping delays" banner sat right at
+the top of the funnel. All correct. All useful.
+
+And all of it was **prose**, buried in a conversation transcript. To learn what the review
+found, you had to read the whole thing. There was no count of issues by severity, no way to
+plot the latency it measured, no reconstruction of the path it took to checkout, and — the
+part that stung — no way to *watch* the findings arrive while the review was still running. The
+agent had done the work; the work was trapped.
+
+So we changed what "reporting" means. Instead of the agent narrating findings into the
+transcript, each observation is a **tool call**.
+
+## The reporting is the call
+
+The agent doesn't write "I noticed the PDP has no reviews." It calls a tool:
+
+```
+report_issue({
+  run_id: "rev-20260708-2100-d032",
+  title: "No reviews / star ratings on PDP undercuts purchase confidence",
+  severity: "warning",
+  category: "pdp",
+  page_url: "https://www.allbirds.com/products/mens-tree-runners",
+  detail: "Social proof is the top question a first-time buyer has; the PDP shows none.",
+})
+```
+
+That single call does two jobs at once. It lands in the session transcript as a `tool_use`
+block — so the same telemetry pipeline that already mines our Claude Code sessions can roll
+every `report_*` call into a table with no new extractor code. And the tool's server writes
+the report to disk the instant it's made — so a dashboard can read it *now*, without ever
+talking to the agent.
+
+<FlowDiagram
+  title="One call, two consumers"
+  shape="branch"
+  legend
+  desc="Each reporting tool call fans out to two independent consumers: it lands in the session transcript (which the telemetry pipeline rolls up into a mart) and it is persisted to disk (which the live dashboard streams)."
+  nodes={[
+    { id: 'call', label: 'A reporting tool call', kind: 'default', detail: 'report_issue / report_positive / report_friction / report_journey_step / report_metric / report_progress — the observation, as a typed tool call.' },
+    { id: 'transcript', label: 'Session transcript', kind: 'default', detail: 'The call is a tool_use block in the session JSONL, so it is inspectable post-hoc.' },
+    { id: 'disk', label: 'agent-reports dir', kind: 'store', detail: '~/.claude/agent-reports — the reporting server persists the call to an append-only per-run JSONL the instant it is made.' },
+    { id: 'mart', label: 'cc_tool_calls rollup', kind: 'store', detail: 'The existing telemetry pipeline rolls every mcp__…reporting__* call into mart_agent_reporting — no new extractor code.' },
+    { id: 'dash', label: 'Live dashboard', kind: 'external', detail: 'The /reports page reads the reports directory over dev/preview middleware and streams the review live — no interaction with the agent.' },
+  ]}
+  edges={[
+    { from: 'call', to: 'transcript', label: 'as a tool_use' },
+    { from: 'call', to: 'disk', label: 'persisted' },
+    { from: 'transcript', to: 'mart', label: 'rolled up' },
+    { from: 'disk', to: 'dash', label: 'streamed' },
+  ]}
+/>
+
+The tools are typed, not one generic `report(payload)`. There's `report_issue`,
+`report_positive`, `report_friction`, `report_journey_step`, `report_metric`, and
+`report_progress`, bracketed by `start_review` and `end_review`. Typing them was a real
+choice with a real cost — six schemas to maintain instead of one — and we took it on purpose.
+A typed call is self-describing in the transcript (the block carries `severity`, `category`,
+`page_url` as named fields), the model gets per-field validation, and each type maps one-to-one
+to a facet on the dashboard. A generic tool would have pushed all of that discipline back into
+prose, which is exactly what we were trying to escape.
+
+## What "watch it live" actually requires
+
+The tempting way to stream a live feed is to keep rewriting one JSON file per run — read the
+whole thing, append the new report, write it back. It fails the moment a reader shows up while
+you're mid-write: it gets a truncated, unparseable document and the page goes blank. And a
+polling dashboard shows up *constantly*.
+
+So the on-disk format is append-only. Each run is a `.jsonl` file, one report per line, plus a
+small `index.json` (rewritten atomically via temp-file-and-rename) that lists the runs. An
+append of a single line is atomic enough that a reader sees each line whole or not at all,
+never half. The reader tolerates a torn final line — skip it, it'll be complete on the next
+read — and keeps its last good state on any error. That one property, torn-read safety, is
+what lets the page poll (or stream) a file that's actively being written without ever flashing
+empty.
+
+For the live effect itself we didn't reach for a WebSocket. The traffic only flows one way —
+server to browser — so Server-Sent Events over a file watcher is the honest fit: when the MCP
+server appends a line, the watcher pushes it, and the report appears on the page in about a
+tenth of a second. Polling stays as the fallback for the offline snapshot and for when the
+stream drops. Either way the feed *appends* the new report with a small entrance animation
+rather than re-rendering the list, so it reads as a stream even when it's really a poll.
+
+## The walkthrough
+
+Three moments, from the agent's call to the human's dashboard.
+
+<figure>
+<svg viewBox="0 0 720 200" role="img" aria-label="A transcript showing report_issue and report_journey_step tool calls firing mid-review" style="width:100%;height:auto;font-family:var(--font-mono, monospace)">
+  <rect x="0" y="0" width="720" height="200" rx="10" fill="var(--color-surface, #faf8f4)" stroke="var(--color-border, #d8d2c8)"/>
+  <text x="20" y="34" font-size="13" fill="var(--color-text-muted, #6b6459)">Scene 1 — the session</text>
+  <rect x="20" y="48" width="680" height="30" rx="6" fill="var(--color-surface-sunken, #efe9df)"/>
+  <text x="34" y="68" font-size="13" fill="var(--color-text, #2b2822)">▸ report_journey_step  step: "pdp"  outcome: "blocked"</text>
+  <rect x="20" y="86" width="680" height="30" rx="6" fill="#fbeceb"/>
+  <text x="34" y="106" font-size="13" fill="#b43626">▸ report_issue  severity: "critical"  "Add to Cart disabled — every size out of stock"</text>
+  <rect x="20" y="124" width="680" height="30" rx="6" fill="#edf5ef"/>
+  <text x="34" y="144" font-size="13" fill="#3f8a54">▸ report_positive  "Strong, visible trust signals (free shipping, B Corp)"</text>
+  <text x="20" y="180" font-size="12" fill="var(--color-text-muted, #6b6459)">Each call lands in the transcript AND on disk. No summary at the end — the calls are the record.</text>
+</svg>
+<figcaption>The agent reports as it observes, not in a wrap-up at the end.</figcaption>
+</figure>
+
+<figure>
+<svg viewBox="0 0 720 220" role="img" aria-label="The reports page mid-run: a growing feed, a half-built journey map, and a live badge" style="width:100%;height:auto;font-family:var(--font-sans, sans-serif)">
+  <rect x="0" y="0" width="720" height="220" rx="10" fill="var(--color-surface, #faf8f4)" stroke="var(--color-border, #d8d2c8)"/>
+  <text x="20" y="30" font-size="13" fill="var(--color-text-muted, #6b6459)">Scene 2 — streaming live</text>
+  <circle cx="640" cy="26" r="5" fill="#b43626"/>
+  <text x="652" y="30" font-size="12" font-weight="700" fill="#b43626">LIVE</text>
+  <text x="20" y="58" font-size="12" fill="var(--color-text-muted, #6b6459)">PATH TO CHECKOUT</text>
+  <rect x="20" y="66" width="90" height="40" rx="6" fill="#edf5ef" stroke="#3f8a54"/>
+  <text x="34" y="90" font-size="12" fill="var(--color-text, #2b2822)">home</text>
+  <rect x="122" y="66" width="90" height="40" rx="6" fill="#edf5ef" stroke="#3f8a54"/>
+  <text x="136" y="90" font-size="12" fill="var(--color-text, #2b2822)">collection</text>
+  <rect x="224" y="66" width="90" height="40" rx="6" fill="#fbeceb" stroke="#b43626"/>
+  <text x="238" y="90" font-size="12" fill="var(--color-text, #2b2822)">pdp</text>
+  <rect x="326" y="66" width="90" height="40" rx="6" fill="var(--color-surface-sunken,#efe9df)" stroke="var(--color-border,#d8d2c8)" stroke-dasharray="4 3"/>
+  <text x="340" y="90" font-size="12" fill="var(--color-text-muted,#6b6459)">…</text>
+  <rect x="20" y="122" width="440" height="30" rx="6" fill="#fbeceb"/>
+  <text x="34" y="142" font-size="12" fill="var(--color-text,#2b2822)">CRITICAL · Add to Cart disabled — sold out</text>
+  <rect x="20" y="158" width="440" height="30" rx="6" fill="#edf5ef"/>
+  <text x="34" y="178" font-size="12" fill="var(--color-text,#2b2822)">POSITIVE · Collection organized by shoe type</text>
+  <rect x="476" y="122" width="224" height="66" rx="6" fill="var(--color-surface-sunken,#efe9df)"/>
+  <text x="490" y="142" font-size="12" fill="var(--color-text-muted,#6b6459)">Client-side latency</text>
+  <rect x="490" y="150" width="30" height="30" fill="#2a6f7a"/>
+  <rect x="524" y="158" width="30" height="22" fill="#c7861b"/>
+  <text x="20" y="210" font-size="12" fill="var(--color-text-muted, #6b6459)">The feed grows report by report; the journey map extends as the agent navigates.</text>
+</svg>
+<figcaption>The reviewer reads the review while it happens, without touching the agent.</figcaption>
+</figure>
+
+<figure>
+<svg viewBox="0 0 720 180" role="img" aria-label="The completed run: severity stat tiles, a journey map, and a transcript cross-check" style="width:100%;height:auto;font-family:var(--font-sans, sans-serif)">
+  <rect x="0" y="0" width="720" height="180" rx="10" fill="var(--color-surface, #faf8f4)" stroke="var(--color-border, #d8d2c8)"/>
+  <text x="20" y="30" font-size="13" fill="var(--color-text-muted, #6b6459)">Scene 3 — the rollup</text>
+  <g font-family="var(--font-sans, sans-serif)">
+    <rect x="20" y="44" width="100" height="60" rx="8" fill="var(--color-surface,#fff)" stroke="var(--color-border,#d8d2c8)"/>
+    <text x="34" y="66" font-size="10" fill="var(--color-text-muted,#6b6459)">CRITICAL</text>
+    <text x="34" y="94" font-size="24" font-weight="700" fill="#b43626">2</text>
+    <rect x="130" y="44" width="100" height="60" rx="8" fill="var(--color-surface,#fff)" stroke="var(--color-border,#d8d2c8)"/>
+    <text x="144" y="66" font-size="10" fill="var(--color-text-muted,#6b6459)">POSITIVES</text>
+    <text x="144" y="94" font-size="24" font-weight="700" fill="#3f8a54">4</text>
+    <rect x="240" y="44" width="100" height="60" rx="8" fill="var(--color-surface,#fff)" stroke="var(--color-border,#d8d2c8)"/>
+    <text x="254" y="66" font-size="10" fill="var(--color-text-muted,#6b6459)">FRICTIONS</text>
+    <text x="254" y="94" font-size="24" font-weight="700" fill="#c7861b">2</text>
+    <rect x="350" y="44" width="100" height="60" rx="8" fill="var(--color-surface,#fff)" stroke="var(--color-border,#d8d2c8)"/>
+    <text x="364" y="66" font-size="10" fill="var(--color-text-muted,#6b6459)">STEPS</text>
+    <text x="364" y="94" font-size="24" font-weight="700" fill="var(--color-text,#2b2822)">4</text>
+  </g>
+  <rect x="470" y="44" width="230" height="60" rx="8" fill="var(--color-surface-sunken,#efe9df)"/>
+  <text x="484" y="64" font-size="11" fill="var(--color-text-muted,#6b6459)">Transcript cross-check</text>
+  <text x="484" y="84" font-size="11" fill="var(--color-text,#2b2822)">calls in transcript  =  reports on disk</text>
+  <text x="20" y="140" font-size="12" fill="var(--color-text-muted, #6b6459)">Every report is also a `mcp__…reporting__*` call in the transcript — so we can prove none were dropped.</text>
+</svg>
+<figcaption>The finished run: countable severities, a reconstructed journey, and a check that on-disk reports match transcript calls.</figcaption>
+</figure>
+
+## How the pieces fit
+
+Those three scenes are one path through a handful of files. The plugin's MCP server is the only
+thing that writes; everything downstream reads the same on-disk contract. The reports directory is
+the seam — the plugin never knows the dashboard exists, and the dashboard never imports the plugin.
+
+<FlowDiagram
+  title="The files, and how they connect"
+  shape="pipeline"
+  legend
+  desc="One writer (the plugin's MCP server), one on-disk contract (~/.claude/agent-reports), and two independent readers: the dev-server middleware that streams the live dashboard, and the transcript pipeline that rolls the same tool calls into a mart."
+  nodes={[
+    { id: 'agent', label: 'site-reviewer agent', kind: 'external', detail: 'agents/site-reviewer.md — walks the store and calls the reporting tools as it observes.' },
+    { id: 'server', label: 'MCP server', kind: 'default', detail: 'plugins/reporting-manager/server/server.js — the zero-dependency MCP server. The only writer. Appends each report and rewrites the index atomically.' },
+    { id: 'dir', label: 'agent-reports dir', kind: 'store', detail: '~/.claude/agent-reports — the frozen file contract: index.json (the run list) + runs/<id>.jsonl (append-only events) + media. The seam between plugin and dashboard.' },
+    { id: 'mw', label: 'vite middleware', kind: 'default', detail: 'vite-plugins/agent-reports.ts + session-tail.ts — dev/preview middleware. Serves the reports dir statically and over SSE (fs.watch), plus the local-only raw session tail.' },
+    { id: 'page', label: '/reports page', kind: 'external', detail: 'src/pages/AgentReports.tsx with useReportStream / useSessionStream / agentReports.ts — the live feed, journey map, latency, media, and the session pane.' },
+    { id: 'mart', label: 'reporting mart', kind: 'store', detail: 'mart_agent_reporting — migration 007_agent_reporting.sql rolls mcp__…reporting__* calls from cc_tool_calls into a per-session mart, read via snapshot-data.mjs + useSnapshot for the cross-check.' },
+  ]}
+  edges={[
+    { from: 'agent', to: 'server', label: 'tool calls' },
+    { from: 'server', to: 'dir', label: 'writes' },
+    { from: 'dir', to: 'mw', label: 'reads + tails' },
+    { from: 'mw', to: 'page', label: 'static + SSE' },
+    { from: 'server', to: 'mart', label: 'via transcript' },
+  ]}
+/>
+
+The transcript path is the second reader: the same tool calls that the server persists also land
+in the session JSONL, which the existing telemetry pipeline extracts into `cc_tool_calls` and
+migration 007 rolls into `mart_agent_reporting` — so the dashboard can cross-check that the number
+of reporting tool calls in the transcript matches the number of reports on disk.
+
+## Attaching evidence
+
+An issue reads better with a picture. So `report_issue` (and positives and frictions) can carry
+media: the agent captures a screenshot to a file and passes the path, and the server ingests it
+into the run so the report is self-contained. It can also pass a **highlight box** — the exact
+`getBoundingClientRect` of the offending element — which the dashboard draws as a rectangle over
+the image, plus **text annotations** pinned to points on it. And when a single still can't do the
+finding justice — a layout that jumps as it loads, a swatch that flickers when you switch color, a
+janky transition — the agent records a **GIF** instead. The server detects the `.gif` and the
+dashboard plays it inline. A glitch you can only *see in motion* becomes a report you can watch.
+
+## What we accepted, and when this is wrong
+
+The honest costs: the live stream only exists under the dev/preview server (the middleware that
+serves the reports directory), so a deployed build shows a committed snapshot rather than a live
+feed — which is fine, because live-watching is a local act. We hand-rolled the MCP server's
+JSON-RPC framing so the plugin installs with zero dependencies and no build step, trading a few
+hundred lines of protocol code for no install friction. And we're the first plugin in our
+marketplace to bundle an MCP server at all, so we're setting that convention rather than following
+one.
+
+This would be the wrong design if reports per run grew large enough that a file-watcher-plus-SSE
+stream strained, or if runs became long-lived and highly concurrent — then persistence belongs in a
+real store and the stream behind a managed backend. But for an agent reviewing a storefront and
+telling you, in structured events you can count and watch, exactly where the path to checkout
+breaks, making the report *be* the call is the whole trick.
