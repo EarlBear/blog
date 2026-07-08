@@ -1,0 +1,102 @@
+---
+title: "Embedding charts in a zero-JS blog without a charting library"
+description: Why a static blog that ships no client JavaScript draws its charts as hand-written inline SVG instead of adopting D3, Recharts, or Chart.js — the build-vs-adopt call, the bundle math, and the exact point where that answer would flip.
+pubDate: 2026-07-08
+tags: [engineering]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - How do you put a chart in a blog post that ships no client-side JavaScript?
+  - Is it worth adopting D3, Recharts, or Chart.js for a few static bars?
+  - What does a charting library actually cost you in bundle size and rendering model?
+  - When would hand-rolled SVG stop being the right answer?
+---
+
+import BarChart from '../../components/BarChart.astro';
+
+While writing about how we scrub secrets, I wanted to show the cost of each step as a bar
+chart — the kind of thing you'd reflexively reach for a charting library to draw. I didn't, and
+the reason is worth a short post, because "just add a chart library" is a bigger decision than it
+looks on a site like this one.
+
+## The constraint that decides it
+
+This blog ships **zero client-side JavaScript**. It's an Astro static site whose only runtime
+dependency is the design system; there are no `client:` directives anywhere, and every diagram —
+the flow diagrams in these posts included — is inline SVG generated at build time. That isn't an
+accident to work around; it's the feature. Pages are HTML and CSS, they render instantly, and
+there's no hydration to wait for or break.
+
+A chart is just data drawn as shapes. The question is only *who draws the shapes, and when* — at
+build time on the server, or at runtime in the reader's browser. Once you frame it that way, most
+of the popular options disqualify themselves before you compare features.
+
+## The roads not taken
+
+**Chart.js** (and ApexCharts, ECharts) render to `<canvas>`, which needs browser APIs — so on a
+static site they can only run client-side, via a dynamic import that ships JavaScript and pushes a
+blank box until it hydrates. That's the exact zero-JS property we're keeping, traded away for a bar
+chart. Chart.js is also the *smallest* of the mainstream libraries and still lands around 67 KB
+gzipped.[^chartjs]
+
+**Recharts and Visx** render SVG, which *can* server-render — but they're React component
+libraries, and this blog has no React renderer wired in. Adopting one means pulling in
+`@astrojs/react`, React itself, and the chart library: Recharts alone is about 136 KB
+gzipped.[^recharts] That's a lot of machinery to reach for so a page can draw five rectangles.
+
+**D3** is the foundation under half of these, and you *can* use it purely at build time with
+static data — call it in the frontmatter, emit SVG, ship no runtime. But D3 is a large,
+low-level toolkit built for dynamic, interactive visualization; using it to lay out a handful of
+bars you already know the values of is all of the ceremony and none of the payoff. For a static
+bar chart it would generate SVG a twenty-line template produces directly.
+
+## What we did instead
+
+We wrote a small `BarChart.astro` component — pure inline SVG, no dependencies, themed with the
+same design-system tokens as everything else, rendered entirely at build time. The data is passed
+in as a prop; the component maps values to bar widths and emits `<rect>` and `<text>`. Here it is
+drawing its own cost, so to speak — a demo with made-up numbers:
+
+<BarChart
+  title="A chart with no chart library"
+  unit="ms"
+  caption="Illustrative values — the point is that this is inline SVG, generated at build time, shipping zero JavaScript."
+  bars={[
+    { label: 'parse the data', value: 2 },
+    { label: 'lay out the bars', value: 5 },
+    { label: 'emit SVG', value: 1 },
+    { label: 'ship JavaScript to do it', value: 0 },
+  ]}
+/>
+
+That last bar is the joke and the thesis: the JavaScript cost is zero because there is none. The
+component supports the couple of things our data actually needs — a linear or log scale (log
+matters when values span orders of magnitude, like microseconds next to milliseconds) and value
+labels in whatever unit we pass. It is emphatically not a general charting engine, and that's the
+point: it does exactly what a static post needs and nothing else.
+
+This also isn't a novel stance for us — it's the same "custom SVG, not a runtime library" choice
+we already made for the site's flow and architecture diagrams. A chart library would have been the
+one place we broke it.
+
+## When this answer flips
+
+The honest part: hand-rolled SVG is the right call *for our data*, which is a few values known at
+build time. It stops being the right call the moment a chart needs to be **interactive** (hover
+tooltips, zoom, brushing), **live** (data fetched or updated in the browser), or **complex** (many
+series, stacked areas, axes with ticks and gridlines you'd otherwise hand-compute). At that point
+you're reimplementing a charting library badly, and you should adopt a real one.
+
+If that day comes, the choice wouldn't be Chart.js — it'd be an SVG-first tool that server-renders
+cleanly. [Observable Plot](https://observablehq.com/plot/) gives you D3's power without D3's
+assembly-language feel, and [uPlot](https://github.com/leeoniya/uPlot) is the featherweight option
+at roughly 20 KB when you need fast interactive time-series.[^uplot] Either would earn its bundle
+when the charts get genuinely dynamic. Ours aren't, so they don't — and the cheapest chart library
+is the one you didn't add.
+
+[^chartjs]: Chart.js is the smallest of the mainstream charting libraries at roughly 67 KB gzipped, and renders to `<canvas>`, which requires client-side rendering on a static site. "Chart.js vs Recharts 2026: Framework-Agnostic vs React." *PkgPulse*, https://www.pkgpulse.com/compare/chart.js-vs-recharts. Accessed 8 July 2026.
+
+[^recharts]: Recharts renders SVG (so it can server-render) but is a React component library, roughly 136 KB gzipped. "recharts." *Bundlephobia*, https://bundlephobia.com/package/recharts. Accessed 8 July 2026.
+
+[^uplot]: uPlot is among the most lightweight charting libraries at roughly 20 KB, oriented toward fast interactive time-series. "Observable Plot vs Chart.js vs Recharts vs uPlot 2026." *usedatabrain*, https://www.usedatabrain.com/blog/javascript-chart-libraries. Accessed 8 July 2026.

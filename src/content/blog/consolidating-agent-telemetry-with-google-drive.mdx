@@ -1,0 +1,126 @@
+---
+title: "Consolidating agent telemetry with Google Drive, without moving a raw transcript"
+description: How several machines pool their Claude Code telemetry into one dashboard with no server to run — by scrubbing at the edge and syncing only clean files through a shared Drive folder, behind a gitleaks-required gate that closes the leak the full-transcript path opens.
+pubDate: 2026-07-08
+tags: [engineering, agents]
+expects: [flow]
+authors: [omar]
+draft: true
+design: drive-consolidation
+audience: internal
+questions:
+  - How do several machines pool their agent telemetry into one dashboard without a server?
+  - If raw transcripts can never leave the laptop, how do you move anything at all between machines?
+  - Why is scrubbing a whole transcript a weaker guarantee than the derived metrics — and what closes the gap?
+  - What makes a shared Google Drive folder safe to use as the transport?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+We already had per-machine agent telemetry: each laptop turns its Claude Code transcripts into
+derived metrics and pushes them straight to our shared database. It works. But it asks every
+machine to hold a database service-role key, it moves *no* transcript content at all — so
+there's no shared corpus to render or replay from — and it can't tell you *which* teammate
+produced a session. We wanted several machines to pool their telemetry into one place, with
+**no server to run**, and we wanted to know who did what.
+
+The obvious idea is the one we spent an earlier design explicitly ruling out: copy the
+transcripts somewhere central. We won't. Raw transcripts contain file contents, full prompts,
+and pasted secrets, and the one rule we don't break is that raw content never leaves the
+machine that wrote it. So the interesting question is the narrow one: *if raw can't move, what
+can — and is a shared folder a safe way to move it?*
+
+## The road we didn't take (again)
+
+The tempting transport is `rsync` of the raw files to a central host. It's the standard secure
+delta transfer, and it's exactly wrong for us: it moves raw transcripts off the laptop. That
+option was rejected on security in our sync design and it stays rejected. Nothing about "a
+shared Google Drive folder" changes the calculus for *raw* files.
+
+What changes is *what we put in the folder*. If the only things that ever reach Drive are
+already scrubbed and independently verified clean, then the folder is just a courier for
+derived, redacted artifacts — the same category of thing we already send to the database. The
+invariant holds: raw never leaves the edge. What we relaxed, and we want to be honest that we
+relaxed it, is a *stronger* line we used to hold — "we move no transcript bodies at all." Now
+we move transcript bodies, but only *scrubbed* ones, and only through a gate described below.
+
+## What actually moves
+
+Each machine writes two files per session into a Google-Drive-for-desktop folder, partitioned
+by who and where — `abacus/<you>:<your-machine>/projects/<repo>/`:
+
+- `derived.json` — the metrics and bounded redacted excerpts, exactly as before.
+- `session.jsonl` — a scrubbed copy of the full transcript, every string value redacted.
+
+Drive syncs those files to every other machine. Then any one machine reads the folder and loads
+the metrics into the database, which the dashboard already reads. It's "manually refreshed as
+needed" — a command you run, not a service you operate. No servers were added to make this work.
+
+## The part that's weaker, and the part that makes up for it
+
+Here's the honest trade-off, because it's the whole point of the design. The derived record is
+protected *structurally*: we build it from an allowlist of safe fields, so raw content is never
+copied into it in the first place. The scrubbed full transcript is the opposite shape — we keep
+every message, including tool results that may contain file contents, and rely on a *regex*
+pass to catch secrets. A password that looks like ordinary prose can slip through a regex. So
+the scrubbed transcript is a genuinely weaker guarantee than the derived metrics, and pretending
+otherwise would be the dangerous move.
+
+The compensating control is the gate we put in front of Drive. Every egress path we already had
+runs a two-detector check — our own redactor plus [gitleaks](https://github.com/gitleaks/gitleaks)
+— but treats gitleaks as *best-effort*: if it isn't installed, the check still passes on our own
+redaction. For the Drive boundary that posture isn't good enough, because Drive is a new way for
+data to leave the machine and the artifact is the weaker one. So the Drive gate is
+**fail-closed and requires gitleaks to actually be present and pass**: the self-test runs, then
+gitleaks must be installed, then it must find zero secrets in *both* files — and only then does
+anything get copied to the folder. No gitleaks, no write. We proved this the way you'd want:
+we planted a real token in a transcript and confirmed it never reaches the folder, and we
+confirmed that hiding gitleaks makes the write refuse rather than fall back.
+
+## The shape of the flow
+
+The mental model is a one-way street with a checkpoint. Read the raw file (never write it),
+reconcile into a scratch area, run the gate there, and only then push clean files up:
+
+<FlowDiagram
+  title="Scrub at the edge, then sync clean files"
+  shape="pipeline"
+  legend
+  desc="The raw transcript is read-only. It is scrubbed into a temp reconcile dir, where a fail-closed gate (self-test plus a required gitleaks scan) must pass before any file is copied up to Drive. Drive then syncs the clean files to every machine, and one machine loads them into the dashboard database."
+  nodes={[
+    { id: 'raw', label: '~/.claude (raw)', kind: 'store', detail: 'The append-only transcript. Read-only throughout — never modified, redacted in place, or hand-edited; the editor’s own permissions deny writes to it.' },
+    { id: 'temp', label: 'Reconcile dir', kind: 'edge', detail: 'A temp scratch area. The raw file is scrubbed here into a derived record plus a scrubbed full transcript — nothing raw is ever written outside ~/.claude.' },
+    { id: 'gate', label: 'Fail-closed gate', kind: 'edge', detail: 'The trust boundary. Self-test passes, gitleaks must be installed, and it must find zero secrets in both files — only then does anything reach Drive. No gitleaks, no write.' },
+    { id: 'drive', label: 'Google Drive', detail: 'Only verified-clean files land here, partitioned by whoami:hostname. A .sync.json marker is written last, so a half-synced folder is distinguishable from a finished one.' },
+    { id: 'db', label: 'Dashboard DB', kind: 'external', detail: 'One machine runs refresh-from-drive, upserting each derived record (idempotent, per-employee) so the dashboard shows the pooled, attributed numbers.' },
+  ]}
+  edges={[
+    { from: 'raw', to: 'temp' },
+    { from: 'temp', to: 'gate' },
+    { from: 'gate', to: 'drive' },
+    { from: 'drive', to: 'db' },
+  ]}
+/>
+
+Two properties fall out of that shape. The raw file is read-only throughout — we never redact in
+place or hand-edit a transcript, and to make that a rule rather than a hope we deny-list both the
+raw directory and the Drive output in the editor's own permissions, so the tooling *can't* modify
+them. And the completion marker is written *last*, so a folder that Drive is still syncing up in
+the background is distinguishable from a finished one — the reader only picks up sessions that are
+fully there. Loading is idempotent (upsert by session id), so re-running the refresh never
+double-counts.
+
+Along the way we finally get attribution: identity is just `whoami:hostname`, derived with no
+configuration, stamped onto each record and carried into the dashboard's metrics — so the numbers
+can be read per teammate. A machine rename would split one person across two ids; we wrote that
+caveat down rather than papering over it, since the session-id key still keeps the rows from
+duplicating.
+
+## When this would be the wrong call
+
+If Drive sync turned out to be unreliable in practice — conflict files, latency that makes the
+corpus perpetually half-synced — or if we decided the regex guarantee on a full transcript wasn't
+strong enough to be worth having at all, the fallback is clean: drop back to writing only the
+derived record to Drive, or drop Drive entirely and keep the direct database push. The
+attribution work survives either way. That's the test we hold every design to — not whether it's
+permanent, but whether we know exactly what would make us change our minds.

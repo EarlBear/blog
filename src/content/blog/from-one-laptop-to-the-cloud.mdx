@@ -104,6 +104,12 @@ unchanged, and raw data that never leaves the edge. The bet is that the discipli
 keeping those layers clean now is cheaper than the rewrite we'd otherwise face later — and
 that when scale finally arrives, it arrives as a port we already know how to do.
 
+There's now a third consolidation topology between "one laptop" and "the cloud": several
+machines pooling scrubbed telemetry through a shared Google Drive folder, with no server to run
+and no per-machine database key. It's the same portable core — the same row transform, the same
+standard SQL — reading from a different place; see
+[consolidating agent telemetry with Google Drive](/blog/consolidating-agent-telemetry-with-google-drive/).
+
 [^duckdb]: DuckDB runs in-process with no server, is roughly an order of magnitude faster
 than dataframe libraries on medium data, and runs the same SQL from laptop to cloud, with
 MotherDuck adding hybrid execution — the 2026 medium-scale step between single-node Postgres
