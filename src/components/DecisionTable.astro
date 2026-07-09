@@ -118,18 +118,44 @@ const detailById = Object.fromEntries(
             return (
               <tr id={a} class="dt-row">
                 <th scope="row" class="dt-id">
-                  {interactive && hasDetail ? (
-                    <button
-                      type="button"
-                      class="dt-id-btn"
-                      data-decision={a}
-                      aria-haspopup="dialog"
+                  <span class="dt-id-wrap">
+                    {interactive && hasDetail ? (
+                      <button
+                        type="button"
+                        class="dt-id-btn"
+                        data-decision={a}
+                        aria-haspopup="dialog"
+                      >
+                        {d.id}
+                      </button>
+                    ) : (
+                      <span>{d.id}</span>
+                    )}
+                    <a
+                      class="dt-anchor"
+                      href={`#${a}`}
+                      data-anchor={a}
+                      aria-label={`Link to decision ${d.id}`}
+                      title={`Copy link to ${d.id}`}
                     >
-                      {d.id}
-                    </button>
-                  ) : (
-                    <span>{d.id}</span>
-                  )}
+                      <svg
+                        class="dt-anchor-icon"
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                      </svg>
+                      <span class="dt-anchor-copied" aria-hidden="true">Copied</span>
+                    </a>
+                  </span>
                 </th>
                 <td class="dt-decision" set:html={d.decision} />
                 <td class="dt-status">
@@ -186,4 +212,34 @@ const detailById = Object.fromEntries(
       dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
     })();`} />
   )
+}
+
+{/* Anchor copy-to-clipboard — runs for EVERY decision table (not just interactive
+    ones). The plain <a href="#d1"> already deep-links with zero JS; this upgrades
+    the click to also copy the absolute fragment URL and flash a "Copied" pill. */}
+<script is:inline set:html={`(() => {
+  const fig = document.querySelector('.decision-table[data-dt="${salt}"]');
+  if (!fig) return;
+  let timer;
+  fig.querySelectorAll('.dt-anchor').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('data-anchor');
+      const url = location.origin + location.pathname + location.search + '#' + id;
+      // Let the browser do the actual navigation/highlight; we only add copy UX.
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        e.preventDefault();
+        navigator.clipboard.writeText(url).then(() => {
+          if (history.replaceState) history.replaceState(null, '', '#' + id);
+          else location.hash = id;
+          const row = document.getElementById(id);
+          if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+        }).catch(() => { location.hash = id; });
+        a.classList.add('is-copied');
+        clearTimeout(timer);
+        timer = setTimeout(() => a.classList.remove('is-copied'), 1400);
+      }
+      // else: no clipboard API — the default <a> navigation still deep-links.
+    });
+  });
+})();`} />
 }

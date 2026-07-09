@@ -84,7 +84,11 @@ const kicker = tags[0] ?? 'Blog post';
 
 <style>
   .article {
-    max-width: min(720px, var(--space-reading));
+    /* Fill 65% of the viewport width, capped on ultra-wide so lines don't sprawl,
+       and floored so it never gets narrower than the old reading measure. */
+    width: 65vw;
+    max-width: 1500px;
+    min-width: min(100%, var(--space-reading));
     margin: 0 auto;
     padding: var(--space-16) var(--space-6) var(--space-24);
   }

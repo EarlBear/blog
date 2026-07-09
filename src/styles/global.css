@@ -1195,6 +1195,72 @@ a:focus:not(:focus-visible) {
   font-weight: var(--fw-semibold);
   color: var(--color-text-secondary);
 }
+.decision-table .dt-id-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Per-row anchor: deep-link + copy-to-clipboard. Hidden until the row is
+   hovered/focused (or is the current :target) so it doesn't clutter the table.
+   Reset the global `a` styling (accent color + border-bottom underline) — this
+   is an icon affordance, not a prose link. */
+.decision-table .dt-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  border-bottom: none;
+  text-decoration: none;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.decision-table .dt-anchor:hover {
+  color: var(--color-accent);
+  border-bottom: none;
+}
+.decision-table .dt-row:hover .dt-anchor,
+.decision-table .dt-row:focus-within .dt-anchor,
+.decision-table .dt-row:target .dt-anchor,
+.decision-table .dt-anchor:focus-visible {
+  opacity: 1;
+}
+.decision-table .dt-anchor-icon {
+  display: block;
+}
+/* "Copied" pill — a floating tooltip, absolutely positioned OUT of flow so it
+   never adds a line under D#. Invisible until the JS adds .is-copied on click. */
+.decision-table .dt-anchor-copied {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%) translateY(2px);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+.decision-table .dt-anchor.is-copied .dt-anchor-copied {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-table .dt-anchor,
+  .decision-table .dt-anchor-copied {
+    transition: none;
+  }
+}
 .decision-table .dt-id-btn {
   font: inherit;
   color: var(--color-text-accent);
@@ -1216,7 +1282,11 @@ a:focus:not(:focus-visible) {
   color: var(--color-text-secondary);
   font-size: var(--fs-sm);
 }
-/* :target — highlight the row a #d3 deep-link points at (zero JS). */
+/* :target — highlight the row a #d3 deep-link points at (zero JS). The
+   scroll-margin keeps a deep-linked row clear of the viewport top when jumped to. */
+.decision-table .dt-row {
+  scroll-margin-top: var(--space-16, 4rem);
+}
 .decision-table .dt-row:target {
   background: var(--color-accent-soft);
 }
