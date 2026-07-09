@@ -1,0 +1,220 @@
+---
+title: "The two marts that weren't there"
+description: "Two dashboard panels quietly read empty because their tables were never applied to production — a missing-migration bug that looked like an RLS gap. Here's the whole situation in plain terms, three ways to fix it drawn out with diagrams, and what each one means for how we can test it."
+pubDate: 2026-07-09
+tags: [engineering, agents]
+expects: [flow, comparison]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - Why are the cost and agent-reporting panels reading empty on production?
+  - Is this a security (RLS) problem or something else?
+  - What are our three options to fix it, and what does each cost?
+  - Which option makes these panels easiest to actually test — and which breaks other tests?
+  - How did the security-posture review miss this, and what test would have caught it?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
+
+## The situation, in one breath
+
+Two dashboard panels — **cost over the session timeline** and **agent reporting** — read from two
+Postgres rollup tables, `mart_event_cost` and `mart_agent_reporting`. Those tables were built by
+migrations 006 and 007, applied to our **local** database… but **never applied to production
+Supabase**. So on prod, asking for those tables returns *"table not found"* (HTTP 404). The panels
+don't crash — the site falls back to a committed JSON snapshot — so the cost panel shows old baked-in
+data and the agent-reporting panel just shows nothing. It's been quietly wrong, not loudly broken.
+
+The prod migration history makes it undeniable: it jumps straight from `cc_marts_model` (004) to
+`scan_fleet` (008), with **no 006, no 007** in between.
+
+## Why this looked like a security bug (but isn't)
+
+At first glance it reads like a Row-Level-Security gap: migration 007 has no `enable row level
+security`, no policy, and no `*_prod.sql` companion — so "anon can't read it," same as
+`mart_event_cost`. That's all *true about the files*. But it's the wrong diagnosis. The tables
+return **404 (doesn't exist)**, not **403 (exists, but you're not allowed)**. You can't have an RLS
+gap on a table that isn't there. The real bug is **missing migrations**, and the fix has to *create
+the tables first*, then decide their access rule.
+
+Here's the layer that's out of sync — code and local DB are ahead of prod:
+
+<FlowDiagram
+  title="Where the drift is"
+  shape="pipeline"
+  legend
+  desc="Migrations 006/007 reached local Postgres and the frontend read paths, but never reached production Supabase — so the two marts exist everywhere except where the live dashboard reads them."
+  nodes={[
+    { id: 'mig', label: 'migrations 006/007', detail: 'cc_events → mart_event_cost; agent_reporting → mart_agent_reporting. Written and committed.' },
+    { id: 'local', label: 'local Postgres', kind: 'store', detail: 'Applied here (make db-up). Tables exist; panels work locally.' },
+    { id: 'prod', label: 'prod Supabase', kind: 'store', detail: 'NEVER applied here. The two mart tables do not exist → REST returns 404 PGRST205.' },
+    { id: 'fe', label: 'dashboard', kind: 'external', detail: 'snapshot-data.mjs + useSnapshot.ts both read the two marts, expecting them to be present.' },
+  ]}
+  edges={[
+    { from: 'mig', to: 'local', label: 'applied' },
+    { from: 'mig', to: 'prod', label: 'skipped' },
+    { from: 'fe', to: 'prod', label: 'reads (404)' },
+  ]}
+/>
+
+## Is anything actually broken for users?
+
+Barely — and this matters for how urgent the fix is. The deployed dashboard reads the **committed
+snapshot** (`public/data/*.json`) by default, and only hits Supabase live when you add `?live=1`.
+So today:
+
+- Cost panel → shows the 9 rows baked into `event_cost.json` (stale, but present).
+- Agent-reporting panel → shows nothing (`agent_reporting.json` is `[]`).
+- Only `?live=1` surfaces the 404s.
+
+Nothing is *insecure* and nothing errors for a normal viewer. This is a **correctness + testability**
+problem, not an incident.
+
+## The testability baseline (why this blocks tests)
+
+You cannot write a meaningful *live* test for these two panels while the tables 404. The three
+original marts return 200 and are fully testable; the two new ones can only be "asserted absent."
+Fixing that is the precondition for testing the panels at all.
+
+| Mart | Live status today | What a test can assert |
+| --- | --- | --- |
+| `mart_workflow_metrics` | 200 | rows + shape ✅ |
+| `mart_funnel_daily` | 200 | rows + shape ✅ |
+| `mart_recent_sessions` | 200 | rows + shape ✅ |
+| `mart_event_cost` | **404** | only "table missing" ❌ |
+| `mart_agent_reporting` | **404** | only "table missing" ❌ |
+
+## The three options
+
+Each option first **applies 006/007 to prod** (that's non-negotiable — it creates the tables). They
+differ only in the **access rule** they then attach, and that difference is what drives the testing
+story.
+
+<ComparisonMatrix
+  title="The three fixes, scored"
+  desc="All three create the tables. They differ on the RLS rule and what that costs. Option 1 keeps the marts as testable as the existing three and breaks nothing; Option 2 is more secure but couples mart tests to the token machinery and breaks the snapshot/deck paths; Option 3 is the safety net that prevents recurrence and pairs with either."
+  options={[
+    { id: 'anon', label: '1 · anon using(true)', chosen: true },
+    { id: 'auth', label: '2 · @earlbear.com' },
+    { id: 'guard', label: '3 · audit + drift guard' },
+  ]}
+  criteria={[
+    { label: 'Fixes the 404 panels', cells: { anon: 'yes', auth: 'yes', guard: 'partial' } },
+    { label: 'Panels testable live', cells: { anon: 'yes', auth: 'partial', guard: 'partial' } },
+    { label: 'No new test setup (reads need no token)', cells: { anon: 'yes', auth: 'no', guard: 'yes' } },
+    { label: "Doesn't break snapshot/deck tests", cells: { anon: 'yes', auth: 'no', guard: 'yes' } },
+    { label: 'Prevents the whole class of bug', cells: { anon: 'no', auth: 'no', guard: 'yes' } },
+    { label: 'Consistent with the other 3 marts', cells: { anon: 'yes', auth: 'no', guard: 'partial' } },
+  ]}
+/>
+
+### Option 1 — anon `using(true)`, like every other mart
+
+Apply 006/007, then an `011_marts_rls_prod.sql` that does `enable RLS` + `create policy … for
+select to anon using(true)` — exactly what migration 003 did for the first three marts. The marts
+are read-only, non-sensitive rollups (cost curves, tool-call counts) sitting behind Cloudflare
+Access. A leaked publishable key could read them, but the *page* is still gated.
+
+<FlowDiagram
+  title="Option 1 — anon-read marts"
+  shape="pipeline"
+  legend
+  desc="Any request holding the publishable key reads the marts directly; RLS is using(true). The snapshot builder and the pitch deck use the same plain anon key, so they keep working with no changes."
+  nodes={[
+    { id: 'anon', label: 'publishable key', kind: 'edge', detail: 'In the browser bundle + the snapshot builder + the deck. No identity needed.' },
+    { id: 'rls', label: 'RLS using(true)', detail: 'to anon using(true) — same policy the 3 existing marts have (migration 003).' },
+    { id: 'mart', label: 'the 2 marts', kind: 'store', detail: 'mart_event_cost + mart_agent_reporting, once 006/007 are applied to prod.' },
+  ]}
+  edges={[
+    { from: 'anon', to: 'rls', label: 'apikey' },
+    { from: 'rls', to: 'mart', label: 'select' },
+  ]}
+/>
+
+**Testing implications:** the *easiest* to test. A live test hits the mart with the anon key we
+already have and asserts **200 + shape** — no token, no setup — mirroring the three working marts.
+The snapshot builder and pitch-deck tests keep passing unchanged. Downside: it extends
+`using(true)`, the pattern we deliberately moved *away from* for the scan fleet.
+
+### Option 2 — `@earlbear.com`, like the scan fleet
+
+Apply 006/007, but give the marts the token-exchange RLS: `to authenticated using (auth.jwt()->>
+'email' like '%@earlbear.com')`. Now a leaked publishable key reads nothing — only a logged-in
+EarlBear user does.
+
+<FlowDiagram
+  title="Option 2 — identity-gated marts"
+  shape="pipeline"
+  legend
+  desc="Reads require a minted @earlbear.com token, so the browser works — but the snapshot builder and the pitch deck, which use the plain anon key with no token exchange, would be denied (403) until they are reworked to mint tokens."
+  nodes={[
+    { id: 'tok', label: 'minted JWT', kind: 'edge', detail: 'From /api/auth-token — carries the @earlbear.com email. The browser has one; the snapshot builder and deck do NOT.' },
+    { id: 'rls', label: 'RLS @earlbear.com', detail: 'to authenticated using(email like %@earlbear.com). A plain anon key is denied.' },
+    { id: 'mart', label: 'the 2 marts', kind: 'store', detail: 'Readable only with a valid token.' },
+    { id: 'broken', label: 'snapshot + deck', kind: 'external', detail: 'Read marts with the plain anon key today → would 403 until reworked to mint tokens.' },
+  ]}
+  edges={[
+    { from: 'tok', to: 'rls', label: 'Bearer' },
+    { from: 'rls', to: 'mart', label: 'select' },
+    { from: 'broken', to: 'rls', label: 'anon → 403' },
+  ]}
+/>
+
+**Testing implications:** *more capable but more expensive.* Every mart test must first
+`mintTestToken()` (so tests need the signing key → they **skip in keyless CI**, like our identity
+tests). You gain a real security assertion ("leaked key reads nothing") — but the **snapshot builder
+and pitch-deck tests break** until those paths are reworked to mint tokens. Bigger blast radius for
+a read-only rollup.
+
+### Option 3 — the audit + drift guard (the missing test)
+
+This one is *about* testing. Before/alongside the fix, add a **drift guard**: a check that asserts,
+for every mart the frontend reads (grepped from `snapshot-data.mjs` / `useSnapshot.ts`), a
+corresponding table with a policy actually exists on prod. That is precisely the check that would
+have caught this bug — and it protects the *class*: any future mart wired into the frontend but not
+applied to prod fails the guard instead of silently reading empty.
+
+<FlowDiagram
+  title="Option 3 — the drift guard"
+  shape="pipeline"
+  legend
+  desc="A committed check reads the frontend's mart list and asserts each one exists on prod with a policy; a mart present in the code but missing on prod fails the check instead of silently 404-ing."
+  nodes={[
+    { id: 'fe', label: 'frontend read list', kind: 'external', detail: 'Every mart_* named in snapshot-data.mjs + useSnapshot.ts.' },
+    { id: 'guard', label: 'drift guard', kind: 'edge', detail: 'make check / registry test: for each mart, assert a prod table + SELECT policy exists.' },
+    { id: 'prod', label: 'prod Supabase', kind: 'store', detail: 'The source of truth the guard queries. A missing table → the check FAILS loudly.' },
+  ]}
+  edges={[
+    { from: 'fe', to: 'guard', label: 'enumerate' },
+    { from: 'guard', to: 'prod', label: 'assert present' },
+  ]}
+/>
+
+**Testing implications:** this *is* the test coverage. It's additive — it pairs with Option 1 or 2,
+doesn't break anything, and turns "we forgot to apply a migration" from a silent empty panel into a
+red check. Small to write; the only cost is doing the audit before the fix rather than after.
+
+## How the security review missed it
+
+Worth naming honestly. The security-posture pass leaned on Supabase's advisor (`get_advisors`),
+which **only lints tables that exist** — it structurally *cannot* flag a table that was never
+created. And the review's attention was on the scan-fleet tables (the anon-*write* surface, which is
+genuinely sensitive), not on cross-checking that every mart the *frontend reads* is present on prod
+with a policy. That cross-check didn't exist — which is exactly the gap Option 3's drift guard
+closes.
+
+## The recommendation
+
+**Option 1 for the access rule, plus Option 3's drift guard as the test.** The reasoning: marts and
+the fleet have genuinely different needs. The fleet earned `@earlbear.com` because it has anon
+*writes* (a leaked key could enqueue junk). The marts are read-only, non-sensitive rollups behind
+CF Access — `using(true)` is the deliberate, already-established pattern, and it keeps the snapshot
+builder and pitch deck (and their tests) working. So Option 1 isn't backsliding; it's matching
+like-to-like. But the *reason we didn't catch this* is a missing test, so pair it with the drift
+guard so the class of bug can't silently recur.
+
+Option 2 stays on the table if we decide *every* mart should be identity-gated — but that's a
+deliberate, larger project (rework the snapshot builder and deck to mint tokens), not a fix for this
+bug.
