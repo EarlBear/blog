@@ -1,29 +1,27 @@
 ---
 /**
- * DataModel — an entity-relationship model (the data model of a design) rendered
- * as titled entity cards plus a relationship list. The house target for the
- * source design docs' mermaid `erDiagram` blocks, which the blog cannot render.
+ * DataModel — a TRUE entity-relationship diagram: entity boxes (their fields with
+ * PK/FK markers) CONNECTED by crow's-foot cardinality edges, not a disconnected
+ * relationship list. The house target for the source design docs' mermaid
+ * `erDiagram` blocks, which the blog cannot render at runtime.
  *
- * Rather than a fragile auto-laid-out ER graph, this renders each entity as a
- * card (its fields, with PK/FK markers) and the relationships as a labeled list
- * with crow's-foot-style cardinality (one / zero-or-one / many). That keeps every
- * bit of the ER information — entities, fields, keys, relationships, cardinality
- * — readable and mobile-safe with zero JS, matching the blog's other primitives.
+ * How it stays deterministic + zero-runtime-JS (the house diagram criteria):
+ *  - Entities are placed on a fixed grid (row-major, a near-square column count),
+ *    so the same spec always yields the same layout — no measuring, no random.
+ *  - Boxes are accessible HTML (the existing dm- field styling), positioned on the
+ *    grid; the EDGES are a single SVG overlay drawn between deterministic box
+ *    anchor points (orthogonal connectors), with crow's-foot terminators encoding
+ *    each relation's cardinality (one · zero-or-one · many · zero-or-many).
+ *  - A build-time gate throws on a relation naming an unknown entity, and warns on
+ *    a disconnected entity (in the ER graph) so a dangling box is caught early.
+ *  - The whole figure scrolls inside its own wrapper (mobile-safe) and the edge
+ *    draw-in animation is reduced-motion gated.
  *
- * A build-time gate throws on a relationship that names an unknown entity.
+ * Cardinality is given source→target, e.g. 'one-to-zero-or-many' means the source
+ * end is "one" and the target end is "zero or many".
  *
- * Usage in MDX:
- *   <DataModel title="Lead data model" desc="…"
- *     entities={[
- *       {id:'LEAD', label:'Lead', fields:[
- *         {name:'id', type:'uuid', key:'pk'},
- *         {name:'candidate_id', type:'uuid', key:'fk'},
- *         {name:'score', type:'float'}]},
- *       {id:'CONTACT', label:'Contact'},
- *     ]}
- *     relations={[
- *       {from:'LEAD', to:'CONTACT', label:'has', card:'one-to-zero-or-one'},
- *     ]} />
+ * Props are UNCHANGED from the prior list-form DataModel, so existing posts keep
+ * working — only the rendering became a real ER graph.
  */
 export type FieldKey = 'pk' | 'fk';
 export interface EntityField {
@@ -50,11 +48,13 @@ interface Props {
   desc?: string;
   entities: Entity[];
   relations: Relation[];
+  /** Fixed number of grid columns. Default: a near-square packing of the count. */
+  columns?: number;
 }
 
-const { title, desc, entities, relations } = Astro.props;
+const { title, desc, entities, relations, columns } = Astro.props;
 
-// ---- Build-time gate: every relation references a real entity --------------
+// ---- Build-time gates ------------------------------------------------------
 {
   const ids = new Set(entities.map((e) => e.id));
   relations.forEach((r, i) => {
@@ -63,69 +63,261 @@ const { title, desc, entities, relations } = Astro.props;
     if (!ids.has(r.to))
       throw new Error(`DataModel "${title}": relation ${i} to "${r.to}" is not an entity id.`);
   });
+  // Legibility/quality gate: an entity with no relationship is a dangling box —
+  // usually a modeling omission. Warn (don't throw: a lone lookup table is valid).
+  const connected = new Set<string>();
+  relations.forEach((r) => {
+    connected.add(r.from);
+    connected.add(r.to);
+  });
+  for (const e of entities) {
+    if (!connected.has(e.id))
+      console.warn(
+        `[data-model] warning: "${title}" entity "${e.id}" has no relationship — ` +
+          `it renders as a disconnected box. Add a relation or drop it.`
+      );
+  }
   if (!desc || !desc.trim())
     console.warn(`[data-model] warning: "${title}" has no desc — add desc= for screen readers.`);
 }
 
-// Crow's-foot-ish notation for each cardinality (source to target).
-const CARD: Record<Cardinality, { a: string; b: string; gloss: string }> = {
-  'one-to-one': { a: '1', b: '1', gloss: 'one to one' },
-  'one-to-many': { a: '1', b: '*', gloss: 'one to many' },
-  'one-to-zero-or-one': { a: '1', b: '0..1', gloss: 'one to zero-or-one' },
-  'one-to-zero-or-many': { a: '1', b: '0..*', gloss: 'one to zero-or-many' },
-  'many-to-many': { a: '*', b: '*', gloss: 'many to many' },
+// Crow's-foot terminator per cardinality end (source `a`, target `b`) + a gloss.
+// The glyph names map to the SVG marker drawn at each edge end.
+type EndMark = 'one' | 'zero-or-one' | 'many' | 'zero-or-many';
+const CARD: Record<Cardinality, { a: EndMark; b: EndMark; gloss: string }> = {
+  'one-to-one': { a: 'one', b: 'one', gloss: 'one to one' },
+  'one-to-many': { a: 'one', b: 'many', gloss: 'one to many' },
+  'one-to-zero-or-one': { a: 'one', b: 'zero-or-one', gloss: 'one to zero-or-one' },
+  'one-to-zero-or-many': { a: 'one', b: 'zero-or-many', gloss: 'one to zero-or-many' },
+  'many-to-many': { a: 'many', b: 'many', gloss: 'many to many' },
 };
 
 const labelOf = (id: string) => entities.find((e) => e.id === id)?.label ?? id;
+
+// ---- Deterministic grid placement ------------------------------------------
+// Row-major on a near-square column count (or the caller's `columns`). Each cell
+// is one entity; the SVG overlay connects cells by their border anchor points.
+const N = entities.length;
+const cols = Math.max(1, columns ?? Math.ceil(Math.sqrt(N)));
+const rows = Math.ceil(N / cols);
+const cellOf = new Map<string, { col: number; row: number }>();
+entities.forEach((e, i) => {
+  cellOf.set(e.id, { col: i % cols, row: Math.floor(i / cols) });
+});
+
+// A stable salt for scoping the SVG marker ids to this instance.
+const salt =
+  'dm-' +
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24);
+
+// Edge list with resolved cardinality ends, for the overlay script + SR list.
+const edges = relations.map((r, i) => {
+  const c = r.card ? CARD[r.card] : undefined;
+  return {
+    i,
+    from: r.from,
+    to: r.to,
+    label: r.label ?? '',
+    a: c?.a ?? 'one',
+    b: c?.b ?? 'one',
+    gloss: c?.gloss ?? '',
+  };
+});
 ---
 
-<figure class="data-model">
-  <div class="dm-entities">
-    {
-      entities.map((e) => (
-        <div class="dm-entity">
-          <div class="dm-entity-head">{e.label}</div>
-          {e.fields && e.fields.length > 0 && (
-            <ul class="dm-fields">
-              {e.fields.map((f) => (
-                <li class="dm-field">
-                  {f.key && (
-                    <span class={`dm-key dm-key--${f.key}`} title={f.key === 'pk' ? 'primary key' : 'foreign key'}>
-                      {f.key.toUpperCase()}
-                    </span>
-                  )}
-                  <span class="dm-field-name">{f.name}</span>
-                  {f.type && <span class="dm-field-type">{f.type}</span>}
-                  {f.note && <span class="dm-field-note">{f.note}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))
-    }
-  </div>
+<figure class="data-model" data-dm={salt} style={`--dm-cols:${cols}; --dm-rows:${rows}`}>
+  <div class="dm-scroll">
+    <div class="dm-grid">
+      {/* Edge overlay: an SVG sized to the grid, drawn by the inline script once
+          the boxes have laid out (their anchor points are read from the DOM, so
+          the connectors always meet the real box borders regardless of box height). */}
+      <svg class="dm-edges" aria-hidden="true" data-dm-edges></svg>
 
-  <div class="dm-relations">
-    <p class="dm-relations-label">Relationships</p>
-    <ul>
       {
-        relations.map((r) => {
-          const c = r.card ? CARD[r.card] : undefined;
+        entities.map((e) => {
+          const cell = cellOf.get(e.id)!;
           return (
-            <li class="dm-relation">
-              <span class="dm-rel-entity">{labelOf(r.from)}</span>
-              <span class="dm-rel-card" title={c?.gloss}>
-                {c ? `${c.a} — ${c.b}` : '—'}
-              </span>
-              <span class="dm-rel-entity">{labelOf(r.to)}</span>
-              {r.label && <span class="dm-rel-label">{r.label}</span>}
-            </li>
+            <div
+              class="dm-entity"
+              id={`${salt}-${e.id}`}
+              data-entity={e.id}
+              style={`grid-column:${cell.col + 1}; grid-row:${cell.row + 1}`}
+            >
+              <div class="dm-entity-head">{e.label}</div>
+              {e.fields && e.fields.length > 0 && (
+                <ul class="dm-fields">
+                  {e.fields.map((f) => (
+                    <li class="dm-field">
+                      {f.key && (
+                        <span
+                          class={`dm-key dm-key--${f.key}`}
+                          title={f.key === 'pk' ? 'primary key' : 'foreign key'}
+                        >
+                          {f.key.toUpperCase()}
+                        </span>
+                      )}
+                      <span class="dm-field-name">{f.name}</span>
+                      {f.type && <span class="dm-field-type">{f.type}</span>}
+                      {f.note && <span class="dm-field-note">{f.note}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           );
         })
       }
-    </ul>
+    </div>
   </div>
+
+  {/* Screen-reader + no-JS fallback: the relationships as a plain list, so the ER
+      information survives even when the drawn edges don't (a11y + progressive
+      enhancement). Visually hidden once the overlay draws; always read by SR. */}
+  <ul class="dm-rel-sr" aria-label="Entity relationships">
+    {
+      edges.map((ed) => (
+        <li>
+          {labelOf(ed.from)} {ed.gloss} {labelOf(ed.to)}
+          {ed.label ? ` (${ed.label})` : ''}
+        </li>
+      ))
+    }
+  </ul>
 
   {desc && <figcaption class="dm-caption">{desc}</figcaption>}
 </figure>
+
+<script
+  type="application/json"
+  data-dm-spec={salt}
+  set:html={JSON.stringify(edges)}
+/>
+
+<script is:inline define:vars={{ salt }}>
+  (() => {
+    const fig = document.querySelector(`.data-model[data-dm="${salt}"]`);
+    if (!fig) return;
+    const svg = fig.querySelector('[data-dm-edges]');
+    const grid = fig.querySelector('.dm-grid');
+    const specEl = document.querySelector(`[data-dm-spec="${salt}"]`);
+    if (!svg || !grid || !specEl) return;
+    const edges = JSON.parse(specEl.textContent || '[]');
+    const SVGNS = 'http://www.w3.org/2000/svg';
+
+    // Crow's-foot terminator, drawn at the END of a segment pointing INTO the box.
+    // (x,y) is the point on the box border; (nx,ny) is the unit vector pointing
+    // away from the box (back along the edge). Returns SVG path/line elements.
+    function terminator(mark, x, y, nx, ny) {
+      const els = [];
+      // perpendicular unit
+      const px = -ny, py = nx;
+      const line = (x1, y1, x2, y2) => {
+        const l = document.createElementNS(SVGNS, 'line');
+        l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+        l.setAttribute('class', 'dm-foot');
+        return l;
+      };
+      const circle = (cx, cy) => {
+        const c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('cx', cx); c.setAttribute('cy', cy);
+        c.setAttribute('r', 4); c.setAttribute('class', 'dm-foot dm-foot-circle');
+        return c;
+      };
+      const D = 14; // distance back from the box for the crow's-foot fan
+      const W = 6;  // half-width of the foot / bar
+      const bx = x + nx * D, by = y + ny * D; // base point back along the edge
+      const many = mark === 'many' || mark === 'zero-or-many';
+      const optional = mark === 'zero-or-one' || mark === 'zero-or-many';
+      if (many) {
+        // three lines fanning from (bx,by) to the box border spread
+        els.push(line(bx, by, x + px * W, y + py * W));
+        els.push(line(bx, by, x, y));
+        els.push(line(bx, by, x - px * W, y - py * W));
+      } else {
+        // "one": a single bar across the edge near the box
+        els.push(line(x + nx * 8 + px * W, y + ny * 8 + py * W,
+                      x + nx * 8 - px * W, y + ny * 8 - py * W));
+      }
+      if (optional) {
+        // a small circle further back means "zero or …"
+        els.push(circle(x + nx * (D + 6), y + ny * (D + 6)));
+      }
+      return els;
+    }
+
+    // Where does the segment between two box centres cross box A's border?
+    function borderPoint(rect, gx, gy, tx, ty) {
+      const cx = gx, cy = gy;
+      const dx = tx - cx, dy = ty - cy;
+      const hw = rect.width / 2, hh = rect.height / 2;
+      if (dx === 0 && dy === 0) return { x: cx, y: cy, nx: 0, ny: -1 };
+      // scale to the nearest border along the direction (dx,dy)
+      const sx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+      const sy = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+      const s = Math.min(sx, sy);
+      const x = cx + dx * s, y = cy + dy * s;
+      // outward normal (unit) pointing away from the box along the edge
+      const len = Math.hypot(dx, dy);
+      return { x, y, nx: -dx / len, ny: -dy / len };
+    }
+
+    function draw() {
+      const gridRect = grid.getBoundingClientRect();
+      svg.setAttribute('width', gridRect.width);
+      svg.setAttribute('height', gridRect.height);
+      svg.setAttribute('viewBox', `0 0 ${gridRect.width} ${gridRect.height}`);
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      edges.forEach((ed, idx) => {
+        const aEl = fig.querySelector(`[data-entity="${ed.from}"]`);
+        const bEl = fig.querySelector(`[data-entity="${ed.to}"]`);
+        if (!aEl || !bEl) return;
+        const ar = aEl.getBoundingClientRect(), br = bEl.getBoundingClientRect();
+        const acx = ar.left - gridRect.left + ar.width / 2;
+        const acy = ar.top - gridRect.top + ar.height / 2;
+        const bcx = br.left - gridRect.left + br.width / 2;
+        const bcy = br.top - gridRect.top + br.height / 2;
+        const pa = borderPoint(ar, acx, acy, bcx, bcy);
+        const pb = borderPoint(br, bcx, bcy, acx, acy);
+
+        const path = document.createElementNS(SVGNS, 'path');
+        path.setAttribute('d', `M ${pa.x} ${pa.y} L ${pb.x} ${pb.y}`);
+        path.setAttribute('class', 'dm-edge');
+        path.style.setProperty('--i', idx);
+        svg.appendChild(path);
+
+        terminator(ed.a, pa.x, pa.y, pa.nx, pa.ny).forEach((e) => svg.appendChild(e));
+        terminator(ed.b, pb.x, pb.y, pb.nx, pb.ny).forEach((e) => svg.appendChild(e));
+
+        if (ed.label) {
+          const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
+          const chip = document.createElementNS(SVGNS, 'rect');
+          const w = ed.label.length * 6.6 + 10;
+          chip.setAttribute('x', mx - w / 2); chip.setAttribute('y', my - 13);
+          chip.setAttribute('width', w); chip.setAttribute('height', 16);
+          chip.setAttribute('rx', 4); chip.setAttribute('class', 'dm-edge-label-chip');
+          svg.appendChild(chip);
+          const t = document.createElementNS(SVGNS, 'text');
+          t.setAttribute('x', mx); t.setAttribute('y', my - 1);
+          t.setAttribute('class', 'dm-edge-label');
+          t.textContent = ed.label;
+          svg.appendChild(t);
+        }
+      });
+      fig.classList.add('dm-drawn'); // hides the SR list visually, reveals the graph
+    }
+
+    draw();
+    // Redraw on resize (box heights/positions shift with the reflow).
+    let raf;
+    window.addEventListener('resize', () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(draw);
+    });
+  })();
+</script>

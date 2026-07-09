@@ -1511,16 +1511,42 @@ a:focus:not(:focus-visible) {
 .data-model {
   margin: var(--space-8) 0;
 }
-.data-model .dm-entities {
+/* Scroll wrapper — the ER graph can be wide; never push the page sideways. */
+.data-model .dm-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* The entity grid: a fixed near-square packing (columns/rows from the component).
+   Generous gaps leave room for the connector edges + crow's-foot terminators. */
+.data-model .dm-grid {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(var(--dm-cols, 3), minmax(150px, 1fr));
+  gap: var(--space-12) var(--space-16);
+  align-items: start;
+  justify-items: stretch;
+  padding: var(--space-4);
+  min-width: min-content;
+}
+/* The SVG edge overlay sits above the grid background but below the boxes, so
+   connectors visually run behind the entity cards' edges and meet their borders. */
+.data-model .dm-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
 }
 .data-model .dm-entity {
+  position: relative;
+  z-index: 1;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--color-surface);
+  align-self: start;
 }
 .data-model .dm-entity-head {
   padding: var(--space-2) var(--space-3);
@@ -1577,49 +1603,73 @@ a:focus:not(:focus-visible) {
   font-style: italic;
   margin-left: auto;
 }
-.data-model .dm-relations {
-  margin-top: var(--space-5);
+/* ER edges (SVG overlay). Connectors between entity boxes; crow's-foot feet + an
+   optional-circle encode cardinality; a chip keeps the relation label legible. */
+.data-model .dm-edge {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 1.5;
 }
-.data-model .dm-relations-label {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-eyebrow);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--ls-eyebrow);
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+/* Crow's-foot feet encode the cardinality — the point of an ERD — so make them
+   read clearly against the light connectors. */
+.data-model .dm-foot {
+  stroke: var(--color-text-muted);
+  stroke-width: 1.75;
+  fill: none;
 }
-.data-model .dm-relations ul {
+.data-model .dm-foot-circle {
+  fill: var(--color-surface);
+  stroke: var(--color-text-secondary);
+  stroke-width: 1.5;
+}
+.data-model .dm-edge-label-chip {
+  fill: var(--color-surface);
+  stroke: var(--color-border-subtle);
+  stroke-width: 1;
+}
+.data-model .dm-edge-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-anchor: middle;
+}
+/* Draw-in animation, reduced-motion gated. */
+@media (prefers-reduced-motion: no-preference) {
+  .data-model.dm-drawn .dm-edge {
+    stroke-dasharray: 200;
+    stroke-dashoffset: 200;
+    animation: dm-draw 0.5s ease forwards;
+    animation-delay: calc(var(--i, 0) * 40ms);
+  }
+}
+@keyframes dm-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* The SR/no-JS relationship list: always in the a11y tree; hidden visually only
+   once the graph has drawn (JS added .dm-drawn). Without JS it stays visible so
+   the ER information never disappears. */
+.data-model .dm-rel-sr {
   list-style: none;
-  margin: 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.data-model .dm-relation {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  padding: var(--space-1) 0;
   font-size: var(--fs-sm);
-}
-.data-model .dm-rel-entity {
-  font-family: var(--font-mono);
-  color: var(--color-text);
-}
-.data-model .dm-rel-card {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-2);
-  cursor: help;
-}
-.data-model .dm-rel-label {
   color: var(--color-text-secondary);
-  font-style: italic;
+}
+.data-model .dm-rel-sr li {
+  padding: var(--space-0-5) 0;
+}
+.data-model.dm-drawn .dm-rel-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .data-model .dm-caption {
   margin-top: var(--space-3);
