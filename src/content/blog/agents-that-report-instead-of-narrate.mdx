@@ -221,6 +221,35 @@ finding justice — a layout that jumps as it loads, a swatch that flickers when
 janky transition — the agent records a **GIF** instead. The server detects the `.gif` and the
 dashboard plays it inline. A glitch you can only *see in motion* becomes a report you can watch.
 
+## North star: the report becomes an explorable map
+
+Right now the review is a *stream* — an ordered feed of events, with the JourneyMap giving it a
+spine. But the agent is doing something richer than walking a line: as it hops home → collection →
+PDP → cart, it's discovering the *shape* of the store. Every navigation is an edge; every page a
+node; every issue, positive, and friction a marking on a node. The stream is a flattening of a
+**graph** that the agent is implicitly building as it explores.
+
+The next step is to make that graph first-class: a sitemap that *accretes* as the review runs, and
+an explorable force-directed view of it — pages as nodes sized by how many findings landed there,
+edges as the paths the agent actually took (not the ones a crawler guesses), colored by outcome.
+Click a node, see its findings and its screenshot; watch the map grow live as the agent reaches new
+pages. The JourneyMap is the happy-path slice through this; the graph is the whole territory,
+including the dead ends and the detours the linear stepper can't show.
+
+This isn't a new idea to invent from scratch — two bodies of prior art point the way. On the
+**visualization** side, SEO crawlers already render sites as interactive graphs: Screaming Frog ships
+a 3D force-directed crawl visualization, Sitebulb draws crawl maps, and open-source crawlers lean on
+`vis.js` / D3 force layouts for exactly this node-edge-with-metadata picture. We'd borrow the layout,
+not the crawler — our edges come from the agent's real path, which is the interesting difference.
+
+On the **agent-memory** side, the graph is also the agent's *own* working memory of the site, and
+recent research treats site memory exactly this way: WebATLAS builds a cognitive map of a site an
+agent has explored so later runs navigate by memory instead of re-crawling; state-space navigation
+work (e.g. Laser) models web tasks as movement through a graph of page-states; and temporal knowledge
+graphs (Graphiti) capture how that structure and its facts change over time. So the same graph serves
+two masters — a human's explorable report *and* the agent's reusable memory of the store — which is
+why it belongs in the north star and not just the UI backlog.
+
 ## What we accepted, and when this is wrong
 
 The honest costs: the live stream only exists under the dev/preview server (the middleware that

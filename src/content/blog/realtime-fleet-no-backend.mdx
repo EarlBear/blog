@@ -1,0 +1,125 @@
+---
+title: "A realtime fleet with no backend"
+description: "The Shopify scan fleet updates live as reviews run — no server pushing events, no write API. supabase-js postgres_changes over the read-only anon key, an anon-INSERT request queue locked down by RLS, and a one-page review that publishes with window.print(). Where the service-role key lives, and why that's safe."
+pubDate: 2026-07-08
+tags: [engineering, agents]
+expects: [flow]
+authors: [omar]
+draft: true
+design: scan-fleet
+audience: internal
+questions:
+  - How does a page update live when there's no backend to push events to it?
+  - How can a visitor request a review without us running a write API?
+  - Where does the write key live, and why is embedding a database key in the frontend safe?
+  - How do you publish a shareable, printable one-pager without a PDF service?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Our dashboard is a static site behind Cloudflare Access. No server process, no API — it builds
+to HTML and JavaScript and sits on a CDN. So when we wanted a *live* fleet page — a wall of
+Shopify sites showing which are queued, which is scanning right now, which are done, updating as
+an agent works — the obvious question was: updating *from what*? There's nothing to push events.
+
+It turns out you don't need one. The database can be the backend.
+
+## The changes come to you
+
+Every review the agent runs writes rows to Supabase — a `scan_runs` row per review, a
+`scan_events` row per finding, a `scan_sites` row per domain with rolled-up metrics. Postgres
+already knows the moment any of those rows changes. Supabase Realtime turns that into a
+WebSocket broadcast: the page subscribes to `postgres_changes` on the fleet tables and receives
+each INSERT and UPDATE as it happens.
+
+```
+const channel = supabase
+  .channel('scan-fleet')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'scan_requests' }, upsert)
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'scan_runs' }, upsert)
+  .subscribe()
+```
+
+That's the whole live layer. No polling, no SSE endpoint, no server. When a review moves a card
+from *scanning* to *done*, the row updates, the broadcast fires, and the card moves — on every
+open dashboard at once.
+
+<FlowDiagram
+  title="Realtime fleet, no backend"
+  shape="pipeline"
+  legend
+  desc="The review agent writes runs and events to Supabase with a service-role key; Supabase Realtime broadcasts the row changes to the dashboard over the read-only anon key; a visitor's queued request rides the same anon path in reverse."
+  nodes={[
+    { id: 'agent', label: 'Review agent', kind: 'external', detail: 'The site-reviewer sub-agent, via the reporting MCP server running on the operator laptop.' },
+    { id: 'write', label: 'Service key', kind: 'edge', detail: 'The MCP server upserts scan_runs / scan_events with a service-role key held only in the operator env — never in the frontend bundle.' },
+    { id: 'db', label: 'Supabase', kind: 'store', detail: 'Postgres + RLS. Anon SELECT on the fleet tables; anon INSERT only on scan_requests. Tables are in the supabase_realtime publication.' },
+    { id: 'live', label: 'Realtime', detail: 'postgres_changes broadcasts each INSERT / UPDATE to subscribers over a WebSocket, authorized by the anon SELECT policy.' },
+    { id: 'page', label: 'Sites page', detail: 'A live kanban of queued / scanning / done, per-domain metrics, a request-a-review form, and print-to-PDF.' },
+  ]}
+  edges={[
+    { from: 'agent', to: 'write' },
+    { from: 'write', to: 'db', label: 'upsert' },
+    { from: 'db', to: 'live', label: 'changes' },
+    { from: 'live', to: 'page', label: 'push' },
+  ]}
+/>
+
+## The anon key is the whole client
+
+The key the page uses is the **anon** key — public, read-only, embedded in the build. That's
+safe because Row-Level Security decides what it can touch, and the site sits behind Cloudflare
+Access besides. Anon may `SELECT` the fleet tables (the tally is public to the team), and that
+same SELECT policy is what authorizes the Realtime subscription — Supabase checks it before
+streaming a row to a subscriber. Enable the table in the `supabase_realtime` publication, grant
+anon `SELECT`, and the live feed just works over the public key. No service credential ever
+reaches the browser.
+
+## Requesting a review, without a write API
+
+The page also needs to *write* one thing: a review request. A static page with no backend can't
+POST to an API we don't have — but it can insert a row, if RLS lets it:
+
+```
+await supabase.from('scan_requests').insert({
+  target_url, page_url, status: 'queued', requested_by,
+})
+```
+
+The lockdown is all in the policy. Anon may INSERT into `scan_requests` only, and the `with
+check` clause forces `status = 'queued'` and forbids setting `run_id` or `started_at` — so a
+visitor can enqueue a URL but can't pretend a review is running or bind it to a run. A
+column-level grant narrows anon to exactly four columns. There's no anon UPDATE or DELETE policy
+at all, so nobody can advance or claim a row from the page. The only actor that transitions a
+request `queued → scanning → done` is the reviewing agent, with a different key.
+
+We proved the boundary the blunt way: anon INSERT of a queued row returns 201; anon INSERT with
+`status: 'scanning'` returns 401; anon INSERT into `scan_runs` returns 401.
+
+## Two keys, one boundary
+
+That "different key" is the one sensitive thing in the design. The agent's reporting server
+writes `scan_runs`/`scan_events` and moves the queue — writes RLS deliberately blocks for anon.
+It uses a **service-role** key, and that key lives in exactly one place: the operator's shell
+environment, passed to the MCP server through its config. It is never in the Vite build, never
+in `public/`, never in a commit. The frontend has no code path that reads it. The public page
+gets the read-only anon key; the trusted writer on the operator's laptop gets the service-role
+key; nothing crosses.
+
+## Publishing without a PDF service
+
+A finished review should be shareable as a clean one-pager. No PDF library, no headless render
+service — just print CSS. A `@media print` block hides the app chrome (nav, run picker, the
+buttons), collapses the two-column live view into one column, keeps the severity colors, and
+avoids splitting a finding across a page. A "Save as PDF" button calls `window.print()`, and the
+browser's own print engine produces the PDF. A shareable public URL comes from the snapshot we
+already commit for offline builds: mirror a run into the deployed site and `/reports?run=<id>`
+renders — and prints — for anyone with access.
+
+## Next steps
+
+The fleet tells you *what's wrong* with a store — buried reviews, a blocked add-to-cart, slow
+mobile LCP, a forced account at checkout. The obvious next stage is *what to do about it*: a
+separate agent that reads a completed review's findings and proposes a concrete course of
+action to fix the site — the specific theme edits, the reordered PDP, the removed friction —
+turning a diagnosis into a plan. The findings are already structured rows; a fix-suggestion
+agent is the natural reader of them.
