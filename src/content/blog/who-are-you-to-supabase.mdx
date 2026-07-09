@@ -50,7 +50,7 @@ carries the identity. A tiny Pages Function verifies the Access login and hands 
 GET /api/auth-token
   → verify the Cloudflare Access JWT (JWKS, signature, exp, aud)
   → assert the email ends in @earlbear.com
-  → sign a 30-minute Supabase JWT: { role: 'authenticated', email, ... }
+  → sign a 30-minute Supabase JWT (ES256): { role: 'authenticated', email, ... }
   → { token }
 ```
 
@@ -75,7 +75,7 @@ policies entirely. The database enforces `@earlbear.com`, not just the edge.
   nodes={[
     { id: 'browser', label: 'Browser', kind: 'external', detail: 'The gtm dashboard, an @earlbear.com user behind Cloudflare Access.' },
     { id: 'access', label: 'CF Access', kind: 'edge', detail: 'Google Workspace SSO, restricted to earlbear.com. Sets the signed CF_Authorization cookie.' },
-    { id: 'fn', label: 'auth-token', detail: 'A CF Pages Function: verifies the Access JWT, asserts @earlbear.com, mints a 30-min Supabase JWT (role=authenticated, email claim). Signs with SUPABASE_JWT_SECRET — server-side only.' },
+    { id: 'fn', label: 'auth-token', detail: 'A CF Pages Function: verifies the Access JWT, asserts @earlbear.com, mints a 30-min Supabase JWT (ES256; role=authenticated, email claim). Signs with an imported EC private key held only in the CF Pages env — Supabase verifies via its public JWKS.' },
     { id: 'jwt', label: 'Supabase JWT', kind: 'store', detail: 'A short-lived token the browser hands to supabase-js via the accessToken option — carried on REST and Realtime alike.' },
     { id: 'db', label: 'Supabase', kind: 'store', detail: 'RLS reads auth.jwt()->>email and enforces the @earlbear.com domain on reads, writes, and postgres_changes subscriptions.' },
   ]}
@@ -87,22 +87,39 @@ policies entirely. The database enforces `@earlbear.com`, not just the edge.
   ]}
 />
 
-## First-party, not third-party
+## Signing with a key we hold, not a secret we borrow
 
-One nice simplification: we sign the token with **Supabase's own JWT secret** (HS256), server-side
-in the Function. That means Supabase treats it as a *first-party* token — the same kind its own Auth
-would issue — so there's no third-party-auth provider to register, no OIDC discovery, nothing extra.
-The signing is a dozen lines of Web Crypto HMAC; the Function has zero dependencies, matching the
-dependency-free Access-JWT verifier we copied from our other app.
+Our first cut signed the token with Supabase's *shared* JWT secret (HS256). Then Supabase migrated
+the project to its new **JWT Signing Keys** system — and that shared secret became verify-only.
+Supabase also, deliberately, won't hand back any private key it generates for you. So "borrow the
+secret and sign with it" was off the table.
+
+There's a subtlety here worth naming. When the project migrated, Supabase *auto-created* an ES256
+signing key for us — but it holds that key's private half and won't release it, so we can't sign
+with it (by design: nobody, not even us, can extract a Supabase-generated key). To mint our own
+tokens we need a key **we** hold. So we generate one (`supabase gen signing-key --algorithm
+ES256`), import it as a *second* signing key, and rotate it to current. The Function signs each
+token with its **private** half — which lives only in the Cloudflare Pages environment and never
+leaves our control. Supabase publishes the **public** half at `/auth/v1/.well-known/jwks.json` and
+verifies our tokens against it; the token's header carries a `kid` so it knows which key to check.
+The signing is a dozen lines of Web Crypto ECDSA (P-256), so the Function stays zero-dependency,
+matching the Access-JWT verifier we copied from our other app.
+
+The whole import — generate, import as standby, wait for the public key to hit the JWKS, rotate to
+current — runs through the CLI and Supabase's Management API, no dashboard clicking; we wrote it up
+as a one-command script so the next rotation is repeatable. The upside over the old shared secret:
+nobody at Supabase can mint tokens as us, and rotating or revoking is an API call against a key we
+own, not a redeploy of a secret baked into the app.
 
 ## The boundary is the secret
 
 The whole security model comes down to where three keys live:
 
-- The **anon key** is in the browser bundle. Fine — after the migration it reads nothing on its own.
-- The **JWT-signing secret** is a Cloudflare Pages secret, read only by the Function. The browser
-  gets a 30-minute token, never the secret. If it leaked, an attacker could mint tokens — so it's
-  the one credential that matters, and it never crosses into the frontend.
+- The **publishable key** is in the browser bundle. Fine — after the migration it reads nothing on its own.
+- The **signing key** (an EC private key) is a Cloudflare Pages secret, read only by the Function.
+  The browser gets a 30-minute token, never the key. If it leaked, an attacker could mint tokens —
+  so it's the one credential that matters, and it never crosses into the frontend. Supabase only
+  ever holds its *public* half.
 - The **service key** (which bypasses RLS to write the review records) lives only on the operator's
   laptop, in the reporting agent's environment. Never in the bundle, never in a commit.
 
