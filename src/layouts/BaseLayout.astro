@@ -5,6 +5,7 @@ import '../styles/tokens.css';
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
+import DiagramFullscreen from '../components/DiagramFullscreen.astro';
 import { isInternalBuild } from '../lib/posts';
 
 // Which site this build is: the internal (access-gated) site gets a distinct
@@ -105,5 +106,6 @@ const ogImage = new URL('/favicon.svg', Astro.site);
       <slot />
     </main>
     <Footer />
+    <DiagramFullscreen />
   </body>
 </html>

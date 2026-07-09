@@ -1,0 +1,240 @@
+---
+/**
+ * DiagramFullscreen — a single, page-level progressive enhancement that gives
+ * EVERY diagram/chart figure an "expand to fullscreen" affordance, without
+ * touching each diagram component.
+ *
+ * How it works: one shared <dialog> is emitted once per page. A small inline
+ * script finds every diagram figure (flow-diagram, sequence-diagram,
+ * usecase-diagram, data-model, barchart), injects a corner "⤢ Expand" button,
+ * and on click clones that figure's <svg> into the fullscreen dialog at its
+ * natural size. Zero framework, zero per-component change, and it degrades to
+ * nothing when JS is off (the diagrams still render inline and scroll).
+ *
+ * Rendered once from BaseLayout, so it covers posts and any page with a diagram.
+ */
+---
+
+<dialog class="diagram-fs" aria-label="Expanded diagram">
+  <div class="diagram-fs-bar">
+    <span class="diagram-fs-title"></span>
+    <button type="button" class="diagram-fs-close" aria-label="Close fullscreen">×</button>
+  </div>
+  <div class="diagram-fs-stage"></div>
+</dialog>
+
+<script is:inline>
+  (() => {
+    const SELECTOR =
+      '.flow-diagram, .sequence-diagram, .usecase-diagram, .data-model, .barchart';
+    const dialog = document.querySelector('dialog.diagram-fs');
+    if (!dialog || !dialog.showModal) return; // no <dialog> support → inline only
+    const stage = dialog.querySelector('.diagram-fs-stage');
+    const titleEl = dialog.querySelector('.diagram-fs-title');
+    const closeBtn = dialog.querySelector('.diagram-fs-close');
+
+    function figureTitle(fig) {
+      // The accessible name is on the SVG's <title>, or a nearby caption.
+      const t = fig.querySelector('svg title');
+      if (t && t.textContent) return t.textContent.trim();
+      const cap = fig.querySelector('figcaption, caption');
+      return cap && cap.textContent ? cap.textContent.trim() : 'Diagram';
+    }
+
+    function openFor(fig) {
+      const svg = fig.querySelector('svg');
+      if (!svg) return;
+      // Clone the WHOLE figure, not just the <svg>: the diagram's fills/strokes
+      // are styled by CSS scoped under the figure class (e.g. `.flow-diagram
+      // .flow-edge-label-chip { fill: … }`). A bare <svg> clone sits outside that
+      // scope and the fills fall back to black. Cloning the figure keeps its class
+      // so every scoped rule still matches. We strip the injected expand button and
+      // any interaction chrome from the clone.
+      const figClone = fig.cloneNode(true);
+      figClone.classList.add('is-fs-clone');
+      figClone.removeAttribute('style'); // drop the inline position:relative we added
+      figClone.querySelectorAll('.diagram-fs-btn').forEach((b) => b.remove());
+      const svgClone = figClone.querySelector('svg');
+      if (svgClone) {
+        svgClone.removeAttribute('width');
+        svgClone.removeAttribute('height');
+        svgClone.style.width = '100%';
+        svgClone.style.height = 'auto';
+        svgClone.style.maxHeight = '100%';
+      }
+      stage.replaceChildren(figClone);
+      titleEl.textContent = figureTitle(fig);
+      dialog.showModal();
+    }
+
+    function close() {
+      dialog.close();
+      stage.replaceChildren();
+    }
+
+    document.querySelectorAll(SELECTOR).forEach((fig) => {
+      if (fig.querySelector('svg') == null) return; // nothing to expand
+      if (fig.querySelector('.diagram-fs-btn')) return; // already wired
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'diagram-fs-btn';
+      btn.setAttribute('aria-label', 'Expand diagram to fullscreen');
+      btn.title = 'Expand to fullscreen';
+      btn.innerHTML =
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>';
+      // The figure needs a positioning context for the absolute button.
+      if (getComputedStyle(fig).position === 'static') fig.style.position = 'relative';
+      btn.addEventListener('click', () => openFor(fig));
+      fig.appendChild(btn);
+    });
+
+    closeBtn.addEventListener('click', close);
+    // Click on the backdrop (outside the stage/bar) closes.
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) close();
+    });
+    dialog.addEventListener('cancel', () => stage.replaceChildren()); // Esc
+  })();
+</script>
+
+<style is:global>
+  /* Corner expand button, shared by every diagram figure. Hidden until the
+     figure is hovered/focused so it doesn't clutter the diagram. */
+  .diagram-fs-btn {
+    position: absolute;
+    top: var(--space-2, 0.5rem);
+    right: var(--space-2, 0.5rem);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    flex: none;
+    padding: 0;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+  /* Pin the icon size — otherwise the diagrams' `svg { width: 100% }` rule blows
+     the button's icon up to fill the figure. */
+  .diagram-fs-btn svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+    flex: none;
+  }
+  .flow-diagram:hover .diagram-fs-btn,
+  .sequence-diagram:hover .diagram-fs-btn,
+  .usecase-diagram:hover .diagram-fs-btn,
+  .data-model:hover .diagram-fs-btn,
+  .barchart:hover .diagram-fs-btn,
+  .diagram-fs-btn:focus-visible {
+    opacity: 1;
+  }
+  .diagram-fs-btn:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  /* Touch devices have no hover — always show it there. */
+  @media (hover: none) {
+    .diagram-fs-btn {
+      opacity: 1;
+    }
+  }
+
+  /* The fullscreen dialog. */
+  dialog.diagram-fs {
+    width: 96vw;
+    height: 94vh;
+    max-width: 96vw;
+    max-height: 94vh;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.16));
+    overflow: hidden;
+  }
+  dialog.diagram-fs::backdrop {
+    background: rgba(32, 30, 26, 0.42);
+    backdrop-filter: blur(2px);
+  }
+  .diagram-fs-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4, 1rem);
+    padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+    border-bottom: 1px solid var(--color-border-subtle);
+    background: var(--color-surface-sunken);
+  }
+  .diagram-fs-title {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--color-text-secondary);
+  }
+  .diagram-fs-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 22px;
+    line-height: 1;
+    border: none;
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+  .diagram-fs-close:hover {
+    background: var(--color-surface);
+    color: var(--color-accent);
+  }
+  /* The stage sizes the SVG to fill the remaining dialog area. */
+  .diagram-fs-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: calc(100% - 57px); /* dialog height minus the bar */
+    padding: var(--space-6, 1.5rem);
+    overflow: auto;
+  }
+  .diagram-fs-stage svg {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  /* The cloned figure fills the stage: no outer margin, its own scroll wrapper
+     shouldn't clip, and it centers. Scoped-CSS fills now apply because the clone
+     keeps its figure class. */
+  .diagram-fs-stage > figure {
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .diagram-fs-stage > figure > .flow-scroll,
+  .diagram-fs-stage > figure > .sequence-scroll,
+  .diagram-fs-stage > figure > .cm-scroll,
+  .diagram-fs-stage > figure > [class$='-scroll'] {
+    overflow: visible;
+    width: 100%;
+    border: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .diagram-fs-btn {
+      transition: none;
+    }
+  }
+</style>
