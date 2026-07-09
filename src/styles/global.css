@@ -675,8 +675,12 @@ a:focus:not(:focus-visible) {
 .flow-diagram .flow-legend-item + .flow-legend-item {
   margin-top: 0;
 }
+/* The legend swatch is a tiny inline SVG — it must escape the main-diagram
+   `.flow-diagram svg { width:100%; min-width:280px }` sizing, or it stretches to
+   280px, blowing the label off to the side and forcing the legend to wrap. */
 .flow-diagram .flow-legend-swatch {
   width: 28px;
+  min-width: 28px;
   height: 18px;
   flex: none;
 }
