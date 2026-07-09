@@ -1,0 +1,515 @@
+---
+title: 'Ecommerce site scanner and lead engine: the design'
+description: The full high-level design for an agent that discovers ecommerce sites, scans them for growth-marketing problems, sizes them, finds a verified contact, scores the lead with reasons, and drafts outreach for a human to send.
+pubDate: 2026-07-09
+tags: [agents, growth, engineering, internal]
+authors: [omar]
+questions:
+  - How can two founders produce a steady flow of qualified ecommerce leads without prospecting by hand?
+  - How does an agent find which sites to scan, size them, and find who to email?
+  - How is a lead scored so the reasons are auditable, not a black box?
+  - What keeps the scanning and the outreach compliant?
+expects: [use-case, flow, decision, comparison]
+audience: internal
+draft: true
+---
+
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import DecisionTable from '../../components/DecisionTable.astro';
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
+import SequenceDiagram from '../../components/SequenceDiagram.astro';
+import DataModel from '../../components/DataModel.astro';
+import Callout from '../../components/Callout.astro';
+import Assumption from '../../components/Assumption.astro';
+import Mockup from '../../components/Mockup.astro';
+import Walkthrough from '../../components/Walkthrough.astro';
+
+A two-person founding team, a technical growth operator and a sales partner, cannot
+manually produce a steady flow of qualified ecommerce leads. Today they prospect by
+hand: Googling niches, eyeballing sites, hunting for an email, and writing each note
+from scratch. This tops out at a few sites an hour, gives no consistent score, loses
+most leads at the "who do I email" step, and leaves no audit trail.
+
+This is the internal, as-is design for the engine that replaces that. An
+LLM agent drives a staged, cheap-first pipeline that discovers candidate sites, scans
+their public pages for growth-marketing problems, estimates size, finds and verifies
+a contact, scores the lead with explainable reasons, and drafts a personalized
+outreach message for a human to send.
+
+<Callout kind="note" title="Scope">
+This document covers Phase 1: scan, score, outreach for lead generation. The agent
+is the front door to a larger agentic service for self-healing growth-marketing
+sites (technical/perf, SEO, CRO, and content auto-remediation). Self-healing is the
+north-star vision that motivates this work but is explicitly out of scope for this
+design: Phase 1 builds and validates detection; the self-healing service fixes sites
+later.
+</Callout>
+
+## What it looks like
+
+The agent scans a weak prospect store, logs each detected issue, sizes the store and
+finds a verified owner, then turns the scan into a scored lead with a drafted pitch a
+human approves before sending. Step through it:
+
+<Walkthrough
+  title="Scanner to lead"
+  steps={[
+    { scene: 'app', target: '#sc-cta', say: 'The agent scans a weak prospect store' },
+    { scene: 'app', target: '#sc-cta', say: 'a low-intent CTA' },
+    { scene: 'app', target: '#sc-checkout', say: 'and a slow mobile checkout' },
+    { scene: 'app', target: '#sc-findings', say: 'it logs each detected issue' },
+    { scene: 'app', target: '#sc-enrich', say: 'then sizes the store and finds a verified owner' },
+    { scene: 0, say: 'the scan becomes a scored lead with a drafted pitch a human approves' },
+  ]}
+>
+  <Mockup chrome="browser" title="Site Scanner" url="peakgear.com" caption="The agent scans a prospect's public pages, detects growth-marketing problems, sizes the store, and finds a verified contact.">
+    <div style="display: flex; min-height: 300px; font-family: var(--font-sans);">
+      <main style="flex: 1 1 auto; padding: 0.8rem 1rem; border-right: 1px solid var(--color-border);">
+        <div style="font-weight: 800; font-size: 1.1rem;">PeakGear</div>
+        <div style="color: var(--color-text-muted); font-size: 0.72rem; margin-bottom: 0.6rem;">outdoor equipment · Shopify</div>
+        <div style="height: 74px; background: var(--color-surface-sunken); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); font-size: 0.74rem;">hero product image</div>
+        <div id="sc-cta" style="margin-top: 0.6rem; display: inline-block; padding: 0.3rem 0.7rem; border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.74rem;">shop</div>
+        <div id="sc-checkout" style="margin-top: 0.6rem; font-size: 0.72rem; color: var(--color-text-muted);">checkout · loads in 8.2s on mobile</div>
+      </main>
+      <aside style="flex: 0 0 230px; padding: 0.7rem; background: var(--color-surface);">
+        <div style="font-weight: 700; font-size: 0.74rem; margin-bottom: 0.4rem;">Agent findings</div>
+        <div id="sc-findings">
+          <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.45rem; font-size: 0.72rem; border-bottom: 1px solid var(--color-border);"><span style="color: var(--eb-error); font-weight: 700;">!</span><span>Weak CTA: "shop" (low intent)</span></div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.45rem; font-size: 0.72rem; border-bottom: 1px solid var(--color-border);"><span style="color: var(--eb-error); font-weight: 700;">!</span><span>Slow checkout: 8.2s on mobile</span></div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.45rem; font-size: 0.72rem; border-bottom: 1px solid var(--color-border);"><span style="color: var(--eb-error); font-weight: 700;">!</span><span>No trust signals near buy box</span></div>
+        </div>
+        <div id="sc-enrich" style="margin-top: 0.6rem; font-size: 0.72rem; line-height: 1.6;">
+          <div><span style="color: var(--color-text-muted);">Size:</span> <strong>Mid ($500K to $5M/yr)</strong> · 82%</div>
+          <div><span style="color: var(--color-text-muted);">Traffic:</span> ~48K visits/mo</div>
+          <div><span style="color: var(--color-text-muted);">Owner:</span> <strong>john@peakgear.com</strong> · verified 95%</div>
+        </div>
+      </aside>
+    </div>
+  </Mockup>
+  <Mockup slot="scene-0" chrome="browser" title="Lead Engine" url="leadengine.app/queue" caption="The scan becomes a scored, contactable lead with a drafted pitch a human approves before sending.">
+    <div style="font-family: var(--font-sans);">
+      <div style="display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--color-border); background: var(--color-surface); font-size: 0.72rem;">
+        <strong>Ranked leads</strong>
+        <span style="color: var(--color-text-secondary);">ICP: Shopify · US · $500K to $5M</span>
+        <span style="margin-left: auto; color: var(--color-text-secondary);">cost/lead: $0.42</span>
+      </div>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="text-align: left; color: var(--color-text-secondary); font-size: 0.68rem;">
+            <th style="padding: 0.4rem 0.5rem;">Site</th><th style="padding: 0.4rem 0.5rem;">Score</th><th style="padding: 0.4rem 0.5rem;">Why</th><th style="padding: 0.4rem 0.5rem;">Size</th><th style="padding: 0.4rem 0.5rem;">Contact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--color-border); font-size: 0.74rem; background: var(--color-accent-soft);">
+            <td style="padding: 0.4rem 0.5rem;"><strong>peakgear.com</strong></td>
+            <td style="padding: 0.4rem 0.5rem;"><span style="display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--color-accent); color: var(--color-text-inverse); font-weight: 700; font-size: 0.68rem;">88 High</span></td>
+            <td style="padding: 0.4rem 0.5rem;">fit 85% · reach 72% · fix 91% (weak CTA, slow checkout)</td>
+            <td style="padding: 0.4rem 0.5rem;">Mid · 82%</td>
+            <td style="padding: 0.4rem 0.5rem;">john@peakgear.com · 95%</td>
+          </tr>
+          <tr style="font-size: 0.74rem;">
+            <td style="padding: 0.4rem 0.5rem;">trailrunsupply.com</td>
+            <td style="padding: 0.4rem 0.5rem;"><span style="display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--color-surface-sunken); color: var(--color-text); font-weight: 700; font-size: 0.68rem;">71 Med</span></td>
+            <td style="padding: 0.4rem 0.5rem;">fit 70% · reach 64% · fix 80%</td>
+            <td style="padding: 0.4rem 0.5rem;">Small · 75%</td>
+            <td style="padding: 0.4rem 0.5rem;">role: info@ · 60%</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="border-top: 1px solid var(--color-border); padding: 0.7rem; background: var(--color-surface);">
+        <div style="font-weight: 700; font-size: 0.74rem; margin-bottom: 0.3rem;">Drafted outreach · john@peakgear.com</div>
+        <p style="margin: 0 0 0.5rem; font-size: 0.76rem; color: var(--color-text);">Hi John, your checkout loads in 8.2s on mobile (vs about 2.1s typical). At a 2% conversion rate that is roughly $40K/year left on the table. Here is how to cut it in half.</p>
+        <div style="display: flex; gap: 0.4rem;">
+          <button style="padding: 0.35rem 0.8rem; border: none; border-radius: 7px; background: var(--color-accent); color: var(--color-text-inverse); font-weight: 600; cursor: pointer;">Approve and send</button>
+          <button style="padding: 0.35rem 0.8rem; border: 1px solid var(--color-border); border-radius: 7px; background: transparent; color: var(--color-text); cursor: pointer;">Edit</button>
+        </div>
+      </div>
+    </div>
+  </Mockup>
+</Walkthrough>
+
+## Executive summary
+
+A two-person team cannot manually produce a steady, high-quality flow of qualified
+ecommerce leads. The manual baseline tops out at a handful of sites per hour,
+produces no consistent score, loses most leads at the contact-finding step, and
+leaves no audit trail. The data needed to do this well, which sites to scan, how big
+they are, and who to email, is fragmented across paid providers of uneven quality,
+with real legal constraints on collection and outreach.
+
+The proposal is an autonomous scanning and lead engine: an LLM agent drives a staged,
+cheap-first pipeline that discovers candidate sites, scans their public pages for
+growth-marketing problems, estimates size, finds and verifies a contact, scores the
+lead with explainable reasons, and drafts a personalized outreach message for a human
+to send. The same scanning intelligence is the foundation for the future self-healing
+service: Phase 1 builds and validates detection.
+
+The most consequential choices are the "how do we get the data" decisions: site
+discovery (D1), size and traffic estimation (D2), and contact discovery (D3), all
+currently leaning toward layered, cheap-first pipelines; the build-versus-buy
+recommendation is a purpose-built engine over best-of-breed APIs. Outreach stays
+draft-only with a human on every send (D6, decided).
+
+Expected value: <Assumption>50 to 100 qualified, contactable leads per
+week</Assumption> at a controlled cost per lead, plus a reusable signal taxonomy that
+de-risks Phase 2. The biggest open questions are the exact ICP, the per-scan page
+budget, the cost-per-lead ceiling, and the EU-versus-US outreach posture.
+
+## Context
+
+The agent sits between the open web of ecommerce sites and the team's sales pipeline.
+It turns an unbounded universe of candidate sites into a ranked queue of qualified,
+insight-rich leads with drafted outreach.
+
+<FlowDiagram
+  title="Context: web to pipeline"
+  desc="Discovery sources feed the scanning and lead engine, which produces a ranked lead queue the operator reviews and the partner sends; the self-heal loop is the out-of-scope north star."
+  mermaid={`flowchart LR
+    SOURCES[Discovery sources] --> DISC(Discover)
+    DISC --> SCAN(Scan)
+    SCAN --> ENRICH(Enrich)
+    ENRICH --> SCORE(Score)
+    SCORE --> DRAFT(Draft)
+    SCORE --> CRM[(Lead store)]
+    DRAFT --> OP[Operator]
+    OP -->|reviews + sends| BD[Sales partner]
+    BD -->|outreach| PROSPECT[Prospect]
+    OP -.->|configures ICP| DISC`}
+/>
+
+The scanning intelligence that finds problems on a prospect's site is the same engine
+that will later fix them. Building lead generation first is deliberate: it funds the
+business, it validates the engine on real sites, and it produces the signal taxonomy
+that becomes the action space for the future self-healing agent.
+
+## Who is involved
+
+Three people meet the system directly: the growth operator who configures it and
+reviews leads, the sales partner who sends and reports outcomes, and the scanning
+agent that does the pipeline work. The prospect merchant is the target but never
+interacts with the system in Phase 1.
+
+<UseCaseDiagram
+  title="Scanner and lead engine"
+  desc="The operator configures and reviews, the partner sends and reports, and the agent runs the discover-to-draft pipeline."
+  allowOverlap
+  actors={[
+    { id: 'op', label: 'Growth operator', kind: 'internal' },
+    { id: 'ag', label: 'Scanning agent', kind: 'internal' },
+    { id: 'bd', label: 'Sales partner', kind: 'external' },
+    { id: 'prospect', label: 'Prospect', kind: 'system' },
+  ]}
+  useCases={[
+    { id: 'config', label: 'Configure ICP', detail: 'The operator sets discovery filters, scoring weights, and approval thresholds.' },
+    { id: 'review', label: 'Review scored leads', detail: 'The operator triages the ranked queue, reading each lead score with its reasons.' },
+    { id: 'approve', label: 'Approve draft', detail: 'The operator reviews the insight-led draft, edits if needed, and approves; the decision is logged.' },
+    { id: 'send', label: 'Send outreach', detail: 'The partner sends the approved draft after the compliance and suppression gate clears.' },
+    { id: 'report', label: 'Report outcome', detail: 'The partner records reply, meeting, or no response; the outcome feeds back to scoring.' },
+    { id: 'pipeline', label: 'Run the pipeline', detail: 'The agent discovers, scans, sizes, finds a contact, scores, and drafts, cheap-first.' },
+  ]}
+  links={[
+    { from: 'op', to: 'config' },
+    { from: 'op', to: 'review' },
+    { from: 'op', to: 'approve' },
+    { from: 'bd', to: 'send' },
+    { from: 'bd', to: 'report' },
+    { from: 'ag', to: 'pipeline' },
+    { from: 'prospect', to: 'pipeline' },
+  ]}
+/>
+
+<Callout kind="info" title="Terminology">
+"Agent" means the autonomous scanning and scoring system we are building (an
+LLM-driven orchestrator with tools), not a sales agent or a person. "Lead" means a
+scored, enriched ecommerce site record. "Operator" always means the growth operator.
+</Callout>
+
+## The eight decisions
+
+The three flagged as top concerns are D1 to D3, the hardest "how do we actually get
+this data" questions: discovery, traffic, and contact.
+
+<DecisionTable
+  title="Key decisions"
+  desc="The eight decisions that shape the engine; D1 to D3 are the top data-acquisition concerns."
+  decisions={[
+    { id: 'D1', decision: '<strong>Site discovery:</strong> how do we find which ecommerce sites to scan?', status: 'leaning', choice: 'Layered funnel, Store Leads-primary', detail: 'Options: a single vertical database, a layered funnel (vertical DB primary plus coverage sources plus long-tail search plus seed expansion), or a generic orchestrator. No single source is complete, so the layered funnel maximizes coverage while keeping discovery PII-free.' },
+    { id: 'D2', decision: '<strong>Traffic and size discovery:</strong> how do we estimate a site size for ICP fit and scoring?', status: 'leaning', choice: 'Cheap floor + revenue tier', detail: 'Point estimates are false precision for the long-tail ICP. Use a cheap presence-and-rank floor plus a revenue tier, expressed as ordinal buckets with a confidence band; escalate to a paid visit estimate only for borderline high-value leads.' },
+    { id: 'D3', decision: '<strong>Contact discovery:</strong> how do we find a reliable, verified email per site?', status: 'leaning', choice: 'Layered pipeline, on-site-first', detail: 'On-site scrape first (a storefront usually publishes a public contact email), then a provider waterfall for misses, then verification. Emit a contact confidence; flag catch-all or role-only for human review. This is the governed PII boundary.' },
+    { id: 'D4', decision: '<strong>Scan depth and signal taxonomy:</strong> how deep, does it render JS, what is the output?', status: 'leaning', choice: 'Headless, bounded pages', detail: 'Headless render on a bounded page set (home, product, cart, contact), producing a structured signal taxonomy across perf, SEO, CRO, and content. The taxonomy is the Phase 2 asset; the page budget controls cost.' },
+    { id: 'D5', decision: '<strong>Scoring model:</strong> rules, LLM-judged, or hybrid, and which dimensions?', status: 'leaning', choice: 'Hybrid', detail: 'Rules for the hard ICP gates (size tier, platform, geo) plus an LLM for fixability and outreach insight, scored across fit, reachability, and fixability with machine-readable reasons.' },
+    { id: 'D6', decision: '<strong>Outreach automation level:</strong> how far does the agent go?', status: 'decided', statusNote: 'Phase 1: draft, human sends.', choice: 'Draft-only, human on send', detail: 'The agent produces a personalized, insight-led draft; a human reviews, edits, approves, and sends. Trust, deliverability, and legal safety all argue for a human on the send in Phase 1.' },
+    { id: 'D7', decision: '<strong>Tech stack and data store:</strong> orchestration runtime, scan infra, storage, LLM provider', status: 'tbd', detail: 'Principles set (modular, provider-swappable, cheap-first); concrete runtime, hosting, and database choices deferred until before build.' },
+    { id: 'D8', decision: '<strong>Compliance posture:</strong> crawl ethics and outreach law', status: 'decided', statusNote: 'Decided in principle.', choice: 'Crawl + outreach guardrails', detail: 'Read-only public pages only; honor robots.txt and rate limits; keep discovery PII-free and isolate contact PII with a lawful basis and source recorded; every outreach carries sender identity, a physical address, and a working opt-out.' },
+  ]}
+/>
+
+## Why this is hard
+
+The work is driven by getting the data (the hard part) and turning it into action.
+No scalable way to find which sites to scan; no reliable signal for how big a site
+is; no reliable way to find who to email (the step where most leads die); no
+consistent score; and generic outreach that gets ignored. The gaps compound: weak
+discovery feeds weak qualification feeds weak contact feeds generic outreach, so
+point-fixing one stage does not move the outcome. The design must address the
+pipeline end to end.
+
+## Proposed design
+
+The engine is a staged pipeline driven by an LLM agent, where each stage is
+cheap-first and degrades gracefully: it spends free or low-cost signals on every
+candidate and escalates to paid providers only as a lead earns it. The pipeline
+produces a scored, contactable, insight-rich lead with a drafted outreach message for
+human review.
+
+<FlowDiagram
+  title="The cheap-first pipeline"
+  desc="Operator config drives the discover, scan, size, contact, score, draft pipeline into a lead queue the operator reviews and the partner sends."
+  mermaid={`flowchart LR
+    ICP[ICP config] --> DISC(Discover)
+    DISC -->|domains| SCAN(Scan)
+    SCAN -->|signals| SIZE(Size)
+    SIZE -->|tier| CONTACT(Contact)
+    CONTACT -->|verified| SCORE(Score)
+    SCORE -->|reasons| DRAFT(Draft)
+    DRAFT --> QUEUE[(Lead queue)]
+    QUEUE --> OP[Operator]
+    OP -->|approve| BD[Partner]`}
+/>
+
+Five principles carry through every stage: cheap-first, escalate on merit; confidence,
+not certainty; PII-free discovery with governed contact; every scan is a reusable
+asset; and a human on the send.
+
+### Architecture options
+
+The options differ on how much we build versus buy and where the orchestration lives.
+They span a spectrum from renting a generic stack to owning a purpose-built engine.
+
+<ComparisonMatrix
+  title="Build-versus-buy options"
+  desc="Three ways to build the engine. Purpose-built over best-of-breed APIs is the best balance for a two-person Phase 1."
+  options={[
+    { id: 'clay', label: '1. Wrap an orchestrator' },
+    { id: 'built', label: '2. Purpose-built + APIs', chosen: true },
+    { id: 'inhouse', label: '3. Maximal in-house' },
+  ]}
+  criteria={[
+    { label: 'Time to first lead', cells: { clay: 'fastest', built: 'medium', inhouse: 'slowest' } },
+    { label: 'Build effort', cells: { clay: 'low', built: 'medium', inhouse: 'high' } },
+    { label: 'Cost at target volume', cells: { clay: 'high', built: 'medium', inhouse: 'low-ish' } },
+    { label: 'Ecommerce specialization', cells: { clay: 'no', built: 'yes', inhouse: 'yes' } },
+    { label: 'Owns signal taxonomy', cells: { clay: 'no', built: 'yes', inhouse: 'yes' } },
+    { label: 'Vendor lock-in', cells: { clay: 'high', built: 'partial', inhouse: 'yes' } },
+    { label: 'Maintenance burden', cells: { clay: 'low', built: 'medium', inhouse: 'high' } },
+    { label: 'Fit for two-person Phase 1', cells: { clay: 'partial', built: 'yes', inhouse: 'no' } },
+  ]}
+/>
+
+The recommendation is option 2, a purpose-built engine over best-of-breed APIs, with
+a pragmatic on-ramp borrowed from option 1. Phase 1a stands up the pipeline skeleton
+but leans on the highest-leverage paid API per stage to prove the loop and unit
+economics fast; Phase 1b deepens the scanner and signal taxonomy (the Phase 2 asset)
+and tunes the cheap-first escalation to hit the cost-per-lead ceiling. Option 3
+(maximal in-house over raw substrate) is deferred until volume economics justify the
+engineering.
+
+Option 2 is the only option that simultaneously controls cost at the target volume,
+produces the reusable signal taxonomy that de-risks Phase 2 (option 1 does not), and
+avoids the premature engineering load of option 3 for a two-person team. Every
+external provider sits behind our own interface, so any single vendor is swappable
+without re-architecting.
+
+## Components
+
+Each component is one pipeline stage plus the cross-cutting agent, store, and config.
+Every external provider sits behind the component's interface so it is swappable.
+
+<FlowDiagram
+  title="Components"
+  desc="The agent orchestrator drives discovery, scanner, size, contact, scorer, and drafter, all writing to the lead store and audit log behind a compliance gate."
+  mermaid={`flowchart LR
+    AGENT{Agent orchestrator} --> DISC[Discovery]
+    AGENT --> SCAN[Scanner]
+    AGENT --> SIZE[Size estimator]
+    AGENT --> CON[Contact finder]
+    AGENT --> SCORE[Scorer]
+    AGENT --> DRAFT[Drafter]
+    DISC --> STORE[(Lead store)]
+    SCORE --> STORE
+    DRAFT --> STORE
+    AGENT --> GATE{Compliance gate}
+    STORE --> AUDIT[(Audit log)]`}
+/>
+
+The scanner emits the structured signal taxonomy per site; the size estimator returns
+an ordinal tier with confidence; the contact finder runs on-site to waterfall to
+verify; the scorer computes an explainable score across fit, reachability, and
+fixability with reasons; and the compliance gate enforces the crawl and outreach
+guardrails and manages the suppression list.
+
+## Data model
+
+<DataModel
+  title="Lead and signal data model"
+  desc="A discovered candidate is promoted to a lead, which has a size estimate, a contact, a signal set, and a score, and generates outreach drafts and audit events. PII lives only in contact, checked against a suppression list."
+  entities={[
+    { id: 'CANDIDATE', label: 'Candidate', fields: [
+      { name: 'domain', type: 'string', key: 'pk' },
+      { name: 'platform', type: 'string' },
+      { name: 'category', type: 'string' },
+      { name: 'discovery_source', type: 'string' },
+    ] },
+    { id: 'LEAD', label: 'Lead', fields: [
+      { name: 'domain', type: 'string', key: 'pk' },
+      { name: 'status', type: 'string' },
+      { name: 'score', type: 'float' },
+      { name: 'score_tier', type: 'string' },
+    ] },
+    { id: 'SIZE_ESTIMATE', label: 'Size estimate', fields: [
+      { name: 'size_tier', type: 'string' },
+      { name: 'confidence', type: 'float' },
+      { name: 'revenue_band', type: 'string' },
+    ] },
+    { id: 'CONTACT', label: 'Contact', fields: [
+      { name: 'email', type: 'string' },
+      { name: 'verified', type: 'bool' },
+      { name: 'confidence', type: 'float' },
+      { name: 'lawful_basis', type: 'string', note: 'PII boundary' },
+    ] },
+    { id: 'SIGNAL_SET', label: 'Signal set', fields: [
+      { name: 'perf_signals', type: 'json' },
+      { name: 'seo_signals', type: 'json' },
+      { name: 'cro_signals', type: 'json' },
+      { name: 'pages_scanned', type: 'int' },
+    ] },
+    { id: 'SCORE', label: 'Score', fields: [
+      { name: 'fit', type: 'float' },
+      { name: 'reachability', type: 'float' },
+      { name: 'fixability', type: 'float' },
+      { name: 'reasons', type: 'json' },
+    ] },
+    { id: 'OUTREACH_DRAFT', label: 'Outreach draft', fields: [
+      { name: 'subject', type: 'string' },
+      { name: 'insight_hook', type: 'string' },
+      { name: 'send_status', type: 'string' },
+    ] },
+    { id: 'AUDIT_EVENT', label: 'Audit event', fields: [
+      { name: 'event_type', type: 'string' },
+      { name: 'actor', type: 'string' },
+    ] },
+    { id: 'SUPPRESSION', label: 'Suppression', fields: [
+      { name: 'email', type: 'string', key: 'pk' },
+      { name: 'reason', type: 'string' },
+    ] },
+  ]}
+  relations={[
+    { from: 'CANDIDATE', to: 'LEAD', label: 'promoted to', card: 'one-to-zero-or-one' },
+    { from: 'LEAD', to: 'SIZE_ESTIMATE', label: 'has', card: 'one-to-one' },
+    { from: 'LEAD', to: 'CONTACT', label: 'has', card: 'one-to-zero-or-one' },
+    { from: 'LEAD', to: 'SIGNAL_SET', label: 'has', card: 'one-to-one' },
+    { from: 'LEAD', to: 'SCORE', label: 'has', card: 'one-to-one' },
+    { from: 'LEAD', to: 'OUTREACH_DRAFT', label: 'has', card: 'one-to-zero-or-many' },
+    { from: 'LEAD', to: 'AUDIT_EVENT', label: 'generates', card: 'one-to-zero-or-many' },
+    { from: 'CONTACT', to: 'SUPPRESSION', label: 'checked against', card: 'one-to-zero-or-one' },
+  ]}
+/>
+
+PII isolation: personal data lives only in the contact entity, each row carrying its
+lawful basis and source; the candidate, signal set, and size estimate are PII-free.
+Confidence is everywhere, and every contact is checked against the suppression list
+before a draft is marked sendable.
+
+## One candidate through the pipeline
+
+The sequence below shows cheap-first escalation, the score gate, the compliance gate,
+and the human-on-send loop.
+
+<SequenceDiagram
+  title="One candidate through the pipeline"
+  desc="A single candidate from configuration to a sendable lead, with the per-candidate cheap-first loop, the clears-ICP-gate branch, and the human on the send."
+  actors={[
+    { id: 'op', label: 'Operator' },
+    { id: 'ag', label: 'Agent' },
+    { id: 'disc', label: 'Discovery' },
+    { id: 'scan', label: 'Scanner' },
+    { id: 'con', label: 'Contact' },
+    { id: 'sc', label: 'Scorer' },
+    { id: 'st', label: 'Lead store' },
+  ]}
+  messages={[
+    { from: 'op', to: 'ag', label: 'Configure ICP + thresholds', kind: 'sync' },
+    { from: 'ag', to: 'disc', label: 'Query candidates', kind: 'sync' },
+    { from: 'disc', to: 'ag', label: 'Candidate domains', kind: 'return' },
+    { from: 'ag', to: 'scan', label: 'Scan bounded pages', kind: 'sync' },
+    { from: 'scan', to: 'ag', label: 'Signal taxonomy', kind: 'return' },
+    { from: 'ag', to: 'sc', label: 'Pre-score (fit gate)', kind: 'sync' },
+    { from: 'ag', to: 'con', label: 'Find + verify contact', kind: 'sync' },
+    { from: 'con', to: 'ag', label: 'Verified contact', kind: 'return' },
+    { from: 'ag', to: 'sc', label: 'Full score + reasons', kind: 'sync' },
+    { from: 'sc', to: 'ag', label: 'Score + reasons', kind: 'return' },
+    { from: 'ag', to: 'st', label: 'Persist lead + draft', kind: 'sync' },
+    { from: 'st', to: 'op', label: 'Lead queue ready', kind: 'return' },
+    { from: 'op', to: 'op', label: 'Review / edit / approve', kind: 'self' },
+  ]}
+  fragments={[
+    { kind: 'loop', label: 'per candidate (cheap-first)', from: 3, to: 10 },
+    { kind: 'alt', label: 'clears ICP gate', from: 6, to: 9 },
+  ]}
+/>
+
+The fit gate is the cost-control lever: only candidates that pass size and ICP earn
+the paid contact, verification, and scoring spend. Low-fit candidates are archived,
+not discarded, and outcomes feed back to tune discovery and scoring.
+
+## Success criteria
+
+<Callout kind="note" title="Starting hypotheses">
+All numeric targets below are starting hypotheses to validate with real runs, not
+committed SLAs. Every one is an <Assumption /> placeholder.
+</Callout>
+
+Targets are starting hypotheses, not sourced figures.[^illustrative]
+
+| Metric | Target (Phase 1)[^illustrative] |
+|---|---|
+| Qualified-lead volume (north-star) | 50 to 100 qualified, contactable leads / week |
+| Candidate-to-qualified yield | at least 5% of discovered candidates become qualified |
+| Contact-discovery hit rate | at least 70% of qualified leads have a validated contact |
+| Traffic-estimate coverage | at least 80% of candidates get a size estimate with confidence |
+| Cost per qualified lead | below an operator-set ceiling; proves unit economics |
+| Scoring explainability | 100% of scores carry machine-readable reasons |
+
+## Compliance guardrails
+
+Compliance is a first-class constraint, not an afterthought.
+
+<Callout kind="warning" title="The hard guardrails">
+Read-only logged-out public pages only; honor robots.txt and rate limits; never
+bypass anti-bot or CAPTCHA; keep discovery PII-free and isolate contact PII in a
+governed store with retention limits and a lawful basis and source recorded; every
+outreach carries sender identity, a physical address, and a working opt-out honored
+within two days; SPF, DKIM, and DMARC plus one-click unsubscribe on the sending
+domain; and a maintained suppression list.
+</Callout>
+
+## Open questions
+
+The biggest open items: the exact ICP (platforms, categories, geos, size band); the
+concrete page budget per scan; the cost-per-lead ceiling; which CRM and email
+channel; the concrete D7 stack; the Phase 1a starting provider per stage; what
+outcome signals feed the learning loop and how they adjust scoring; and whether Phase
+1 outreach is EU-inclusive or US-only, which changes the legal bar.
+
+## The north star it seeds
+
+This engine is the front door to a larger agentic service for self-healing
+growth-marketing sites. Where this agent finds what is wrong on a prospect's site,
+the future service fixes it. Building lead generation first earns the right to
+auto-heal sites: we prove we can reliably find what is wrong, at scale, cheaply, and
+accurately enough to put in front of a prospect, before we are trusted to change
+anything. Every scan in Phase 1 accrues toward the signal taxonomy that becomes the
+action space for the self-healing agent.
+
+[^illustrative]: Illustrative Phase 1 targets, not sourced figures. Each is a starting hypothesis to validate against real runs, and depends on the chosen ICP, providers, and page budget. The mockup's $0.42 cost per lead and the outreach example's $40K/year are illustrative dashboard values, derived from the stated inputs (about 48K visits per month at a 2% conversion rate), not measured results.
