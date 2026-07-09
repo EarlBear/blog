@@ -49,7 +49,7 @@ out. **Blast radius** = what an attacker does with it. The two that deserve the 
 
 | # | Key | Type | Acquired | Lives in | Encrypted at rest | Exportable | Who reads it | Rotation / revocation | Blast radius if leaked |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | **Publishable key** (`sb_publishable_…`, `SUPABASE_ANON_KEY`) | API key | Supabase API-keys tab | browser bundle + snapshot builder + deck | n/a (public) | yes (it's public) | anyone who loads the gated page | rotate in Supabase; independent of other keys | **Low.** Reads only what RLS allows. On `using(true)` marts → can read those rollups via curl from anywhere. On identity-gated tables → reads nothing without a token. |
+| 1 | **Publishable key** (`sb_publishable_…`, `SUPABASE_ANON_KEY`) | API key | Supabase API-keys tab | `build:live` browser bundle (NOT the `build:static` artifact — that ships keyless) | n/a (public) | yes (it's public) | anyone who loads the gated page | rotate in Supabase; independent of other keys | **Very low.** Reads only what RLS allows — and as of migration 011 **every mart is identity-gated**, so the key alone (no minted `@earlbear.com` JWT) reads **nothing** from any mart (proven: 401). It's inert without the token. |
 | 2 | **Signing key** (`SUPABASE_SIGNING_KEY`, EC P-256 private JWK) | asymmetric private key | `supabase gen signing-key` → imported | **CF Pages secret** | yes (CF-managed) | no (never leaves CF env; the browser gets a 30-min token, not the key) | the `/api/auth-token` Function only | rotate = import new + rotate; revoke via Management API. Tokens keep verifying until the key is revoked. | **HIGH.** Sign a JWT as *any* `@earlbear.com` user → pass all identity-gated RLS + Realtime. The one credential that most matters. |
 | 3 | **Secret key** (`sb_secret_…`, `SUPABASE_WRITE_KEY`) | API key | Supabase API-keys tab (scoped `earlbear_edge_fns`) | operator env (MCP reporting server) | via operator env | reveal-once in dashboard | the MCP sink process only | rotate: mint new scoped key, swap, revoke old | **HIGH.** Bypasses RLS entirely — read/write every table. 401s in a browser by design. Never in the bundle. |
 | 4 | **Cloudflare API token** (`CLOUDFLARE_API_TOKEN`) | API key | Cloudflare dashboard (scoped Pages\:Edit) | `.env` (dotenvx-encrypted) | yes (`encrypted:`) | via dotenvx + `.env.keys` | `make deploy` / operator | rotate in CF dashboard; scoped so blast radius is bounded | **Medium.** Deploy to the gtm Pages project + set its secrets. Scoped to Pages, not account-wide. |
@@ -99,8 +99,8 @@ page once" — which is weaker than it looks.**
   nodes={[
     { id: 'key', label: 'copied key', kind: 'external', detail: 'The publishable key, extracted from the bundle by any @earlbear.com user who loaded the page once.' },
     { id: 'curl', label: 'curl from anywhere', detail: 'Replayed OUTSIDE CF Access — the gate only covers the page load, not a direct REST call with the key.' },
-    { id: 'open', label: 'using(true) table', kind: 'store', detail: 'READS — any holder of the key gets the rows. This is the marts today.' },
-    { id: 'gated', label: 'identity-gated table', kind: 'store', detail: 'REJECTS — the copied key carries no @earlbear.com JWT, so RLS returns nothing. This is the scan fleet.' },
+    { id: 'open', label: 'using(true) table', kind: 'store', detail: 'READS — any holder of the key gets the rows. This is the GH/StatiCrypt path (and was the marts, pre-migration-011).' },
+    { id: 'gated', label: 'identity-gated table', kind: 'store', detail: 'REJECTS — the copied key carries no @earlbear.com JWT, so RLS returns nothing. This is the scan fleet AND all five marts (post-011).' },
   ]}
   edges={[
     { from: 'key', to: 'curl', label: 'replay' },
@@ -109,11 +109,17 @@ page once" — which is weaker than it looks.**
   ]}
 />
 
-So `using(true)` is *acceptable* for **non-sensitive, read-only rollups** (the marts: cost curves,
-tool-call counts) where the worst case is "someone read aggregate numbers." It is **not** acceptable
-for anything sensitive or writable — which is exactly why the scan fleet (anon *writes*) earned the
-`@earlbear.com` identity gate and the marts (so far) did not. Whether the marts *should* move to
-identity gating anyway is a live question tracked separately.
+So `using(true)` is *tolerable* for **non-sensitive, read-only rollups** where the worst case is
+"someone read aggregate numbers" — but "tolerable" is not "right," and **we moved the marts off it.**
+Migration `011_marts_identity_prod` drops the `using(true)` policies on all five marts and gives them
+the same `@earlbear.com` token-exchange gate as the scan fleet. What made that "not worth it" before
+— the build-time snapshot builder can't mint an `@earlbear.com` token, so gated marts would break the
+build — dissolved once we split the build in two: a **static** build reads the marts at build time
+with the RLS-exempt *secret* key and ships pure keyless JSON, and a **live** build always carries a
+minted token. Neither path needs anon-read on a mart, so `using(true)` bought us nothing and cost us
+a weaker posture. The lesson generalizes: on this system, treat `using(true)` as a finding on *any*
+prod table, not just sensitive ones. (The scan fleet earned its gate first because it also has anon
+*writes* — a leaked key could enqueue junk — but the marts have now caught up on reads.)
 
 ## What this page is missing (and the audit will chase)
 
@@ -131,3 +137,29 @@ open, not solved:
 
 The `audit-keys` skill re-runs the enumeration and this question set on demand, and updates this
 catalog when a key is added, moved, or rotated.
+
+## Open advisor findings (retrieved, triaged, not yet closed)
+
+Running the Supabase security advisor (now mandated after every migration — see the
+`security-posture` skill's advisor workflow) surfaces these. The mart-tightening's own findings were
+fixed inline (`cc_events` was created RLS-off by applying the portable event migration to prod; it's
+now RLS-on/no-policy, matching the other `cc_*` base tables — anon reads nothing, only the service
+role does). What remains is **pre-existing and unrelated to the marts**, logged here so it's tracked,
+not invisible:
+
+- **`security_definer_view` (ERROR ×3)** — `v_ga_readiness`, `v_rework_tracker`, `v_cost_summary`
+  run with the creator's privileges, bypassing the querying user's RLS. Should be recreated with
+  `security_invoker = true` unless the definer behavior is deliberate. *Owner: TBD.*
+- **`rls_policy_always_true` (WARN ×2)** — `instagram_posts` / `instagram_sync_log` have anon
+  *write* policies that are `USING(true)`/`WITH CHECK(true)` — an unrestricted anon write surface.
+  *Owner: TBD.*
+- **`function_search_path_mutable` (WARN ×4)** — `set_updated_at`, `current_user_email`,
+  `insert_agent_run`, `insert_agent_issue_run` lack a pinned `search_path`. *Owner: TBD.*
+- **A stray publishable key in the demo HTML** — `public/demos/{intake,sme-review}/index.html` embed
+  a publishable key for a *separate* sandbox Supabase project (`rkezgpfemeecygmiyixa`, not the gtm
+  project). Out of scope for this catalog's project, but flagged: a "keyless static artifact" claim
+  should verify the demo pages too. *Owner: TBD.*
+
+These are `USING(true)`/definer/search-path items the advisor already knows about — the point of
+logging them here is that "the advisor flagged it and no one recorded a decision" is itself the
+failure mode. Fix or explicitly accept each; don't leave them silent.

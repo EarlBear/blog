@@ -7,6 +7,7 @@ expects: [flow, comparison]
 authors: [omar]
 draft: true
 audience: internal
+design: mart-identity
 questions:
   - Why are the cost and agent-reporting panels reading empty on production?
   - Is this a security (RLS) problem or something else?
@@ -96,9 +97,9 @@ story.
   title="The three fixes, scored"
   desc="All three create the tables. They differ on the RLS rule and what that costs. Option 1 keeps the marts as testable as the existing three and breaks nothing; Option 2 is more secure but couples mart tests to the token machinery and breaks the snapshot/deck paths; Option 3 is the safety net that prevents recurrence and pairs with either."
   options={[
-    { id: 'anon', label: '1 · anon using(true)', chosen: true },
-    { id: 'auth', label: '2 · @earlbear.com' },
-    { id: 'guard', label: '3 · audit + drift guard' },
+    { id: 'anon', label: '1 · anon using(true)' },
+    { id: 'auth', label: '2 · @earlbear.com', chosen: true },
+    { id: 'guard', label: '3 · audit + drift guard', chosen: true },
   ]}
   criteria={[
     { label: 'Fixes the 404 panels', cells: { anon: 'yes', auth: 'yes', guard: 'partial' } },
@@ -205,16 +206,30 @@ genuinely sensitive), not on cross-checking that every mart the *frontend reads*
 with a policy. That cross-check didn't exist — which is exactly the gap Option 3's drift guard
 closes.
 
-## The recommendation
+## The recommendation (at the time) — and what we actually shipped
 
-**Option 1 for the access rule, plus Option 3's drift guard as the test.** The reasoning: marts and
-the fleet have genuinely different needs. The fleet earned `@earlbear.com` because it has anon
-*writes* (a leaked key could enqueue junk). The marts are read-only, non-sensitive rollups behind
-CF Access — `using(true)` is the deliberate, already-established pattern, and it keeps the snapshot
-builder and pitch deck (and their tests) working. So Option 1 isn't backsliding; it's matching
-like-to-like. But the *reason we didn't catch this* is a missing test, so pair it with the drift
-guard so the class of bug can't silently recur.
+The original call here was **Option 1** (keep `using(true)`, matching the other marts) plus Option
+3's drift guard. The reasoning was "marts are read-only, non-sensitive rollups behind CF Access, so
+anon-read is fine, and it keeps the snapshot builder + deck working."
 
-Option 2 stays on the table if we decide *every* mart should be identity-gated — but that's a
-deliberate, larger project (rework the snapshot builder and deck to mint tokens), not a fix for this
-bug.
+**We ended up doing Option 2 instead — every mart is now `@earlbear.com`-gated.** What changed the
+decision: once you follow the "just read the table live" thread all the way (see
+[the two-builds design](/blog/who-are-you-to-supabase) and the mart-identity work), the thing that
+made Option 2 "expensive" — *the snapshot builder can't mint a token* — dissolves. We split the
+build into two explicit targets:
+
+- a **static** build that reads the marts *at build time with an RLS-exempt secret key* and ships
+  pure keyless JSON (the demo/offline/public-safe artifact), and
+- a **live** build that always reads Supabase in the browser with a minted `@earlbear.com` token.
+
+With that split, the snapshot builder never needs anon-read on the marts (it uses the secret key),
+and the live app always carries a token — so **every mart can be identity-gated with no
+compromise**. Migration `011_marts_identity_prod.sql` drops the `using(true)` policies on all five
+marts, adds the `@earlbear.com` `to authenticated` policy, and revokes anon. A leaked publishable
+key now reads **nothing** from any mart (proven live: publishable-key-alone → 401; an
+`@earlbear.com` token → 200; a non-earlbear token → filtered to `[]`).
+
+**Option 3's drift guard still stands** — the missing test that would have caught the original bug —
+and pairs with the gating. So the final shape is **Option 2 (gate) + Option 3 (guard)**, not Option
+1. The full rationale, the two-build design, and the arch diagrams live in the mart-identity design
+doc and [the key catalog](/blog/every-key-in-the-system) (whose marts row is now "identity-gated").
