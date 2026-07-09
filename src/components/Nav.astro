@@ -86,12 +86,14 @@ const links = [
     text-decoration: none;
     border: none;
   }
-  /* Signed-in email + Sign-out (internal build only) — mirrors the shared @earlbear/ui UserMenu. */
+  /* Signed-in email + Sign-out (internal build only) — mirrors the shared @earlbear/ui UserMenu.
+     Sits just right of the nav links (which carry the margin-left:auto), separated by a comfortable
+     gap so the links + sign-out read as one right-aligned cluster rather than drifting apart. */
   .usermenu {
-    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    padding-left: var(--space-2);
   }
   .user-email {
     font-size: var(--fs-xs);
@@ -145,6 +147,10 @@ const links = [
     letter-spacing: 0.08em;
     line-height: 1;
   }
+  /* The nav links carry the single margin-left:auto — this pushes the links (and,
+     on the internal build, the sign-out cluster that follows) to the right, with
+     the brand/badge alone on the left. Exactly one auto margin, so the groups
+     don't fight over the free space. */
   .links {
     margin-left: auto;
     display: flex;
