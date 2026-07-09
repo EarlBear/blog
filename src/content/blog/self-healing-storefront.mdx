@@ -1,0 +1,207 @@
+---
+title: A storefront that heals itself
+description: How an agent turns a store's conversion problems into safe, measured experiments, ships the winners, and reports the dollar lift in plain language, all under guardrails the owner sets.
+pubDate: 2026-07-09
+tags: [agents, growth]
+authors: [omar]
+questions:
+  - What is a self-healing storefront?
+  - How can an agent improve a store's conversion without an expert on staff?
+  - How does it change a live store without putting sales at risk?
+  - How do you know it is actually working?
+expects: [use-case, flow]
+audience: external
+draft: true
+---
+
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import Callout from '../../components/Callout.astro';
+import Mockup from '../../components/Mockup.astro';
+import Walkthrough from '../../components/Walkthrough.astro';
+
+The highest-leverage growth lever an online store has is continuous A/B testing:
+trying a change on a slice of real traffic, measuring whether it lifts conversion,
+and keeping only what works. It is also the one lever a do-it-yourself merchant
+almost never pulls. The tools assume a marketing expert who knows what to test, can
+build the variants, can read the statistics, and is willing to risk live sales. So
+most owners do nothing, or guess and ship with no control group.
+
+A self-healing storefront closes that gap. It is an agent that finds a store's
+conversion problems, turns them into a ranked list of experiments, runs them safely
+on live traffic, ships the winners, and reports the result in dollars, in plain
+language. The owner sets the rules and watches; the agent does the work.
+
+## Who it is for
+
+Three people meet this agent. A store owner who wants more revenue without hiring a
+marketing expert or risking the store. An operator (us) who runs the agent as a
+managed service across many stores. And a shopper, who never sees the agent, but
+whose behavior is the signal every experiment reads.
+
+<UseCaseDiagram
+  title="Self-healing storefront"
+  desc="Who drives each use case: the owner sets rules and reads results, the operator supervises, and the agent runs the experiment loop."
+  actors={[
+    { id: 'owner', label: 'Store owner', kind: 'internal' },
+    { id: 'agent', label: 'The agent', kind: 'internal' },
+    { id: 'op', label: 'Operator', kind: 'external' },
+    { id: 'shopper', label: 'Shopper', kind: 'external' },
+  ]}
+  useCases={[
+    { id: 'guard', label: 'Set the rules', detail: 'The owner picks how much runs automatically, sets a revenue floor, brand rules, and no-touch zones.' },
+    { id: 'approve', label: 'Approve big changes', detail: 'Higher-risk changes wait for the owner to approve them before they ship.' },
+    { id: 'ledger', label: 'Read the wins', detail: 'The owner sees shipped wins and the dollar lift in plain language, not a statistics dashboard.' },
+    { id: 'supervise', label: 'Supervise', detail: 'The operator keeps many stores safe and productive.' },
+    { id: 'run', label: 'Run experiments', detail: 'The agent ideates, builds variants, runs them on live traffic, and decides what to keep.' },
+  ]}
+  links={[
+    { from: 'owner', to: 'guard' },
+    { from: 'owner', to: 'approve' },
+    { from: 'owner', to: 'ledger' },
+    { from: 'op', to: 'supervise' },
+    { from: 'agent', to: 'run' },
+    { from: 'shopper', to: 'run' },
+  ]}
+/>
+
+The owner gets world-class conversion optimization on autopilot, with control and no
+risk to the store; the operator supervises many stores at once as the automation
+earns trust; the shopper just gets a faster, clearer storefront.
+
+## What it looks like
+
+The agent scans the live store, flags a weak spot, ships a fix to a small slice of
+traffic, and reports the lift. Step through it:
+
+<Walkthrough
+  title="How the agent works"
+  steps={[
+    { scene: 'app', target: '#sf-scan-issue', say: 'The agent scans the live store' },
+    { scene: 'app', target: '#sf-scan-issue', say: 'and identifies a weak spot: a slow mobile checkout' },
+    { scene: 0, say: 'it logs the issue and, within the rules the owner set, ships a fix to a holdback' },
+    { scene: 1, say: 'each shipped win compounds the conversion curve' },
+    { scene: 'app', say: 'and the agent keeps scanning for the next one' },
+  ]}
+>
+  <Mockup chrome="browser" title="acme-shop.com" url="acme-shop.com/checkout" caption="The agent scans the live store and flags the weak spot: a slow mobile checkout.">
+    <div style="font-family: var(--font-sans);">
+      <div style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--color-border);">
+        <div style="font-weight: 800; font-size: 0.9rem;">ACME</div>
+        <div style="margin-left: auto; display: flex; gap: 0.8rem; font-size: 0.72rem; color: var(--color-text-secondary);"><span>Shop</span><span>About</span><span>Cart (2)</span></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.85rem; font-size: 0.7rem; color: var(--color-text-secondary); background: var(--color-surface-sunken);">
+        <span style="display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--eb-success);"></span> Agent scanning store · 12 pages crawled
+      </div>
+      <div style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem;">
+        <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Tee</div>
+        <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Mug</div>
+        <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Cap</div>
+      </div>
+      <div id="sf-scan-issue" style="margin: 0.3rem 0.85rem 0.85rem; border: 2px solid var(--eb-warning); border-radius: 9px; padding: 0.6rem 0.7rem; background: var(--eb-warning-bg); position: relative;">
+        <span style="position: absolute; top: -0.65rem; left: 0.6rem; background: var(--eb-warning); color: var(--color-text-inverse); font-weight: 800; font-size: 0.6rem; padding: 0.1rem 0.45rem; border-radius: 999px;">Issue identified</span>
+        <div style="font-weight: 700; font-size: 0.78rem; margin-top: 0.2rem;">Mobile checkout</div>
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Loads slowly on mobile, and cart abandonment is high</div>
+      </div>
+    </div>
+  </Mockup>
+  <Mockup slot="scene-0" chrome="browser" title="Storefront Agent" url="storefront-agent.app/wins" caption="The agent watches the store, ships fixes within the owner's rules, and reports the dollar lift.">
+    <div style="font-family: var(--font-sans);">
+      <div style="display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--color-border); background: var(--color-surface);">
+        <div>
+          <div style="font-size: 0.7rem; color: var(--color-text-secondary);">Attributed lift (6 mo)</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: var(--color-accent);">a five-figure monthly lift</div>
+        </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem;">
+          <button style="padding: 0.3rem 0.7rem; border: none; border-radius: 7px; background: var(--eb-error); color: var(--color-text-inverse); font-weight: 700; cursor: pointer;">Pause all</button>
+        </div>
+      </div>
+      <div style="padding: 0.5rem 0.85rem;">
+        <div style="font-weight: 700; font-size: 0.76rem; margin: 0.2rem 0 0.3rem;">Wins ledger</div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border);"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">Product page: bolder value prop</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">Headline change lifted add-to-cart, well clear of chance.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-accent); font-size: 0.82rem;">lift</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--eb-success); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">Shipped</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border);"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">Free-shipping banner</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">Cart-to-checkout up, measured against a holdback.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-accent); font-size: 0.82rem;">lift</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--eb-success); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">Shipped</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0;"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">Autoplay carousel</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">No reliable lift detected. Stopped to protect the experience.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-text-muted); font-size: 0.82rem;">no change</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--color-text-muted); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">Killed</span></div>
+      </div>
+    </div>
+  </Mockup>
+  <Mockup slot="scene-1" chrome="window" title="Storefront Agent · Projections" caption="Conversion with the agent's cumulative changes vs doing nothing. The gap is the attributed lift.">
+    <div style="padding: 0.8rem 1rem; font-family: var(--font-sans);">
+      <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem;">Projected conversion rate</div>
+      <svg viewBox="0 0 560 230" width="100%" role="img" aria-label="Conversion projection with vs without the agent">
+        <line x1="38" y1="14" x2="470" y2="14" stroke="var(--color-border)" stroke-width="1"></line>
+        <line x1="38" y1="107" x2="470" y2="107" stroke="var(--color-border)" stroke-width="1"></line>
+        <line x1="38" y1="200" x2="470" y2="200" stroke="var(--color-border)" stroke-width="1"></line>
+        <path d="M38 200 L124 175 L210 128 L296 107 L382 60 L470 25 L470 200 L382 200 L296 195 L210 200 L124 200 L38 200 Z" fill="var(--color-accent)" opacity="0.12"></path>
+        <path d="M38 200 L124 200 L210 195 L296 200 L382 193 L470 200" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-dasharray="5 4"></path>
+        <path d="M38 200 L124 175 L210 128 L296 107 L382 60 L470 25" fill="none" stroke="var(--color-accent)" stroke-width="2.5"></path>
+        <text x="476" y="28" font-size="10.5" font-weight="700" fill="var(--color-accent)">with agent</text>
+        <text x="476" y="203" font-size="10.5" fill="var(--color-text-muted)">do nothing</text>
+      </svg>
+      <div style="margin-top: 0.4rem; font-size: 0.76rem; color: var(--color-text);">The gap between the two lines is the lift the agent can point to as its own.</div>
+    </div>
+  </Mockup>
+</Walkthrough>
+
+## How it works, in one loop
+
+The agent runs a continuous loop on the store. It ideates experiments from the
+store's own problems and analytics, designs on-brand variants, runs them on a slice
+of live traffic, measures the result, and decides whether to ship, kill, or iterate.
+Every shipped win lands in a plain-language wins ledger the owner can read.
+
+<FlowDiagram
+  title="The experiment loop"
+  desc="Ideate from the store's problems, design variants, run on live traffic, measure, decide, and feed the winner to the store and the wins ledger."
+  mermaid={`flowchart LR
+    SIGNALS[Store's problems] --> IDEATE(Ideate)
+    ANALYTICS[Store analytics] --> IDEATE
+    IDEATE --> DESIGN(Design)
+    DESIGN --> RUN(Run on traffic)
+    RUN --> MEASURE(Measure)
+    MEASURE --> DECIDE(Decide)
+    DECIDE -->|iterate| IDEATE
+    DECIDE -->|ship winner| STORE[(Storefront)]
+    DECIDE --> LEDGER[(Wins ledger)]`}
+/>
+
+The important idea is that the agent's judgement about what to test is separate from
+the plumbing that serves a variant to a shopper. That separation lets the serving
+mechanism evolve without changing how the agent thinks.
+
+## Why it is safe to run on a live store
+
+A storefront is the owner's livelihood, so the agent is built to earn trust rather
+than demand it. Three ideas make it safe:
+
+- **The owner sets the rules.** How much runs automatically, a revenue floor, brand
+  rules, and no-touch zones are all the owner's to set, and the operator can tighten
+  them. Low-risk copy and layout changes can run on their own; bigger changes like
+  pricing and checkout always wait for a human to approve them.
+- **It watches the store in real time and can undo itself.** While an experiment
+  runs, the agent watches conversion and revenue and rolls a change back on its own
+  if it does harm, without waiting for the experiment to finish.
+- **It never claims a win the data does not support.** It uses statistics suited to
+  the store's traffic level, so even a smaller store reaches a trustworthy decision,
+  and it reports the result against a held-back baseline so the lift is real, not a
+  story.
+
+<Callout kind="note" title="The one rule that never bends">
+Whatever the owner allows the agent to do on its own, some things are never on the
+table: it will never breach the owner's revenue floor, never leave a harmful change
+running, never touch a no-touch zone, and never change pricing or checkout without a
+human approving it first.
+</Callout>
+
+## From finding problems to fixing them
+
+This agent is the second half of a pair. The first half is a scanner that finds what
+is wrong on a store; this agent fixes it. The scanner earns trust by reliably finding
+problems; this agent turns that trust into results the owner can see, provably, with
+their revenue protected.
+
+Conversion is the wedge because every win is a dollar the owner can point to on their
+own dashboard. But an agent that can safely observe a live store, form a hypothesis,
+run a controlled experiment, and ship or roll back the result is a foundation. The
+same discipline could later widen to what search sees, what slows the page, and stale
+copy. The rule stays the same in every direction: never ship a change the data does
+not support, and never touch a live store without a guardrail and a way to undo it.
