@@ -1,0 +1,635 @@
+---
+title: 'Self-healing storefront: the autonomous experimentation agent design'
+description: The full high-level design for an agent that ideates, runs, and ships A/B tests on a live storefront under risk-gated autonomy, then reports the dollar lift in plain language.
+pubDate: 2026-07-09
+tags: [agents, growth, engineering, internal]
+authors: [omar]
+questions:
+  - How does an agent run statistically sound A/B tests on a live store without an expert?
+  - What ships automatically and what needs a human to approve it?
+  - How do we mutate a live revenue site without endangering it?
+  - How is the dollar lift attributed and reported?
+expects: [use-case, flow, decision, comparison]
+audience: internal
+draft: true
+---
+
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import DecisionTable from '../../components/DecisionTable.astro';
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
+import SequenceDiagram from '../../components/SequenceDiagram.astro';
+import DataModel from '../../components/DataModel.astro';
+import Callout from '../../components/Callout.astro';
+import Assumption from '../../components/Assumption.astro';
+import Mockup from '../../components/Mockup.astro';
+import Walkthrough from '../../components/Walkthrough.astro';
+
+Continuous, statistically sound conversion optimization is the highest-leverage
+growth lever an online store has, and it is precisely the one a do-it-yourself
+merchant cannot pull. This is the high-level design for the agent that pulls it for
+them: it turns detected problems and store analytics into a ranked experiment
+backlog, generates on-brand variants, runs them safely on live traffic, ships the
+winners, and reports the dollar lift in plain language.
+
+This is the internal, as-is design. It is the fix half of the scan to heal loop:
+where the site scanner finds what is wrong on a storefront, this agent resolves it
+through continuous, measured experimentation.
+
+## Who it is for
+
+Three people meet this agent. A do-it-yourself store owner runs an ecommerce shop,
+is not a marketing expert, and wants more revenue without hiring one or risking the
+store. An operator (us) runs the agent as a managed service across many stores and
+needs to supervise it safely and profitably. A shopper browses the storefront and
+never touches the agent, but their behavior is the signal every experiment reads.
+
+<UseCaseDiagram
+  title="Self-healing storefront"
+  desc="Who and what drives each use case: the people, the agent, and the upstream scanner."
+  actors={[
+    { id: 'owner', label: 'Store owner', kind: 'internal' },
+    { id: 'agent', label: 'Experimentation agent', kind: 'internal' },
+    { id: 'op', label: 'Operator', kind: 'external' },
+    { id: 'scanner', label: 'Site scanner', kind: 'system' },
+    { id: 'shopper', label: 'Shopper', kind: 'external' },
+  ]}
+  useCases={[
+    { id: 'guard', label: 'Set autonomy + guardrails', detail: 'The owner picks an autonomy tier, sets revenue floors, brand rules, and no-touch zones.' },
+    { id: 'approve', label: 'Approve gated tests', detail: 'Higher-risk pricing and checkout experiments wait for the owner to ship them.' },
+    { id: 'ledger', label: 'Read wins ledger', detail: 'The owner sees shipped wins and the dollar lift in plain language, not a stats dump.' },
+    { id: 'supervise', label: 'Supervise + override', detail: 'The operator reviews risky hypotheses and intervenes on anomalies across many stores.' },
+    { id: 'tune', label: 'Tune ideation engine', detail: 'The operator adjusts how the agent generates and prioritizes hypotheses as it learns.' },
+    { id: 'ideate', label: 'Ideate hypotheses', detail: 'The agent turns scanner findings and analytics into a ranked experiment backlog.' },
+    { id: 'variants', label: 'Generate variants', detail: 'On-brand, accessible copy and layout variants, within the owner guardrails.' },
+    { id: 'run', label: 'Run experiment', detail: 'Serve variants to a slice of live traffic; the shopper behavior is the signal.' },
+    { id: 'decide', label: 'Decide ship / kill', detail: 'Statistically defensible ship, kill, or iterate, never a win the data does not support.' },
+    { id: 'attribute', label: 'Attribute lift', detail: 'Compute per-experiment conversion and revenue delta for the wins ledger.' },
+  ]}
+  links={[
+    { from: 'owner', to: 'guard' },
+    { from: 'owner', to: 'approve' },
+    { from: 'owner', to: 'ledger' },
+    { from: 'op', to: 'supervise' },
+    { from: 'op', to: 'tune' },
+    { from: 'agent', to: 'ideate' },
+    { from: 'agent', to: 'variants' },
+    { from: 'agent', to: 'run' },
+    { from: 'agent', to: 'decide' },
+    { from: 'agent', to: 'attribute' },
+    { from: 'scanner', to: 'ideate' },
+    { from: 'shopper', to: 'run' },
+  ]}
+/>
+
+The owner gets world-class conversion optimization on autopilot, with control and
+no risk to the store; the operator supervises many stores at once as the automation
+earns trust; the shopper just gets a faster, clearer storefront.
+
+<Callout kind="note" title="Scope">
+This document defines the autonomous CRO (conversion rate optimization) and A/B
+testing agent: the engine that ideates, runs, and ships experiments on a live
+storefront. It is the realization of the self-healing growth-marketing site north
+star named by the site scanner and lead engine. Where the scanner finds what is
+wrong on a prospect's site, this agent fixes it, closing the scan to heal loop. The
+scanner is the front door; this agent is the service the customer pays for.
+</Callout>
+
+## What it looks like
+
+<Walkthrough
+  title="Storefront agent"
+  steps={[
+    { scene: 'app', target: '#sf-scan-issue', say: 'The agent scans the live store' },
+    { scene: 'app', target: '#sf-scan-issue', say: 'and identifies a weak spot: an 8.2s mobile checkout' },
+    { scene: 0, say: 'it logs the issue on the dashboard and, within guardrails, ships a fix to a holdback' },
+    { scene: 1, say: 'each shipped win compounds the conversion curve' },
+    { scene: 'app', say: 'and the agent keeps scanning for the next one' },
+  ]}
+>
+  <Mockup chrome="browser" title="acme-shop.com" url="acme-shop.com/checkout" caption="The agent scans the live store and flags the weak spot: a slow mobile checkout.">
+    <div style="font-family: var(--font-sans);">
+      <div style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--color-border);">
+        <div style="font-weight: 800; font-size: 0.9rem;">ACME</div>
+        <div style="margin-left: auto; display: flex; gap: 0.8rem; font-size: 0.72rem; color: var(--color-text-secondary);"><span>Shop</span><span>About</span><span>Cart (2)</span></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.85rem; font-size: 0.7rem; color: var(--color-text-secondary); background: var(--color-surface-sunken);">
+        <span style="display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--eb-success);"></span> Agent scanning store · 12 pages crawled
+      </div>
+      <div style="display: flex; gap: 0.5rem; padding: 0.7rem 0.85rem;">
+        <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Tee</div>
+        <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Mug</div>
+        <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Cap</div>
+      </div>
+      <div id="sf-scan-issue" style="margin: 0.3rem 0.85rem 0.85rem; border: 2px solid var(--eb-warning); border-radius: 9px; padding: 0.6rem 0.7rem; background: var(--eb-warning-bg); position: relative;">
+        <span style="position: absolute; top: -0.65rem; left: 0.6rem; background: var(--eb-warning); color: var(--color-text-inverse); font-weight: 800; font-size: 0.6rem; padding: 0.1rem 0.45rem; border-radius: 999px;">Issue identified</span>
+        <div style="font-weight: 700; font-size: 0.78rem; margin-top: 0.2rem;">Mobile checkout</div>
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Loads in <strong style="color: var(--eb-error);">8.2s on mobile</strong> · 3-step form · cart abandonment 71%</div>
+      </div>
+    </div>
+  </Mockup>
+  <Mockup slot="scene-0" chrome="browser" title="Storefront Agent" url="storefront-agent.app/wins" caption="The agent watches the store, ships fixes within guardrails, and reports the dollar lift.">
+    <div style="font-family: var(--font-sans);">
+      <div style="display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--color-border); background: var(--color-surface);">
+        <div>
+          <div style="font-size: 0.7rem; color: var(--color-text-secondary);">Attributed lift (6 mo)</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: var(--color-accent);">+$18,450/mo</div>
+        </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem;">
+          <span style="color: var(--color-text-secondary);">Autonomy</span>
+          <span style="padding: 0.2rem 0.5rem; border: 1px solid var(--color-border); border-radius: 7px;">Auto-run · approve winners</span>
+          <button style="padding: 0.3rem 0.7rem; border: none; border-radius: 7px; background: var(--eb-error); color: var(--color-text-inverse); font-weight: 700; cursor: pointer;">Pause all</button>
+        </div>
+      </div>
+      <div style="padding: 0.5rem 0.85rem;">
+        <div style="font-weight: 700; font-size: 0.76rem; margin: 0.2rem 0 0.3rem;">Wins ledger</div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border);"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">Detected: slow mobile checkout</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">Agent flagged checkout at 8.2s on mobile. Shipping a one-page variant to a 20% holdback.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-accent); font-size: 0.82rem;">testing</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--eb-warning); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">New issue</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border);"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">Product page: bolder value prop</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">Headline change lifted add-to-cart 6% (8.2% to 8.7%). 94% chance it beats control.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-accent); font-size: 0.82rem;">+$1,200/mo</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--eb-success); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">Shipped</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border);"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">Free-shipping banner</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">Cart-to-checkout up 3%, holdback-measured.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-accent); font-size: 0.82rem;">+$640/mo</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--eb-success); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">Shipped</span></div>
+        <div style="display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0;"><div style="flex: 1 1 auto;"><div style="font-weight: 600; font-size: 0.78rem;">PDP image carousel autoplay</div><div style="color: var(--color-text-secondary); font-size: 0.74rem;">No reliable lift detected. Stopped to protect the experience.</div></div><div style="flex: 0 0 auto; font-weight: 700; color: var(--color-text-muted); font-size: 0.82rem;">no change</div><span style="flex: 0 0 auto; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--color-text-muted); color: var(--color-text-inverse); font-weight: 700; font-size: 0.64rem;">Killed</span></div>
+      </div>
+    </div>
+  </Mockup>
+  <Mockup slot="scene-1" chrome="window" title="Storefront Agent · Projections" caption="Month over month: conversion with the agent's cumulative changes vs doing nothing. The gap is the attributed lift.">
+    <div style="padding: 0.8rem 1rem; font-family: var(--font-sans);">
+      <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem;">Projected conversion rate</div>
+      <svg viewBox="0 0 560 230" width="100%" role="img" aria-label="Conversion projection with vs without the agent">
+        <line x1="38" y1="14" x2="470" y2="14" stroke="var(--color-border)" stroke-width="1"></line>
+        <line x1="38" y1="107" x2="470" y2="107" stroke="var(--color-border)" stroke-width="1"></line>
+        <line x1="38" y1="200" x2="470" y2="200" stroke="var(--color-border)" stroke-width="1"></line>
+        <text x="32" y="17" text-anchor="end" font-size="10" fill="var(--color-text-muted)">2.8%</text>
+        <text x="32" y="110" text-anchor="end" font-size="10" fill="var(--color-text-muted)">2.4%</text>
+        <text x="32" y="203" text-anchor="end" font-size="10" fill="var(--color-text-muted)">2.0%</text>
+        <path d="M38 200 L124 175 L210 128 L296 107 L382 60 L470 25 L470 200 L382 200 L296 195 L210 200 L124 200 L38 200 Z" fill="var(--color-accent)" opacity="0.12"></path>
+        <path d="M38 200 L124 200 L210 195 L296 200 L382 193 L470 200" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-dasharray="5 4"></path>
+        <path d="M38 200 L124 175 L210 128 L296 107 L382 60 L470 25" fill="none" stroke="var(--color-accent)" stroke-width="2.5"></path>
+        <text x="476" y="28" font-size="10.5" font-weight="700" fill="var(--color-accent)">with agent</text>
+        <text x="476" y="203" font-size="10.5" fill="var(--color-text-muted)">do nothing</text>
+      </svg>
+      <div style="margin-top: 0.4rem; font-size: 0.76rem; color: var(--color-text);">Cumulative: <strong style="color: var(--color-accent);">+0.85pp conversion</strong> over 6 months, about <strong style="color: var(--color-accent);">+$18K/mo</strong> at this store's traffic.</div>
+    </div>
+  </Mockup>
+</Walkthrough>
+
+## Executive summary
+
+The problem. Continuous, statistically sound conversion optimization is the
+highest-leverage growth lever an online store has, and it is precisely the one a
+do-it-yourself merchant cannot pull. Today's testing tools assume a marketing expert
+who knows what to test, can build the variants, can interpret the statistics, and is
+willing to risk live sales. Most small and mid-sized merchants therefore do nothing,
+or guess and ship changes with no control group, leaving conversion and revenue on
+the table.
+
+The solution. A self-healing storefront agent turns the conversion problems already
+detected by the site scanner, plus the store's own analytics, into a ranked backlog
+of experiments; generates on-brand variants; runs them safely on live traffic with
+statistics suited to the store's traffic level; ships the winners; and reports the
+dollar lift in plain language. It is delivered as a managed service: we (the
+operators) supervise the agent across many stores, while the store owner sets the
+rules and watches the results.
+
+<FlowDiagram
+  title="Scan to heal, in one line"
+  desc="The scanner finds what is wrong; this agent fixes it and reports the lift, under owner guardrails."
+  mermaid={`flowchart LR
+    SCAN[Scanner finds it] --> AGENT{Agent fixes it}
+    AGENT -->|dollar lift| LEDGER[Wins ledger]
+    AGENT -.->|guardrails| OWNER[Store owner]`}
+/>
+
+Expected value: a mid-market store doing <Assumption>$1M/year at a 2% conversion
+rate</Assumption> that hits the target of <Assumption>+10% cumulative conversion
+lift in 6 months</Assumption> gains roughly <Assumption>+$100K/year</Assumption> in
+attributable revenue, for essentially no owner time and no expert on payroll.[^illustrative]
+
+Status is in review. The architecture, components, and guardrails are settled; the
+main open items are the scanner to agent interface, the attribution-holdback model,
+the "too small to test" traffic floor, and validating the placeholder success
+metrics.
+
+## The three key decisions
+
+These are the decisions that most determine whether the agent is trustworthy on a
+live, revenue-generating store. The three flagged as top concerns are D1 to D3:
+execution, measurement rigor, and autonomy.
+
+<DecisionTable
+  title="Key decisions"
+  desc="The eight decisions that shape the agent; D1 to D3 are the top concerns."
+  decisions={[
+    { id: 'D1', decision: '<strong>Execution / serving model:</strong> how do variants actually get served on a live storefront?', status: 'decided', statusNote: 'Phased: Phase A native, then Phase B self-hosted.', choice: 'Shopify-native then self-hosted', detail: 'The options weighed: drive a third-party A/B platform via API, self-hosted JS/edge injection, or a platform-native app/theme. Launch native to validate fast, then move to self-hosted for margin and cross-platform reach.' },
+    { id: 'D2', decision: '<strong>Measurement rigor across traffic levels:</strong> how do we trust a win when stores range from low to mid traffic?', status: 'leaning', choice: 'Bayesian / sequential default', detail: 'Frequentist vs Bayesian vs sequential/bandit, plus minimum-runtime and significance rules. Leaning hybrid with a Bayesian/sequential default so low-traffic stores still reach trustworthy decisions.' },
+    { id: 'D3', decision: '<strong>Autonomy and guardrails model:</strong> what ships without a human, per category?', status: 'decided', statusNote: 'Decided in principle; configurable tiers.', choice: 'Configurable autonomy tiers', detail: 'Configurable tiers with revenue floors, blast-radius caps, and auto-rollback. Low-risk copy and layout can ship autonomously; pricing and checkout require human approval.' },
+    { id: 'D4', decision: '<strong>Ideation engine:</strong> how are hypotheses generated and prioritized?', status: 'leaning', choice: 'Scanner-seeded + scored', detail: 'Scanner findings plus analytics plus LLM reasoning, prioritized by expected lift times confidence times ease.' },
+    { id: 'D5', decision: '<strong>Variant generation:</strong> how are on-brand copy/layout variants produced?', status: 'leaning', choice: 'LLM + brand/a11y gate', detail: 'LLM generation bounded by brand and voice guardrails, with safe-mutation constraints and an accessibility gate.' },
+    { id: 'D6', decision: '<strong>Outcome attribution:</strong> how is dollar lift computed and reported?', status: 'leaning', choice: 'Per-experiment + portfolio holdback', detail: 'Per-experiment conversion and revenue delta, rolled into a wins ledger, with a portfolio holdback for honest attribution.' },
+    { id: 'D7', decision: '<strong>Tech stack and data store:</strong> orchestration runtime, variant-serving infra, experiment store, LLM provider', status: 'tbd' },
+    { id: 'D8', decision: '<strong>Compliance and safety posture:</strong> consent/privacy for bucketing, variant accessibility, brand-safety review', status: 'decided', statusNote: 'Decided in principle; detail in the guardrails section.', choice: 'Consent + a11y + brand-safety gates' },
+  ]}
+/>
+
+## Context: the experiment loop
+
+The agent sits on a customer's live storefront. It consumes signals (the scanner's
+detected CRO problems, the store's own analytics, the product catalog), runs a
+continuous experiment loop, and produces shipped storefront changes plus a
+plain-language wins ledger the owner can read. The do-it-yourself store owner sets
+the rules and watches; the operator supervises across many stores.
+
+<FlowDiagram
+  title="The experiment loop"
+  desc="Signals feed ideation; the loop ideate, design, run, measure, decide is the heart of the agent, feeding a wins ledger and back into itself."
+  mermaid={`flowchart LR
+    SCAN[Scanner findings] --> IDEATE(Ideate)
+    ANALYTICS[Store analytics] --> IDEATE
+    CATALOG[Catalog] --> IDEATE
+    IDEATE --> DESIGN(Design)
+    DESIGN --> RUN(Run on traffic)
+    RUN --> MEASURE(Measure)
+    MEASURE --> DECIDE(Decide)
+    DECIDE -->|iterate| IDEATE
+    RUN -->|serves to| STORE[(Storefront)]
+    DECIDE -->|ships to| STORE
+    DECIDE --> LEDGER[(Wins ledger)]`}
+/>
+
+The loop ideate, design, run, measure, decide, then iterate is the heart of the
+agent. The scanner findings input is the bridge from the site scanner: its detected
+problems seed this agent's hypothesis backlog, so there is no cold start.
+
+<Callout kind="info" title="Terminology">
+"Agent" means the autonomous experimentation system we are building (an LLM-driven
+orchestrator with tools), not a person. "Owner" always means the store owner
+(primary, do-it-yourself). "Operator" always means us, supervising the agent as a
+service. "Experiment" and "test" are used interchangeably for a single A/B or A/B/n
+trial. "Variant" is one version shown to a slice of traffic; the unchanged version
+is the control.
+</Callout>
+
+## Why this is hard
+
+Two problem domains drive the work: why do-it-yourself owners do not run experiments
+today, and why automating experimentation safely is hard.
+
+Owners do not test because they do not know what to test, do not have the traffic or
+time to test properly, find the tools built for analysts rather than merchants, and
+fear breaking a live revenue store. Automating it safely is hard because a naive
+system that calls winners on thin data will confidently ship losers, mutating a live
+revenue site puts money on the line every minute, generic ideation produces noise
+rather than lift, and the entire value proposition rests on attributable revenue the
+owner believes.
+
+### The statistical reality for mid-market stores
+
+Because target stores span low to mid traffic, the classic fixed-sample frequentist
+approach most tools default to is often a poor fit:
+
+- A store with about 500 weekly users at a 2% baseline conversion needs on the order
+  of 16 weeks to detect even a large (50%) relative improvement with fixed-sample
+  frequentist methods.[^a3] Most owners will not wait, so tests die inconclusive.
+- Sequential and Bayesian methods adapt during the test and can require 20 to 80%
+  fewer users than an equivalent fixed-sample test,[^a4] and they yield an intuitive
+  output ("91% chance B beats A") instead of a p-value.[^a2]
+- CRO best practice for smaller stores is to test bold, high-impact changes (at
+  least a 30% expected relative lift) rather than micro-tweaks like button color,
+  because only large effects are detectable on thin traffic.[^a1]
+
+<Assumption>Target stores are predominantly Shopify or Shopify-like; the design
+should not hard-assume Shopify, but Shopify is the dominant case to optimize
+for.</Assumption> This shapes the execution-model options below.
+
+## Proposed design
+
+The target state is an autonomous experimentation agent wrapped in an autonomy and
+guardrail engine, operating a continuous loop on each customer store. The agent's
+reasoning (ideate, design, decide) is independent of the serving mechanism (how a
+variant is actually shown to traffic); that separation is what lets the serving
+approach in D1 change without rewriting the agent.
+
+<FlowDiagram
+  title="Target state: brain, guardrails, execution"
+  desc="Signals feed the serving-independent brain; the guardrail engine gates what ships; the abstracted execution layer serves variants; outputs feed the ledger and back into ideation."
+  mermaid={`flowchart LR
+    S1[Scanner findings] --> ID(Ideate)
+    S2[Store analytics] --> ID
+    ID --> VG(Generate variants)
+    VG --> GATE{Autonomy gate}
+    GATE -->|autonomous| SERVE[Variant serving]
+    GATE -.->|gated| OWNER[Owner dashboard]
+    OWNER -.->|approves| SERVE
+    SERVE --> AN(Analyze + decide)
+    AN -->|ship / kill| GATE
+    AN --> LEDGER[(Wins ledger)]
+    AN -.->|iterate| ID`}
+/>
+
+The execution layer is deliberately a single abstracted box. The three architecture
+options below are three ways to fill that box; the rest of the agent is unchanged
+across them.
+
+### Architecture options
+
+All three share the same agent brain, guardrail engine, and data model. They differ
+only in how variants are served to live traffic, which drives platform coupling,
+speed to value, flicker risk, and how much we build versus integrate.
+
+<ComparisonMatrix
+  title="Serving-model options"
+  desc="Three ways to serve variants to live traffic. Self-hosted wins on margin and control; native wins on speed to value."
+  options={[
+    { id: 'plat', label: '1. Third-party platform' },
+    { id: 'self', label: '2. Self-hosted JS/edge', chosen: true },
+    { id: 'native', label: '3. Platform-native (Shopify)', chosen: true },
+  ]}
+  criteria={[
+    { label: 'Engineering build', cells: { plat: 'low', self: 'high', native: 'medium' } },
+    { label: 'Time to first value', cells: { plat: 'fastest', self: 'slowest', native: 'fast' } },
+    { label: 'Per-store cost', cells: { plat: 'high', self: 'low', native: 'low-med' } },
+    { label: 'Stats flexibility (D2)', cells: { plat: 'partial', self: 'yes', native: 'partial' } },
+    { label: 'Anti-flicker / performance', cells: { plat: 'yes', self: 'no', native: 'yes' } },
+    { label: 'Cross-platform reach', cells: { plat: 'yes', self: 'yes', native: 'no' } },
+    { label: 'Data ownership', cells: { plat: 'partial', self: 'yes', native: 'partial' } },
+    { label: 'Margin at scale', cells: { plat: 'no', self: 'yes', native: 'partial' } },
+  ]}
+/>
+
+The recommendation is a phased path: start Shopify-native (option 3), converge on
+self-hosted serving (option 2). Phase A ships as a Shopify-native app for the fastest
+onboarding, native distribution, and least flicker risk, letting us validate the
+agent before investing in our own serving infrastructure. Even in Phase A we run our
+own Bayesian/sequential decisioning on the raw events so the measurement engine is
+ours from day one. Phase B builds self-hosted edge/JS serving once the agent is
+proven, removing per-store platform fees and unifying integration across all stores.
+The execution-model abstraction means this swap does not touch the agent brain.
+
+This phasing mirrors the scanner's philosophy: earn the right to build the harder,
+higher-control system by first proving the cheap version works.
+
+## Components
+
+The agent decomposes into eight components. The first five are the agent brain
+(serving-independent); the last three are the control, execution, and surface
+layers.
+
+<FlowDiagram
+  title="Component decomposition (C1 to C8)"
+  desc="The serving-independent brain (C1 to C5) plus the guardrail, execution-adapter, and surface layers."
+  mermaid={`flowchart LR
+    C1[C1 Ideation] --> C2[C2 Variant gen]
+    C2 --> C3[C3 Orchestrator]
+    C3 --> C4[C4 Measurement]
+    C4 --> C5[C5 Ledger]
+    C4 -.iterate.-> C1
+    C3 --> C6[C6 Guardrail]
+    C6 --> C7[C7 Adapter]
+    C7 --> C4
+    C6 -.rollback.-> C7
+    C5 --> C8[C8 Surfaces]
+    C6 --> C8`}
+/>
+
+- C1 Ideation engine (D4): turns scanner findings, store analytics, and CRO best
+  practice into a prioritized hypothesis backlog.
+- C2 Variant generator (D5): produces concrete, on-brand, accessible copy and layout
+  variants for a hypothesis.
+- C3 Experiment orchestrator: configures, launches, and lifecycle-manages an
+  experiment against the execution layer.
+- C4 Measurement engine (D2): chooses the statistical method per store traffic and
+  computes the running decision (ship, kill, continue).
+- C5 Attribution and ledger (D6): computes per-experiment and cumulative conversion
+  and revenue lift; renders the owner-facing wins ledger.
+- C6 Guardrail and autonomy engine (D3): enforces autonomy tier per category,
+  blast-radius caps, revenue floors; runs real-time health monitoring and
+  auto-rollback.
+- C7 Execution adapter (D1): abstracts the serving mechanism behind one interface.
+- C8 Surfaces: owner dashboard (guardrails, approvals, ledger) and operator console
+  (supervision, tuning, override).
+
+## Data model
+
+<DataModel
+  title="Experiment data model"
+  desc="The core entities: a store's backlog of hypotheses become experiments, which test variants, collect metric events, resolve to a decision, and produce a lift report that lands in the wins ledger."
+  entities={[
+    { id: 'STORE', label: 'Store', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'platform', type: 'string', note: 'shopify | other' },
+      { name: 'scanner_ref', type: 'string', key: 'fk' },
+    ] },
+    { id: 'HYPOTHESIS', label: 'Hypothesis', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'category', type: 'string', note: 'copy|layout|pricing|checkout' },
+      { name: 'priority_score', type: 'float' },
+      { name: 'source', type: 'string', note: 'scanner|analytics|llm' },
+    ] },
+    { id: 'EXPERIMENT', label: 'Experiment', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'status', type: 'string', note: 'running|shipped|killed|rolledback' },
+      { name: 'autonomy_tier', type: 'string' },
+      { name: 'method', type: 'string', note: 'bayesian|sequential|bandit' },
+    ] },
+    { id: 'VARIANT', label: 'Variant', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'is_control', type: 'bool' },
+      { name: 'traffic_split', type: 'float' },
+    ] },
+    { id: 'METRIC_EVENT', label: 'Metric event', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'type', type: 'string', note: 'view|click|atc|purchase' },
+      { name: 'revenue', type: 'float' },
+    ] },
+    { id: 'DECISION', label: 'Decision', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'outcome', type: 'string', note: 'ship|kill|continue' },
+      { name: 'prob_beat_control', type: 'float' },
+    ] },
+    { id: 'LIFT_REPORT', label: 'Lift report', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'revenue_delta', type: 'float' },
+      { name: 'vs_holdback', type: 'bool' },
+    ] },
+    { id: 'LEDGER_ENTRY', label: 'Ledger entry', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'plain_language_summary', type: 'string' },
+      { name: 'attributed_revenue', type: 'float' },
+    ] },
+    { id: 'GUARDRAIL_EVENT', label: 'Guardrail event', fields: [
+      { name: 'id', type: 'id', key: 'pk' },
+      { name: 'type', type: 'string', note: 'blast_cap|floor|rollback' },
+    ] },
+  ]}
+  relations={[
+    { from: 'STORE', to: 'HYPOTHESIS', label: 'has backlog of', card: 'one-to-zero-or-many' },
+    { from: 'STORE', to: 'EXPERIMENT', label: 'runs', card: 'one-to-zero-or-many' },
+    { from: 'HYPOTHESIS', to: 'EXPERIMENT', label: 'becomes', card: 'one-to-zero-or-many' },
+    { from: 'EXPERIMENT', to: 'VARIANT', label: 'tests', card: 'one-to-many' },
+    { from: 'EXPERIMENT', to: 'METRIC_EVENT', label: 'collects', card: 'one-to-zero-or-many' },
+    { from: 'EXPERIMENT', to: 'DECISION', label: 'resolves to', card: 'one-to-one' },
+    { from: 'EXPERIMENT', to: 'LIFT_REPORT', label: 'produces', card: 'one-to-zero-or-one' },
+    { from: 'DECISION', to: 'LEDGER_ENTRY', label: 'records', card: 'one-to-zero-or-one' },
+    { from: 'EXPERIMENT', to: 'GUARDRAIL_EVENT', label: 'triggers', card: 'one-to-zero-or-many' },
+  ]}
+/>
+
+## The experiment lifecycle
+
+The interaction across components for a single autonomous experiment, including the
+gated-approval branch and the safety rollback.
+
+<SequenceDiagram
+  title="Experiment lifecycle"
+  desc="A single experiment from scanner problem to a wins-ledger entry, with the gated-approval branch and the always-on health loop."
+  actors={[
+    { id: 'sc', label: 'Scanner' },
+    { id: 'c1', label: 'Ideation' },
+    { id: 'c2', label: 'Variant gen' },
+    { id: 'c6', label: 'Guardrail' },
+    { id: 'ow', label: 'Owner' },
+    { id: 'c7', label: 'Adapter' },
+    { id: 'c4', label: 'Measurement' },
+    { id: 'c5', label: 'Ledger' },
+  ]}
+  messages={[
+    { from: 'sc', to: 'c1', label: 'detected CRO problems', kind: 'sync' },
+    { from: 'c1', to: 'c1', label: 'rank backlog (lift x conf x ease)', kind: 'self' },
+    { from: 'c1', to: 'c2', label: 'top hypothesis', kind: 'sync' },
+    { from: 'c2', to: 'c6', label: 'variant + category', kind: 'sync' },
+    { from: 'c6', to: 'ow', label: 'request approval (gated)', kind: 'sync' },
+    { from: 'ow', to: 'c6', label: 'approve', kind: 'return' },
+    { from: 'c6', to: 'c7', label: 'launch experiment', kind: 'sync' },
+    { from: 'c7', to: 'c4', label: 'stream metric events', kind: 'sync' },
+    { from: 'c4', to: 'c4', label: 'choose method, update stats', kind: 'self' },
+    { from: 'c4', to: 'c6', label: 'health OK?', kind: 'return' },
+    { from: 'c4', to: 'c6', label: 'decision = ship', kind: 'sync' },
+    { from: 'c6', to: 'c7', label: 'roll winner to 100%', kind: 'sync' },
+    { from: 'c7', to: 'c5', label: 'final events', kind: 'sync' },
+    { from: 'c5', to: 'ow', label: 'wins ledger entry (attributed $)', kind: 'sync' },
+    { from: 'c5', to: 'c1', label: 'feed learning loop', kind: 'return' },
+  ]}
+  fragments={[
+    { kind: 'alt', label: 'gated category (pricing/checkout)', from: 4, to: 6 },
+    { kind: 'loop', label: 'until decision or stop rule', from: 7, to: 9 },
+  ]}
+/>
+
+Two cross-cutting flows run underneath. The real-time safety loop: while any
+experiment runs, the guardrail engine continuously monitors store health and can
+auto-rollback independent of the measurement decision. This loop is always-on and
+overrides autonomy. The learning loop: every decision and lift report feeds back into
+ideation's priors, so ideation improves per-store and across the portfolio over time.
+
+## The customer journey
+
+The end-to-end journey of the store owner from signup to recurring value, and where
+the agent's loop runs underneath.
+
+<FlowDiagram
+  title="Owner journey: a loop, not a funnel"
+  desc="From signup through connect, ideate, run, measure, ship, and see the win; each shipped win widens the autonomy the owner grants."
+  mermaid={`flowchart LR
+    A[Owner signs up] --> B[Connects store]
+    B --> C[Agent ideates]
+    C --> D{Autonomous?}
+    D -->|copy/layout| E[Runs test]
+    D -->|pricing/checkout| F[Owner approves]
+    F --> E
+    E --> G[Measure + decide]
+    G -->|ship| H[Winner shipped]
+    G -->|kill| C
+    H --> I[Owner sees win]
+    I --> J[Widen autonomy]
+    J --> C`}
+/>
+
+The journey is a loop, not a funnel: each shipped win compounds trust, which widens
+the autonomy the owner grants, which lets the agent do more. That flywheel is the
+managed-service model.
+
+## Autonomy and hard guardrails
+
+Autonomy is gated by risk and configured per category. Low-risk, easily reversible
+categories (copy/content and layout/UX) can run fully autonomously within guardrails.
+Higher-risk categories (pricing/offers, checkout/funnel) are supported but require
+human approval: the agent ideates and designs the experiment, but a human ships it.
+The model mirrors a Claude-Code-style permission prompt.
+
+<Callout kind="warning" title="Hard guardrails: inviolable at every tier">
+The agent must never: ship a change that breaches the owner's revenue floor or
+blast-radius cap; leave a harmful experiment running (it must auto-rollback on a
+health breach within the monitoring window); autonomously change pricing or checkout
+(those always require human approval); generate variants that violate the brand/voice
+profile or accessibility standards; lose the audit trail (every action is logged and
+attributable); touch a customer's no-touch zones; or exceed its least-privilege
+scopes (no PII, no payment data).
+</Callout>
+
+## Success criteria
+
+<Callout kind="note" title="Placeholders">
+The targets below are directionally right but numerically unvalidated. Every one is
+an <Assumption /> placeholder, to be tuned once live data exists.
+</Callout>
+
+Every target in this table is a placeholder pending live data, not a sourced
+figure.[^illustrative]
+
+| Metric | Target[^illustrative] | Why it matters |
+|---|---|---|
+| Time to first shipped win | ≤ 30 days | Proves value fast, from onboarding to the first shipped improvement. |
+| Decision yield | ≥ 70% | Experiments reach a valid ship/kill decision, not an inconclusive timeout. |
+| Net conversion lift per store | +10% in 6 months | Cumulative lift against a held-back baseline: the headline outcome. |
+| False-win rate | ≤ 5% | Shipped winners later shown to be neutral or negative. Trust depends on this. |
+| Operator leverage | ≥ 25 stores / operator | The core margin driver of the managed-service model. |
+| Revenue safety | zero unrecovered incidents | A hard guardrail, not a soft target: any material drop is auto-rolled-back. |
+
+## Open questions
+
+The architecture, components, and guardrails are settled. The main open items:
+
+- The scanner to agent interface: shared database, event stream, or API call?
+- Does every store get a permanent portfolio holdback (cleanest attribution, small
+  lift cost), or only during onboarding?
+- What are the default guardrail values (revenue floor, blast-radius cap) shipped
+  before an owner customizes them?
+- Where is the "too small to test" traffic floor, below which the agent declines to
+  run an experiment because no method can decide in a reasonable window?
+- The concrete context-management strategy across the agent phases, so scanner
+  findings flow to ideation to generation to measurement without losing context or
+  exceeding LLM limits.
+- Pricing and packaging of the managed service (per-store flat, percentage of
+  attributed lift, tiered): a commercial, not architectural, question.
+
+## North star: self-healing beyond CRO
+
+This design fixes one thing well: conversion. But an agent that can safely observe a
+live storefront, form a hypothesis, run a controlled experiment, and ship or roll
+back the result is a foundation, and a foundation opens more than one door. The
+scanner already detects problems well beyond CRO.
+
+<FlowDiagram
+  title="Where the heal half could go next"
+  desc="From today's autonomous CRO, the same discipline could extend to SEO, performance, content, and cross-platform reach. Directions, not a committed roadmap."
+  mermaid={`flowchart LR
+    found([Today: CRO])
+    found -->|what search sees| a([SEO healing])
+    found -->|what slows the page| b([Perf healing])
+    found -->|stale or thin copy| c([Content refresh])
+    found -->|many storefronts| d([Cross-platform])`}
+/>
+
+The discipline that earns any of these is the same one this design is built on: never
+ship a change the data does not support, and never mutate a live revenue store
+without a guardrail and a rollback. CRO is the wedge because every win is a dollar the
+owner can see; the other domains widen the self-healing promise only after the agent
+has proven it can be trusted on the one that pays.
+
+[^illustrative]: Illustrative figure, derived from the stated inputs (about $1M/year revenue at a 2% conversion rate, a +10% relative conversion lift over six months). Directionally right but numerically unvalidated; it depends on the store's traffic, average order value, and the realized lift, and is to be validated against live data.
+
+[^a1]: CraftUp. "A/B Testing Low Traffic: Sequential Testing Guide." *CraftUp*, 2026, craftuplearn.com/blog/ab-testing-low-traffic-sequential-testing-smart-baselines. Accessed 22 June 2026. Practical guidance for small stores: test bold, high-impact changes (at least a 30% expected relative lift), not micro-tweaks, because only large effects are detectable on thin traffic.
+
+[^a2]: Convert.com. "Frequentist vs Bayesian A/B Testing: How to Choose." *Convert*, n.d., www.convert.com/blog/a-b-testing/frequentist-vs-bayesian-ab-testing. Accessed 22 June 2026. Bayesian methods yield a direct probability statement ("91% chance B beats A") rather than a p-value, which is more usable on constrained sample sizes.
+
+[^a3]: CraftUp, and Mantas Digital. "A/B Testing for Small eCommerce Stores." *Mantas Digital*, n.d., www.mantasdigital.com/cro-2/ab-testing-small-ecommerce-stores. Accessed 22 June 2026. With about 500 weekly users at a 2% baseline conversion rate, detecting a 50% relative improvement via fixed-sample frequentist testing takes on the order of 16 weeks.
+
+[^a4]: Analytics-Toolkit, and SplitMetrics. "Bayesian A/B Testing." *SplitMetrics*, n.d., splitmetrics.com/blog/bayesian-a-b-testing. Accessed 22 June 2026. Sequential testing can require 20 to 80% fewer users than an equivalent fixed-sample test to reach a decision; multi-armed bandits further reduce regret by shifting traffic toward winners during the test.
