@@ -138,28 +138,32 @@ open, not solved:
 The `audit-keys` skill re-runs the enumeration and this question set on demand, and updates this
 catalog when a key is added, moved, or rotated.
 
-## Open advisor findings (retrieved, triaged, not yet closed)
+## Advisor findings — retrieved, triaged, and CLEARED
 
-Running the Supabase security advisor (now mandated after every migration — see the
-`security-posture` skill's advisor workflow) surfaces these. The mart-tightening's own findings were
-fixed inline (`cc_events` was created RLS-off by applying the portable event migration to prod; it's
-now RLS-on/no-policy, matching the other `cc_*` base tables — anon reads nothing, only the service
-role does). What remains is **pre-existing and unrelated to the marts**, logged here so it's tracked,
-not invisible:
+Running the Supabase security advisor (mandated after every migration — see the `security-posture`
+skill's advisor workflow) surfaced a batch of findings, **all now fixed** (migration
+`013_advisor_hardening_prod`, 2026-07-09). Each was checked against real usage first — the readers/
+writers use the service-role key (RLS-exempt), so none of the fixes broke a live path:
 
 - **`security_definer_view` (ERROR ×3)** — `v_ga_readiness`, `v_rework_tracker`, `v_cost_summary`
-  run with the creator's privileges, bypassing the querying user's RLS. Should be recreated with
-  `security_invoker = true` unless the definer behavior is deliberate. *Owner: TBD.*
-- **`rls_policy_always_true` (WARN ×2)** — `instagram_posts` / `instagram_sync_log` have anon
-  *write* policies that are `USING(true)`/`WITH CHECK(true)` — an unrestricted anon write surface.
-  *Owner: TBD.*
+  (read-only aggregate views over the agent-tracker tables) → flipped to `security_invoker = true`.
+  Verified the views still return rows. **Fixed.**
+- **`rls_policy_always_true` (WARN ×2)** — `instagram_posts` / `instagram_sync_log` had anon *write*
+  (`ALL`, `WITH CHECK(true)`) policies → dropped + anon writes revoked (the IG sync runs server-side
+  with the service key). **Fixed.**
 - **`function_search_path_mutable` (WARN ×4)** — `set_updated_at`, `current_user_email`,
-  `insert_agent_run`, `insert_agent_issue_run` lack a pinned `search_path`. *Owner: TBD.*
-- **A stray publishable key in the demo HTML** — `public/demos/{intake,sme-review}/index.html` embed
-  a publishable key for a *separate* sandbox Supabase project (`rkezgpfemeecygmiyixa`, not the gtm
-  project). Out of scope for this catalog's project, but flagged: a "keyless static artifact" claim
-  should verify the demo pages too. *Owner: TBD.*
+  `insert_agent_run`, `insert_agent_issue_run` → pinned `search_path` (`public` for the
+  `SECURITY DEFINER` write functions, `''` for the trivial two). **Fixed.**
+- **`public_bucket_allows_listing` (WARN)** — the `instagram-media` bucket's broad listing policy →
+  dropped (bucket is `public=true`, so object URLs still serve). **Fixed.**
+- **`auth_rls_initplan` (PERF WARN ×5)** — our own mart policies called `auth.jwt()` per row →
+  wrapped as `(select auth.jwt())` (one-time InitPlan; gating identical, 15/15 tests still pass).
+  **Fixed.**
 
-These are `USING(true)`/definer/search-path items the advisor already knows about — the point of
-logging them here is that "the advisor flagged it and no one recorded a decision" is itself the
-failure mode. Fix or explicitly accept each; don't leave them silent.
+The security advisor now returns only the intended **INFO `rls_enabled_no_policy`** lints — the
+`cc_*`/`agent_*`/`team` internal tables that are RLS-on/no-policy by design (nobody reads via anon).
+
+**Still open (one item):** a stray publishable key for a *separate* sandbox Supabase project
+(`rkezgpfemeecygmiyixa`, not the gtm project) is embedded in `public/demos/{intake,sme-review}/
+index.html`. Out of scope for this catalog's project, but flagged — the keyless-static guard checks
+the app bundle, not those prebuilt demo artifacts. *Owner: TBD.*
