@@ -1,1 +1,58 @@
-{}
+{
+  "src/components/Assumption.astro#L1-L21": {
+    "context": "sha256:6fbce73bfdc53aa16cddf74f52d7dd42555d45282b39c99a1c27b95ffad3aaa2",
+    "feature": "import-design-components",
+    "hash": "sha256:6fbce73bfdc53aa16cddf74f52d7dd42555d45282b39c99a1c27b95ffad3aaa2",
+    "label": "Assumption: inline amber \"unvalidated premise\" mark, children or bare-marker form.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Assumption.astro#L1-L21"
+  },
+  "src/components/Callout.astro#L1-L36": {
+    "context": "sha256:b5508ff2536572d8d49a24adc42568990d76c080e89f9f86804f3d414d9757f3",
+    "feature": "import-design-components",
+    "hash": "sha256:64cf2ce701c028a1b0f3f9e239db9ad9561dafb390fc2335c6b866da5f51ae2d",
+    "label": "Callout: `:::note/info/tip/warning[Title]` admonitions \u2192 a status-token box.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Callout.astro#L1-L36"
+  },
+  "src/components/DataModel.astro#L1-L83": {
+    "context": "sha256:121b74d9b81a1e88ffd9d3c18f487b6c0362e6a9331f8bfe9b5cae3dd5a0a8af",
+    "feature": "import-design-components",
+    "hash": "sha256:66d4046a5d0fa691741a3f9fc9eec9d184e26328175735e6a7cd34554a7a0082",
+    "label": "DataModel: ER entity cards (PK/FK fields) + relationship list with crow's-foot cardinality; gate on unknown entity.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/DataModel.astro#L1-L83"
+  },
+  "src/components/DecisionTable.astro#L1-L98": {
+    "context": "sha256:f1f887b470ed855e05d6431aff6d34d59b5d47044b3fbdfafc9d1ee53e53e962",
+    "feature": "import-design-components",
+    "hash": "sha256:a753947b1c2b5f050d1262d8cb7162538b2b8098fd89fd4f939c13742900121c",
+    "label": "DecisionTable: D1\u2026Dn decisions with status badges, row anchors, click-to-focus detail modal; gate on duplicate id / unknown status.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/DecisionTable.astro#L1-L98"
+  },
+  "src/components/Mockup.astro#L1-L45": {
+    "context": "sha256:9dec2caeb3ef86f4336ac13e4814a8e74ee62ffd9a50c13193403958cb051453",
+    "feature": "import-design-components",
+    "hash": "sha256:b254912b6c062649c670eb37c17c48974bf3f83688cf6eac0eb7be8e33153491",
+    "label": "Mockup: browser/window/phone chrome frame around a live token-styled faux-UI slot.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Mockup.astro#L1-L45"
+  },
+  "src/components/SequenceDiagram.astro#L1-L118": {
+    "context": "sha256:5bd503a10e8444d75b45d4f520f6dc5515d5fc988ded84fd83223bc7b6d133eb",
+    "feature": "import-design-components",
+    "hash": "sha256:f5f5dc1b85dc4da76fc4b85e33b8b386a0797d80f74700ee26defcf4505f53e1",
+    "label": "SequenceDiagram: UML lifelines + ordered messages (sync/return/self) + loop/alt fragments; gate on unknown actor / out-of-bounds fragment.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/SequenceDiagram.astro#L1-L118"
+  },
+  "src/components/Walkthrough.astro#L1-L69": {
+    "context": "sha256:cb147dfe88839bc1e47db8e6822daf97671abeb46ba9d436f845cebfb805f595",
+    "feature": "import-design-components",
+    "hash": "sha256:06989dce2e8d9f74753e634fb85b58bc5007362f60976cc48afbb1fdf17b6a3a",
+    "label": "Walkthrough: interactive scene stepper (default slot = app scene, `scene-0\u20265` named slots, `steps` reference scenes by index + targets by selector).",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Walkthrough.astro#L1-L69"
+  },
+  "src/styles/global.css#L829-L1141": {
+    "context": "sha256:498dbb5d86c7a0e111d957e4261d4ffe858dc77ad1fddda9d40c399f0310bd79",
+    "feature": "import-design-components",
+    "hash": "sha256:7feaf15339d57ef1ee97bc1620a22c0a962b84a0f7cecb44ff4d75d7e82da2b2",
+    "label": "component styling (Callout, Assumption, Mockup, Walkthrough) in the shared global stylesheet, token-driven and reduced-motion-safe.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/styles/global.css#L829-L1141"
+  }
+}

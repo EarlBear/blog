@@ -13,11 +13,14 @@ a technique.
 | **pipeline** | linear A → B → C data or handoff flow | `FlowDiagram shape="pipeline"` | native spec **or** `mermaid` string | `mining-...-transcripts` |
 | **loop** | a cycle whose last step feeds the first (flywheel) | `FlowDiagram` (auto-detected from a back-edge, or `shape="loop"`) | native spec **or** `mermaid` | `agentic-workflow-...` |
 | **architecture / boundary** | what runs where; what crosses a trust line | `FlowDiagram` with `kind: 'edge' \| 'store' \| 'external'` nodes (add `legend` to explain them) | native spec | `from-one-laptop-...`, `mining-...-transcripts` |
-| **sequence / steps** | ordered vertical steps | `FlowDiagram shape="sequence"` (or `mermaid` with `TB`/`TD`) | native spec **or** `mermaid` | — |
+| **sequence / steps** | ordered vertical steps (a stack, no actors/messages) — for message-passing between actors use **UML sequence** below | `FlowDiagram shape="sequence"` (or `mermaid` with `TB`/`TD`) | native spec **or** `mermaid` | — |
 | **branch / decision flow** | a step that forks into 2+ mutually-exclusive outcomes | `FlowDiagram shape="branch"` (layered top-down; forks fan into a row, labeled edges) | native spec | `syncing-...-transcripts` |
 | **swimlane / handoffs** | who owns which step; work handing off across owners | `FlowDiagram shape="swimlane"` (nodes carry a `lane`; each lane is a labeled band, flow reads left→right, cross-lane edges = handoffs) | native spec | `agentic-workflow-...` |
 | **decision / options** | weigh options toward a choice (the narrative) | `Accordion` (+ optional `FlowDiagram` for the flow) | native spec (items with `verdict`) | `one-database-two-modes` |
 | **comparison matrix** | options × criteria, head-to-head, at a glance | `ComparisonMatrix` (options = columns, criteria = rows, cells = yes/no/partial or a value; chosen column highlighted) | native spec | `one-database-two-modes` |
+| **decision catalog** | a numbered list of DECISIONS (D1…Dn), each with a status (decided/leaning/open/tbd) and its choice — so prose can deep-link `[D3](#d3)` | `DecisionTable` (rows = decisions; status badges; optional click-to-focus `detail`) | native spec (decisions with `status`/`choice`/`detail`) | (import-design-post) |
+| **UML sequence** | true message-passing between actors over time (lifelines, sync/return arrows, loop/alt fragments) — not a plain vertical step list | `SequenceDiagram` (actors = lifelines; messages top→bottom; optional `fragments`) | native spec | (import-design-post) |
+| **data model / ER** | entities, their fields (PK/FK), and the relationships between them (cardinality) | `DataModel` (entity cards + a relationship list with crow's-foot cardinality) | native spec | (import-design-post) |
 
 ## The Mermaid decision rule (why we parse, not render)
 
@@ -51,9 +54,12 @@ This keeps the syntax people know, our theme/gates/animation underneath, and add
 - chained edges (`A --> B --> C`), `%%` comments, blank lines
 - a back-edge to an earlier node auto-renders as a **loop**
 
-Not covered (use the native spec, or another technique): subgraphs, class/style
-directives, click handlers, sequence/state/gantt/other Mermaid diagram types, and
-the `kind: 'edge'`/`'external'` node hints (set those via the native spec).
+Not covered by the flowchart parser (use the native spec, or another technique):
+subgraphs, class/style directives, click handlers, and the `kind: 'edge'`/`'external'`
+node hints (set those via the native spec). Non-flowchart Mermaid types now have
+dedicated primitives instead of the parser: a Mermaid `sequenceDiagram` →
+**`SequenceDiagram`** (UML sequence row above), a Mermaid `erDiagram` →
+**`DataModel`** (data model / ER row). State/gantt remain unbuilt.
 
 ## Quality gates (shared by the SVG primitives)
 
@@ -64,6 +70,12 @@ never ships. **Blocking (throw):**
 - **Actor balance** (UseCaseDiagram) — an actor's lines must fan evenly, not all one way.
 - **Dangling reference** — an edge/link `from`/`to` that isn't a real node/actor/use-case
   id (a typo). Previously these were silently dropped.
+
+The import-design-post primitives run the same dangling-reference class of gate:
+`SequenceDiagram` throws on a message naming an unknown actor or an out-of-bounds
+fragment range; `DataModel` throws on a relation naming an unknown entity;
+`DecisionTable` throws on a duplicate id or an unknown status. All warn on a missing
+`desc`.
 
 **Warnings (console, non-blocking):** no `desc` (accessibility — the SVG `<desc>` a
 screen reader reads), a **disconnected** node/actor/use-case (no edges — renders
