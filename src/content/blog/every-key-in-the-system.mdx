@@ -1,0 +1,133 @@
+---
+title: "Every key in the system"
+description: "A principal-security-engineer's inventory of every key and secret we hold — what it is, how it's acquired, which environment contains it, whether it can be exported, who can read it, and exactly what an attacker could do with it. With the real architecture of where each key lives and the trust boundaries between them."
+pubDate: 2026-07-09
+tags: [engineering, security]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What keys and secrets does this system have, and where does each one live?
+  - Which keys can be exported, and who can read each one?
+  - What is the blast radius if a given key leaks — what can an attacker actually do?
+  - Which keys are least-privilege and identity-gated, and which are broader than they look?
+  - How is each key rotated and revoked, and would we detect a leak?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+This is the source of truth for **every credential in the go-to-market stack** — kept honest by the
+`audit-keys` skill, which enumerates keys across the bundle, CF Pages, `.env`, and the provider
+consoles and cross-checks them against this page. It answers the questions a principal security
+engineer asks of each key: *what it is, how it's acquired, where it lives, whether it's exportable,
+who can read it, its blast radius if leaked, and how it rotates/revokes.*
+
+The governing idea: **three environments, and a key's safety is defined by which one holds it.**
+
+<FlowDiagram
+  title="The three environments a key can live in"
+  shape="pipeline"
+  legend
+  desc="Every credential lives in exactly one of three trust zones: the public browser bundle (anyone who loads the gated page can extract it), the Cloudflare Pages server environment (only the edge Function reads it), or the operator's laptop (dotenvx-encrypted .env + LastPass). Safety is defined by the zone."
+  nodes={[
+    { id: 'browser', label: 'browser bundle', kind: 'external', detail: 'Public by definition — baked into the JS at build. Anyone who loads gtm.earlbear.com (an @earlbear.com user) can read it from devtools. Only safe for keys designed to be public.' },
+    { id: 'edge', label: 'CF Pages env', kind: 'edge', detail: 'Server-side secrets read only by the /api/* Functions. Never sent to the browser. Set via wrangler pages secret put; encrypted at rest by Cloudflare.' },
+    { id: 'operator', label: 'operator laptop', kind: 'store', detail: 'dotenvx-encrypted .env (values are encrypted: ciphertext) + the .env.keys private key, backed up to LastPass. Never committed.' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'edge', label: 'calls /api' },
+    { from: 'edge', to: 'operator', label: 'separate' },
+  ]}
+/>
+
+## The inventory
+
+Every key, scored on the dimensions that matter. **Exportable** = can the raw value be read back
+out. **Blast radius** = what an attacker does with it. The two that deserve the most respect are the
+**signing key** (mint tokens as us) and the **secret key** (bypass RLS) — both server-side only.
+
+| # | Key | Type | Acquired | Lives in | Encrypted at rest | Exportable | Who reads it | Rotation / revocation | Blast radius if leaked |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | **Publishable key** (`sb_publishable_…`, `SUPABASE_ANON_KEY`) | API key | Supabase API-keys tab | browser bundle + snapshot builder + deck | n/a (public) | yes (it's public) | anyone who loads the gated page | rotate in Supabase; independent of other keys | **Low.** Reads only what RLS allows. On `using(true)` marts → can read those rollups via curl from anywhere. On identity-gated tables → reads nothing without a token. |
+| 2 | **Signing key** (`SUPABASE_SIGNING_KEY`, EC P-256 private JWK) | asymmetric private key | `supabase gen signing-key` → imported | **CF Pages secret** | yes (CF-managed) | no (never leaves CF env; the browser gets a 30-min token, not the key) | the `/api/auth-token` Function only | rotate = import new + rotate; revoke via Management API. Tokens keep verifying until the key is revoked. | **HIGH.** Sign a JWT as *any* `@earlbear.com` user → pass all identity-gated RLS + Realtime. The one credential that most matters. |
+| 3 | **Secret key** (`sb_secret_…`, `SUPABASE_WRITE_KEY`) | API key | Supabase API-keys tab (scoped `earlbear_edge_fns`) | operator env (MCP reporting server) | via operator env | reveal-once in dashboard | the MCP sink process only | rotate: mint new scoped key, swap, revoke old | **HIGH.** Bypasses RLS entirely — read/write every table. 401s in a browser by design. Never in the bundle. |
+| 4 | **Cloudflare API token** (`CLOUDFLARE_API_TOKEN`) | API key | Cloudflare dashboard (scoped Pages\:Edit) | `.env` (dotenvx-encrypted) | yes (`encrypted:`) | via dotenvx + `.env.keys` | `make deploy` / operator | rotate in CF dashboard; scoped so blast radius is bounded | **Medium.** Deploy to the gtm Pages project + set its secrets. Scoped to Pages, not account-wide. |
+| 5 | **CF Access service token** (`CF_ACCESS_SVC_*`) | credential pair | CF Zero Trust console | `earlbear-domain/.env` (dotenvx) | yes (`encrypted:`) | via dotenvx | origin-probe automation | rotate/revoke in CF Zero Trust | **Medium.** Passes the CF Access gate (as a machine, no email) → reach gated app origins. Can't mint identity tokens. |
+| 6 | **dotenvx private key** (`.env.keys`) | symmetric key | `dotenvx encrypt` (first run) | operator laptop + **LastPass** (source of truth) | n/a (it *is* the key) | it's local-only; backed up in LastPass | operator | rotate = re-encrypt all values; back up to LastPass | **HIGH (local).** Decrypts every `encrypted:` value in `.env` (CF token, keys). Never committed; gitignored. |
+| 7 | **Supabase PAT** (`SUPABASE_ACCESS_TOKEN`) | OAuth-ish admin token | `supabase.com/dashboard/account/tokens` | **ephemeral** — shell env for a one-time task | no (was temp) | yes | operator, briefly | **single-use → revoked after the signing-key import** | **CRITICAL (while live).** Account-wide admin: create/rotate keys, read config. Which is why it's minted for one task and revoked immediately. |
+
+Two values the Function also reads — `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUDIENCE` — are
+**identifiers, not secrets** (the team domain and the Access app's AUD tag). They live server-side so
+a request can't spoof them, but leaking them grants nothing.
+
+## Where each key actually sits (the real architecture)
+
+The login + data path, annotated with which key does what. Follow a logged-in user from the browser
+to the database:
+
+<FlowDiagram
+  title="Keys along the login → data path"
+  shape="pipeline"
+  legend
+  desc="A logged-in browser holds the publishable key and a short-lived minted JWT; the CF Pages Function holds the signing key; the MCP writer holds the secret key. The signing and secret keys never cross into the browser — only the 30-minute token does."
+  nodes={[
+    { id: 'user', label: 'browser', kind: 'external', detail: 'Holds: publishable key (public) + a 30-min minted JWT. Behind CF Access (@earlbear.com).' },
+    { id: 'fn', label: 'auth-token fn', kind: 'edge', detail: 'Holds: the SIGNING KEY (#2). Verifies the CF Access login, mints the ES256 JWT. Server-side only.' },
+    { id: 'db', label: 'Supabase', kind: 'store', detail: 'Verifies the JWT via its public JWKS; RLS reads auth.jwt()->>email. The signing key\'s public half lives here.' },
+    { id: 'mcp', label: 'MCP writer', detail: 'Holds: the SECRET KEY (#3). Bypasses RLS to write scan runs/events. Operator env only.' },
+  ]}
+  edges={[
+    { from: 'user', to: 'fn', label: 'auth' },
+    { from: 'fn', to: 'user', label: 'JWT' },
+    { from: 'user', to: 'db', label: 'Bearer' },
+    { from: 'mcp', to: 'db', label: 'writes' },
+  ]}
+/>
+
+## The honest caveat: `using(true)` and the publishable key
+
+The question that prompted this page: *is a `using(true)` table actually secure?* The straight
+answer: **it's protected by "you need the publishable key, which requires having loaded the gated
+page once" — which is weaker than it looks.**
+
+<FlowDiagram
+  title="Why using(true) is weaker than identity gating"
+  shape="branch"
+  legend
+  desc="Cloudflare Access gates the page load, not subsequent API calls. A logged-in user can extract the publishable key from the bundle and replay it via curl from outside CF Access to read any using(true) table. An identity-gated table rejects that copied key because it carries no token."
+  nodes={[
+    { id: 'key', label: 'copied key', kind: 'external', detail: 'The publishable key, extracted from the bundle by any @earlbear.com user who loaded the page once.' },
+    { id: 'curl', label: 'curl from anywhere', detail: 'Replayed OUTSIDE CF Access — the gate only covers the page load, not a direct REST call with the key.' },
+    { id: 'open', label: 'using(true) table', kind: 'store', detail: 'READS — any holder of the key gets the rows. This is the marts today.' },
+    { id: 'gated', label: 'identity-gated table', kind: 'store', detail: 'REJECTS — the copied key carries no @earlbear.com JWT, so RLS returns nothing. This is the scan fleet.' },
+  ]}
+  edges={[
+    { from: 'key', to: 'curl', label: 'replay' },
+    { from: 'curl', to: 'open', label: 'reads ✓' },
+    { from: 'curl', to: 'gated', label: 'denied ✗' },
+  ]}
+/>
+
+So `using(true)` is *acceptable* for **non-sensitive, read-only rollups** (the marts: cost curves,
+tool-call counts) where the worst case is "someone read aggregate numbers." It is **not** acceptable
+for anything sensitive or writable — which is exactly why the scan fleet (anon *writes*) earned the
+`@earlbear.com` identity gate and the marts (so far) did not. Whether the marts *should* move to
+identity gating anyway is a live question tracked separately.
+
+## What this page is missing (and the audit will chase)
+
+Applying the full principal-engineer question set honestly surfaces where we're thin — these are
+open, not solved:
+
+- **Audit logging** (Q16): we don't centrally log *who read which key when*. Provider-side logs
+  exist (Supabase/CF), but there's no unified access trail.
+- **Rotation cadence** (Q11): most keys have no scheduled rotation — they're rotate-on-suspicion.
+  The signing and secret keys especially should have a defined interval.
+- **Leak detection** (Q15): gitleaks + the pre-commit hooks cover *commit-time* leakage; there's no
+  runtime detection of a key exfiltrated from the bundle and replayed.
+- **Incident playbook** (Q17): revocation procedures exist per key (documented in
+  `manage-credentials`), but there's no single "key X leaked → do these steps in this order" runbook.
+
+The `audit-keys` skill re-runs the enumeration and this question set on demand, and updates this
+catalog when a key is added, moved, or rotated.
