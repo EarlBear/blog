@@ -120,8 +120,10 @@ there. These are the substance checks — the ones the geometry gates can't see.
 - **Reversal trigger** — what would make the decision wrong (teaches the reader to
   think the same way).
 
-**Avoid — house voice, no fluff** (this is the anti-fluff standard; `check-posts.py`
-only catches emoji/exclamations, so this is a human/skill judgment):
+**Avoid — house voice, no fluff** (the full guide is
+[`docs/features/house-voice.md`](../../../docs/features/house-voice.md);
+`check-posts.py` hard-blocks emoji/exclamations and *warns* on the patterns below,
+but voice is a judgment call, so this skill is the human judge):
 - **Anthropomorphizing**: systems don't "meet", "want", "see", or "decide to feel".
   "Three people meet this agent" says nothing — cut it. State what the actor *does*.
 - **Scene-setting filler**: a sentence that sets a mood but carries no information.

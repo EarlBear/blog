@@ -9,6 +9,10 @@ Every post in src/content/blog/ must have:
   - a kebab-case filename (it is the URL slug)
   - no emoji and no exclamation points in title/description (brand voice)
 
+Soft voice advisories (WARN only — never block; see docs/features/house-voice.md
+and the design-post-review skill): anti-fluff / anti-anthropomorphizing / anti-hype
+patterns in the body. These print but do not fail, because voice is a judgment call.
+
 Citation rules (numbers must be sourced):
   - every footnote reference [^id] has a definition and vice versa
   - any prose paragraph containing a dollar amount or percentage must carry a
@@ -156,6 +160,51 @@ def check_citations(body: str, rel) -> list:
     return errs
 
 
+# Anti-fluff voice patterns (SOFT — warnings, never blocking). The house voice is
+# "every sentence carries information; systems don't have feelings." These catch the
+# common tells; the full standard + fixes live in the design-post-review skill.
+# Each entry: (compiled regex, short reason). Kept deliberately narrow to avoid
+# false-positive noise — a warning the author learns to ignore is worse than none.
+_FLUFF_PATTERNS = [
+    # Anthropomorphizing: a system/agent/pipeline that "meets/wants/sees/knows/feels".
+    (re.compile(r"\b(the\s+)?(agent|system|pipeline|engine|model|dashboard|component)"
+                r"\s+(meets|wants|desires|feels|sees|hopes|believes|thinks|knows|"
+                r"decides to feel|cares)\b", re.I),
+     "anthropomorphizing — a system doesn't meet/want/see/feel; say what it does"),
+    # "Three people meet this agent" — an actor "meeting" software.
+    (re.compile(r"\b(meet|meets|meeting)\s+(this|the|our|your)\s+"
+                r"(agent|system|pipeline|engine|tool)\b", re.I),
+     "no one 'meets' software — state what the person does with it"),
+    # Empty scene-setting openers that carry no information.
+    (re.compile(r"^\s*(In (today's|this)\s+(world|day and age|fast-paced)|"
+                r"Imagine (a|that|you)|Let's dive in|At the end of the day|"
+                r"It's no secret that|In a world where)\b", re.I | re.M),
+     "scene-setting filler — lead with the point, not a mood"),
+    # Hype adjectives that assert instead of showing.
+    (re.compile(r"\b(seamless(ly)?|effortless(ly)?|cutting-edge|state-of-the-art|"
+                r"game-?chang(er|ing)|revolutionary|blazing(ly)?\s+fast|"
+                r"next-generation|world-class|robust and scalable)\b", re.I),
+     "hype word — show the fact (the number, the behavior), don't assert it"),
+]
+
+
+def check_voice_fluff(body: str, rel) -> list:
+    """SOFT voice warnings (anti-fluff / anti-anthropomorphizing). Returns a list of
+    advisory strings — the caller prints them but does NOT fail on them."""
+    warns, in_fence = [], False
+    for i, line in enumerate(body.splitlines(), 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence or line.lstrip().startswith("<") or line.lstrip().startswith("#"):
+            continue
+        for rx, reason in _FLUFF_PATTERNS:
+            m = rx.search(line)
+            if m:
+                warns.append(f"{rel}:{i}: {reason} — {m.group(0).strip()!r}")
+    return warns
+
+
 def author_ids(root: Path):
     d = root / AUTHORS_DIR
     return {p.stem for p in d.glob("*.md")} if d.is_dir() else set()
@@ -253,13 +302,28 @@ def main() -> int:
             if p.suffix in (".md", ".mdx")
         )
 
-    errs = []
+    errs, warns = [], []
     for post in targets:
         errs.extend(check_post(post, root))
+        text = post.read_text(encoding="utf-8", errors="ignore")
+        m = re.match(r"^---\n.*?\n---\n?(.*)$", text, re.S)
+        if m:
+            warns.extend(check_voice_fluff(m.group(1), post.relative_to(root)))
+
+    # Soft voice warnings are advisory — print them, but never fail the build/hook
+    # on them (they can false-positive; the design-post-review skill is the judge).
+    if warns:
+        stream = sys.stderr if hook_mode else sys.stdout
+        print(f"voice advisories ({len(warns)}) — house voice: no fluff, no "
+              "anthropomorphizing (see design-post-review skill):", file=stream)
+        for w in warns:
+            print("  ~ " + w, file=stream)
 
     if not errs:
         if not hook_mode:
-            print(f"posts OK — {len(targets)} post(s) pass frontmatter and voice checks.")
+            suffix = f" ({len(warns)} voice advisory/-ies)" if warns else ""
+            print(f"posts OK — {len(targets)} post(s) pass frontmatter and voice "
+                  f"checks{suffix}.")
         return 0
 
     header = ("BLOCKED: post validation failed after this edit —" if hook_mode
