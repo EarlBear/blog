@@ -116,7 +116,10 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
      syntax and render automatically as a footnotes section at the end.
 
 6. **Voice check**: sentence case throughout, no emoji, no exclamation points,
-   specific over vague, tabular numerics for figures.
+   specific over vague, tabular numerics for figures. The full quality standard —
+   anti-fluff, no anthropomorphizing, the design-post skeleton (requirements /
+   personas / impact / use cases), and right-component usage — lives in the
+   **`design-post-review`** skill; don't restate it here, run it in step 8.
 
 7. **Validate, then build** before finishing:
    ```bash
@@ -126,6 +129,13 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
    Then preview: `npm run dev` and open `/blog/<slug>/`. Confirm the byline, the
    "Questions this post answers" block, and any code blocks render. Drafts show a
    "draft" marker in listings and are excluded from the production build.
+
+8. **Review the post** — run the **`design-post-review`** skill against the new
+   post. It is the single home for the quality standards (visual polish, right
+   diagram/component for the job, and content/architecture substance) and it
+   audits + iterates. This is where a design post earns its skeleton (requirements,
+   personas, impact, use cases) and its anti-fluff pass — so this skill stays a
+   scaffolder and doesn't duplicate those rules.
 
 ## When the validation hook blocks
 

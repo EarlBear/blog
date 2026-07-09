@@ -20,7 +20,7 @@ a technique.
 | **comparison matrix** | options × criteria, head-to-head, at a glance | `ComparisonMatrix` (options = columns, criteria = rows, cells = yes/no/partial or a value; chosen column highlighted) | native spec | `one-database-two-modes` |
 | **decision catalog** | a numbered list of DECISIONS (D1…Dn), each with a status (decided/leaning/open/tbd) and its choice — so prose can deep-link `[D3](#d3)` | `DecisionTable` (rows = decisions; status badges; optional click-to-focus `detail`) | native spec (decisions with `status`/`choice`/`detail`) | (import-design-post) |
 | **UML sequence** | true message-passing between actors over time (lifelines, sync/return arrows, loop/alt fragments) — not a plain vertical step list | `SequenceDiagram` (actors = lifelines; messages top→bottom; optional `fragments`) | native spec | (import-design-post) |
-| **data model / ER** | entities, their fields (PK/FK), and the relationships between them (cardinality) | `DataModel` (entity cards + a relationship list with crow's-foot cardinality) | native spec | (import-design-post) |
+| **data model / ER** | entities, their fields (PK/FK), and the relationships between them (cardinality) | `DataModel` — a **true ERD**: entity boxes (fields + PK/FK) on a deterministic grid, **connected by crow's-foot cardinality edges** (one · zero-or-one · many · zero-or-many) with labeled relations; a visually-hidden relationship list is the a11y/no-JS fallback | native spec: `entities=[{id,label,fields:[{name,type,key:'pk'\|'fk'}]}]`, `relations=[{from,to,label,card}]`, optional `columns` | `ecommerce-site-scanner-design`, `self-healing-storefront-design` |
 
 ## The Mermaid decision rule (why we parse, not render)
 

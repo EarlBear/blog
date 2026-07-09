@@ -90,6 +90,11 @@ That is how the catalog compounds.
 
 ## Notes
 
+- **Right component for the job**: pick strictly from [catalog.md](./catalog.md) —
+  options weighed to a choice want a `ComparisonMatrix`, not just an `Accordion`; a
+  data model wants the true-ERD `DataModel`, not prose. The **`design-post-review`**
+  skill audits this (its catalog-usage dimension); run it if you're unsure the
+  enrichment used the component the content calls for.
 - Single light theme, semantic tokens only. Never raw hex, no dark mode.
 - A diagram that only restates a sentence isn't earning its space — cut it.
 - Individual posts don't get a `docs/features/` doc; the *components* do. If you add
