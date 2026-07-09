@@ -1,0 +1,21 @@
+---
+/**
+ * Assumption — an inline amber highlight for an unvalidated premise. The source
+ * design docs flag premises still to prove ("50 to 100 leads/week") inline, and
+ * they should JUMP OUT as "review this / not yet proven", not blend into the prose
+ * as bold text. This wraps the text in a themed <mark> with a small "Assumption"
+ * tag so a reviewer spots every premise that still needs validating.
+ *
+ * Two forms, both from the source:
+ *   <Assumption>50 to 100 qualified leads/week</Assumption>   — highlighted text
+ *   <Assumption />                                            — a bare marker
+ *
+ * Zero JavaScript, semantic tokens only.
+ */
+const hasBody = Astro.slots.has('default');
+---
+
+<mark class="eb-assumption">
+  <span class="eb-assumption-tag" aria-hidden="true">Assumption</span>
+  {hasBody && <span class="eb-assumption-body"><slot /></span>}
+</mark>

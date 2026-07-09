@@ -1,0 +1,82 @@
+---
+/**
+ * Mockup — a framed, theme-aware wrapper that turns live HTML into a UI mockup.
+ *
+ * A design's prose + diagrams say HOW a system works; a Mockup shows what it would
+ * LOOK like. The "screen" is real HTML (the slot), so it stays version-controlled
+ * and token-styled — no screenshots, no external embeds. The chrome (a browser
+ * bar, a desktop window, or a phone shell) frames it so a reader instantly reads
+ * it as "this is a UI", not page content.
+ *
+ * Keep the inner HTML simple and semantic — a few divs/buttons with light inline
+ * styles built from --eb-* / --color-* tokens (never raw hex). It is an impression
+ * of the UI, not a pixel-perfect build. Pairs with <Walkthrough>, which sequences
+ * several Mockup scenes into a click-through story.
+ *
+ * Usage in MDX:
+ *   <Mockup chrome="browser" title="Storefront Agent" url="agent.app/wins"
+ *           caption="The agent ships fixes and reports the dollar lift.">
+ *     <div>…faux UI built from tokens…</div>
+ *   </Mockup>
+ */
+export type MockupChrome = 'browser' | 'window' | 'phone' | 'none';
+
+interface Props {
+  /** browser = address bar; window = traffic-light dots + title; phone = device
+   *  shell; none = bare framed screen. */
+  chrome?: MockupChrome;
+  /** Title in the window/browser bar and the figure's accessible label. */
+  title?: string;
+  /** Fake URL in the browser address bar (chrome="browser" only). */
+  url?: string;
+  /** Caption under the frame. */
+  caption?: string;
+  /** Max frame width, e.g. 420 for a phone, 920 for a desktop app. */
+  maxWidth?: number | string;
+}
+
+const { chrome = 'browser', title, url, caption, maxWidth } = Astro.props;
+const maxW = maxWidth
+  ? typeof maxWidth === 'number'
+    ? `${maxWidth}px`
+    : maxWidth
+  : undefined;
+---
+
+<figure
+  class={`eb-mockup eb-mockup--${chrome}`}
+  style={maxW ? `max-width:${maxW}` : undefined}
+  aria-label={title ? `Mockup: ${title}` : 'UI mockup'}
+>
+  <div class="eb-mockup-frame">
+    {
+      chrome === 'browser' && (
+        <div class="eb-mockup-bar">
+          <span class="eb-mockup-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span class="eb-mockup-address">{url || title || ''}</span>
+        </div>
+      )
+    }
+    {
+      chrome === 'window' && (
+        <div class="eb-mockup-bar">
+          <span class="eb-mockup-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          {title && <span class="eb-mockup-title">{title}</span>}
+        </div>
+      )
+    }
+    {chrome === 'phone' && <span class="eb-mockup-notch" aria-hidden="true" />}
+    <div class="eb-mockup-screen">
+      <slot />
+    </div>
+  </div>
+  {caption && <figcaption class="eb-mockup-caption">{caption}</figcaption>}
+</figure>

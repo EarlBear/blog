@@ -825,3 +825,723 @@ a:focus:not(:focus-visible) {
   white-space: nowrap;
   border: 0;
 }
+
+/* ============================================================================
+   Callout — src/components/Callout.astro. Admonition box (note / info / tip /
+   warning). The house target for the source docs' :::type[Title] admonitions.
+   Zero JS, semantic status tokens only, single light theme.
+   ============================================================================ */
+.eb-callout {
+  margin: var(--space-6) 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--callout-accent, var(--color-border-strong));
+  border-radius: var(--radius-md);
+  background: var(--callout-bg, var(--color-surface-sunken));
+}
+.eb-callout--note {
+  --callout-accent: var(--eb-info);
+  --callout-bg: var(--color-surface-sunken);
+}
+.eb-callout--info {
+  --callout-accent: var(--eb-info);
+  --callout-bg: var(--eb-info-bg);
+}
+.eb-callout--tip {
+  --callout-accent: var(--eb-success);
+  --callout-bg: var(--eb-success-bg);
+}
+.eb-callout--warning {
+  --callout-accent: var(--eb-warning);
+  --callout-bg: var(--eb-warning-bg);
+}
+.eb-callout-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--callout-accent);
+}
+.eb-callout-body {
+  color: var(--color-text-secondary);
+}
+/* The box owns the vertical rhythm; strip the leading/trailing margins so a
+   single paragraph sits flush. */
+.eb-callout-body > :first-child {
+  margin-top: 0;
+}
+.eb-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+   Assumption — src/components/Assumption.astro. Inline amber highlight for an
+   unvalidated premise, with a small "Assumption" tag so it reads as "not yet
+   proven", not decoration. Zero JS, semantic tokens only.
+   ============================================================================ */
+.eb-assumption {
+  background: var(--eb-warning-bg);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 0.05em 0.35em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.eb-assumption-tag {
+  display: inline-block;
+  margin-right: 0.4em;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--eb-warning);
+  vertical-align: 0.05em;
+}
+/* The bare-marker form (<Assumption />) has no body; keep the tag flush. */
+.eb-assumption-tag:only-child {
+  margin-right: 0;
+}
+.eb-assumption-body {
+  color: var(--color-text);
+}
+
+/* ============================================================================
+   Mockup — src/components/Mockup.astro. A framed "what it looks like" UI
+   impression (browser / window / phone / bare chrome). The screen is live,
+   token-styled HTML in the slot. Pairs with <Walkthrough>. Zero JS.
+   ============================================================================ */
+.eb-mockup {
+  margin: var(--space-8) auto;
+  width: 100%;
+}
+.eb-mockup-frame {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.12));
+}
+/* chrome bar (browser address bar / window title bar) */
+.eb-mockup-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in oklab, var(--color-surface-sunken) 70%, var(--color-surface));
+  border-bottom: 1px solid var(--color-border);
+}
+.eb-mockup-dots {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.eb-mockup-dots i {
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+}
+/* macOS-ish traffic lights, in the design system's muted status hues */
+.eb-mockup-dots i:nth-child(1) {
+  background: var(--eb-error);
+}
+.eb-mockup-dots i:nth-child(2) {
+  background: var(--eb-warning);
+}
+.eb-mockup-dots i:nth-child(3) {
+  background: var(--eb-success);
+}
+.eb-mockup-address {
+  flex: 1 1 auto;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eb-mockup-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+/* the live "screen" */
+.eb-mockup-screen {
+  background: var(--color-canvas);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body, 1.5);
+  color: var(--color-text);
+}
+.eb-mockup-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+/* phone shell */
+.eb-mockup--phone {
+  max-width: 380px;
+}
+.eb-mockup--phone .eb-mockup-frame {
+  border-radius: 26px;
+  border-width: 8px;
+  border-color: var(--color-surface-inverse);
+  position: relative;
+}
+.eb-mockup--phone .eb-mockup-notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44%;
+  height: 18px;
+  background: var(--color-surface-inverse);
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  z-index: 2;
+}
+.eb-mockup--phone .eb-mockup-screen {
+  min-height: 360px;
+}
+
+/* ============================================================================
+   Walkthrough — src/components/Walkthrough.astro. Interactive, click-through
+   demo over stacked <Mockup> scenes. One self-contained inline script wires the
+   stepping (prev / next / dots); every scene renders server-side, so no-JS and
+   reduced-motion readers still page through with the buttons.
+   ============================================================================ */
+.eb-walkthrough {
+  margin: var(--space-8) 0;
+}
+.eb-wt-transport {
+  margin-bottom: var(--space-4);
+}
+.eb-wt-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.eb-wt-btn {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.eb-wt-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.eb-wt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.eb-wt-caption {
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+}
+/* timeline — a rail with evenly-spaced clickable step dots, a progress fill. */
+.eb-wt-timeline {
+  position: relative;
+  height: 16px;
+  margin: 0 7px;
+}
+.eb-wt-rail,
+.eb-wt-fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 2px;
+  transform: translateY(-50%);
+}
+.eb-wt-rail {
+  right: 0;
+  background: var(--color-border);
+}
+.eb-wt-fill {
+  width: 0;
+  background: var(--color-accent);
+  transition: width var(--dur-slow, 320ms) cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.eb-wt-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-surface);
+  background: var(--color-border-strong);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  z-index: 1;
+}
+/* each dot's `left: %` is set inline at build time from its step index, so the
+   rail is laid out with zero JS. */
+.eb-wt-dot--done,
+.eb-wt-dot--active {
+  background: var(--color-accent);
+}
+.eb-wt-dot--active {
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-accent) 22%, transparent);
+}
+/* viewport: grid-stack every scene in one cell so height tracks the tallest and
+   never collapses when switching. Only the active scene is shown. */
+.eb-wt-viewport {
+  display: grid;
+}
+.eb-wt-scene {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow, 320ms) ease;
+}
+.eb-wt-scene--on {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 1;
+}
+/* the app scene is never `hidden` (it anchors the highlight overlay), so hide it
+   with opacity alone when another scene is active. */
+.eb-wt-scene--app {
+  z-index: 0;
+}
+.eb-wt-highlight {
+  position: absolute;
+  background: color-mix(in oklab, var(--color-accent) 20%, transparent);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  z-index: 5;
+  transition:
+    left var(--dur-normal, 200ms) ease,
+    top var(--dur-normal, 200ms) ease,
+    width var(--dur-normal, 200ms) ease,
+    height var(--dur-normal, 200ms) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eb-wt-fill,
+  .eb-wt-scene,
+  .eb-wt-highlight {
+    transition: none;
+  }
+}
+
+/* ============================================================================
+   DecisionTable — src/components/DecisionTable.astro. The numbered catalog of a
+   design's decisions (D1…Dn) with status badges + per-row anchors + an optional
+   click-to-focus detail modal. Zero JS unless a decision carries detail.
+   ============================================================================ */
+.decision-table {
+  margin: var(--space-8) 0;
+}
+.decision-table .dt-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+}
+.decision-table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-body);
+}
+.decision-table .dt-sr-caption {
+  caption-side: bottom;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: left;
+}
+.decision-table th,
+.decision-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.decision-table tbody tr:last-child th,
+.decision-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.decision-table thead th {
+  background: var(--color-surface-sunken);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.decision-table .dt-col-id {
+  min-width: 3.5rem;
+}
+.decision-table .dt-id {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+}
+.decision-table .dt-id-btn {
+  font: inherit;
+  color: var(--color-text-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+.decision-table .dt-id-btn:hover {
+  color: var(--color-accent);
+}
+.decision-table .dt-decision {
+  color: var(--color-text);
+}
+.decision-table .dt-choice {
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+}
+/* :target — highlight the row a #d3 deep-link points at (zero JS). */
+.decision-table .dt-row:target {
+  background: var(--color-accent-soft);
+}
+/* status badges */
+.decision-table .dt-badge {
+  display: inline-block;
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}
+.decision-table .dt-badge--decided {
+  background: var(--eb-success-bg);
+  color: var(--eb-success);
+}
+.decision-table .dt-badge--leaning {
+  background: var(--eb-warning-bg);
+  color: var(--eb-warning);
+}
+.decision-table .dt-badge--open {
+  background: var(--eb-info-bg);
+  color: var(--eb-info);
+}
+.decision-table .dt-badge--tbd {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+/* detail modal — same shape as the FlowDiagram / UseCaseDiagram focus modal */
+.decision-table .dt-modal {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  max-width: min(520px, 92vw);
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.16));
+}
+.decision-table .dt-modal::backdrop {
+  background: rgba(32, 30, 26, 0.32);
+}
+.decision-table .dt-modal-inner {
+  position: relative;
+  padding: var(--space-6);
+}
+.decision-table .dt-modal-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  border: none;
+  background: transparent;
+  font-size: var(--fs-h4);
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.decision-table .dt-modal-close:hover {
+  color: var(--color-text);
+  background: var(--color-surface-sunken);
+}
+.decision-table .dt-modal-eyebrow {
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 var(--space-2);
+}
+.decision-table .dt-modal-title {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  margin: 0 0 var(--space-3);
+  padding-right: var(--space-6);
+}
+.decision-table .dt-modal-detail {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body, 1.6);
+}
+
+/* ============================================================================
+   SequenceDiagram — src/components/SequenceDiagram.astro. UML lifelines +
+   ordered messages, build-time SVG. Same token-driven, reduced-motion-safe
+   pattern as the other diagram primitives.
+   ============================================================================ */
+.sequence-diagram {
+  margin: var(--space-8) 0;
+}
+.sequence-diagram .seq-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.sequence-diagram svg {
+  width: 100%;
+  height: auto;
+  min-width: 320px;
+  display: block;
+}
+.sequence-diagram .seq-head {
+  fill: var(--color-surface-sunken);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+.sequence-diagram .seq-head-label {
+  fill: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.sequence-diagram .seq-lifeline {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.sequence-diagram .seq-line {
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+  fill: none;
+}
+.sequence-diagram .seq-msg--return .seq-line {
+  stroke-dasharray: 5 4;
+  stroke: var(--color-text-muted);
+}
+.sequence-diagram .seq-arrowhead {
+  fill: var(--color-border-strong);
+  stroke: none;
+}
+.sequence-diagram .seq-arrowhead-open {
+  stroke: var(--color-text-muted);
+  stroke-width: 1.5;
+}
+.sequence-diagram .seq-msg-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-anchor: middle;
+}
+.sequence-diagram .seq-msg-label--self {
+  text-anchor: start;
+}
+/* fragment (loop / alt / opt) boxes */
+.sequence-diagram .seq-frag-box {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.sequence-diagram .seq-frag-tag {
+  fill: var(--color-surface-sunken);
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.sequence-diagram .seq-frag-tag-label {
+  fill: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  dominant-baseline: central;
+}
+.sequence-diagram .seq-frag-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-style: italic;
+}
+.sequence-diagram .seq-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+/* draw-in: messages fade/slide in top to bottom on load */
+.sequence-diagram .seq-msg {
+  animation: seq-fade-in var(--dur-slow, 320ms) var(--ease-decelerate, ease-out) both;
+  animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+@keyframes seq-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sequence-diagram .seq-msg {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================================================================
+   DataModel — src/components/DataModel.astro. Entity-relationship model as
+   titled entity cards + a relationship list (crow's-foot cardinality). The
+   house target for mermaid erDiagram blocks. Zero JS, tokens only.
+   ============================================================================ */
+.data-model {
+  margin: var(--space-8) 0;
+}
+.data-model .dm-entities {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+.data-model .dm-entity {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.data-model .dm-entity-head {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.data-model .dm-fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.data-model .dm-field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.data-model .dm-field:last-child {
+  border-bottom: none;
+}
+.data-model .dm-key {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+}
+.data-model .dm-key--pk {
+  background: var(--eb-warning-bg);
+  color: var(--eb-warning);
+}
+.data-model .dm-key--fk {
+  background: var(--eb-info-bg);
+  color: var(--eb-info);
+}
+.data-model .dm-field-name {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+.data-model .dm-field-type {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+.data-model .dm-field-note {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  margin-left: auto;
+}
+.data-model .dm-relations {
+  margin-top: var(--space-5);
+}
+.data-model .dm-relations-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.data-model .dm-relations ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.data-model .dm-relation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-1) 0;
+  font-size: var(--fs-sm);
+}
+.data-model .dm-rel-entity {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+.data-model .dm-rel-card {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  cursor: help;
+}
+.data-model .dm-rel-label {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+.data-model .dm-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}

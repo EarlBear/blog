@@ -1,0 +1,241 @@
+---
+/**
+ * SequenceDiagram — a UML sequence diagram (actor lifelines + ordered messages)
+ * rendered as one inline SVG at build time. The house target for the source
+ * design docs' mermaid `sequenceDiagram` blocks, which the blog's flowchart-only
+ * parser cannot render.
+ *
+ * Actors become columns with a head box and a vertical lifeline; messages are
+ * ordered top→bottom arrows between lifelines (sync = solid arrow, return =
+ * dashed open arrow, self = a small loop on one lifeline). Optional fragments
+ * (loop / alt / opt) draw a labeled box spanning a contiguous range of messages,
+ * matching the mermaid control blocks.
+ *
+ * Deterministic layout, semantic tokens only, reduced-motion-safe draw-in. A
+ * build-time gate throws on a message that names an unknown actor.
+ *
+ * Usage in MDX:
+ *   <SequenceDiagram title="Experiment lifecycle" desc="…"
+ *     actors={[{id:'op',label:'Operator'},{id:'ag',label:'Agent'}]}
+ *     messages={[
+ *       {from:'op',to:'ag',label:'Configure ICP',kind:'sync'},
+ *       {from:'ag',to:'op',label:'Queue ready',kind:'return'},
+ *     ]}
+ *     fragments={[{kind:'loop',label:'per candidate',from:1,to:4}]} />
+ */
+export interface SeqActor {
+  id: string;
+  label: string;
+}
+export type SeqKind = 'sync' | 'return' | 'self';
+export interface SeqMessage {
+  from: string;
+  to: string;
+  label?: string;
+  /** sync = solid filled arrow; return = dashed open arrow; self = self-call loop. */
+  kind?: SeqKind;
+}
+export interface SeqFragment {
+  /** The control-block kind, e.g. 'loop' | 'alt' | 'opt'. Drives the corner tag. */
+  kind: string;
+  label?: string;
+  /** Inclusive message indexes (0-based) this fragment spans. */
+  from: number;
+  to: number;
+}
+interface Props {
+  title: string;
+  desc?: string;
+  actors: SeqActor[];
+  messages: SeqMessage[];
+  fragments?: SeqFragment[];
+}
+
+const { title, desc, actors, messages, fragments = [] } = Astro.props;
+
+// ---- Build-time gate: every message references a real actor ----------------
+{
+  const ids = new Set(actors.map((a) => a.id));
+  messages.forEach((m, i) => {
+    if (!ids.has(m.from))
+      throw new Error(`SequenceDiagram "${title}": message ${i} from "${m.from}" is not an actor id.`);
+    if (!ids.has(m.to))
+      throw new Error(`SequenceDiagram "${title}": message ${i} to "${m.to}" is not an actor id.`);
+  });
+  fragments.forEach((f) => {
+    if (f.from < 0 || f.to >= messages.length || f.from > f.to)
+      throw new Error(
+        `SequenceDiagram "${title}": fragment "${f.label ?? f.kind}" range ${f.from}..${f.to} ` +
+          `is out of bounds (0..${messages.length - 1}).`
+      );
+  });
+  if (!desc || !desc.trim())
+    console.warn(`[sequence-diagram] warning: "${title}" has no desc — add desc= for screen readers.`);
+}
+
+// ---- Layout ----------------------------------------------------------------
+const COL_W = 150; // horizontal spacing between lifelines
+const HEAD_W = 130;
+const HEAD_H = 40;
+const ROW_H = 46; // vertical spacing between messages
+const PAD_X = 24;
+const TOP = 16;
+const FRAG_PAD = 10; // fragment box inset around its message range
+
+const colX = (i: number) => PAD_X + HEAD_W / 2 + i * COL_W;
+const actorX = new Map(actors.map((a, i) => [a.id, colX(i)]));
+const firstRowY = TOP + HEAD_H + ROW_H;
+const rowY = (i: number) => firstRowY + i * ROW_H;
+
+const svgW = PAD_X * 2 + HEAD_W + (actors.length - 1) * COL_W;
+const bottomY = rowY(messages.length - 1) + ROW_H;
+const svgH = bottomY + HEAD_H + TOP;
+
+const salt =
+  'sq-' +
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24);
+
+// Precompute rendered messages with geometry + direction.
+const rendered = messages.map((m, i) => {
+  const x1 = actorX.get(m.from)!;
+  const x2 = actorX.get(m.to)!;
+  const y = rowY(i);
+  const self = m.kind === 'self' || m.from === m.to;
+  const dir = x2 >= x1 ? 1 : -1;
+  return { ...m, i, x1, x2, y, self, dir, kind: m.kind ?? 'sync' };
+});
+
+// Fragment boxes span from just above their first message to just below the last.
+const fragBoxes = fragments.map((f, i) => {
+  const top = rowY(f.from) - ROW_H * 0.55 - FRAG_PAD * i;
+  const bot = rowY(f.to) + ROW_H * 0.3 + FRAG_PAD * i;
+  const left = PAD_X - FRAG_PAD - FRAG_PAD * i;
+  const right = svgW - PAD_X + FRAG_PAD + FRAG_PAD * i;
+  return { ...f, top, bot, left, right, width: right - left, height: bot - top };
+});
+---
+
+<figure class="sequence-diagram" data-seq={salt}>
+  <div class="seq-scroll">
+    <svg
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      role="img"
+      aria-labelledby={`${salt}-title${desc ? ` ${salt}-desc` : ''}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title id={`${salt}-title`}>{title}</title>
+      {desc && <desc id={`${salt}-desc`}>{desc}</desc>}
+
+      <defs>
+        <marker
+          id={`${salt}-arrow`}
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 9 5 L 0 9 Z" class="seq-arrowhead" />
+        </marker>
+        <marker
+          id={`${salt}-arrow-open`}
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 1 L 9 5 L 0 9" fill="none" class="seq-arrowhead-open" />
+        </marker>
+      </defs>
+
+      {/* Fragment boxes behind everything */}
+      <g class="seq-fragments">
+        {
+          fragBoxes.map((f) => (
+            <g class="seq-fragment">
+              <rect x={f.left} y={f.top} width={f.width} height={f.height} rx={6} class="seq-frag-box" />
+              <path
+                d={`M ${f.left} ${f.top + 18} L ${f.left + 54} ${f.top + 18} L ${f.left + 46} ${f.top + 18 + 8} L ${f.left} ${f.top + 18 + 8} Z`}
+                class="seq-frag-tag"
+              />
+              <text x={f.left + 6} y={f.top + 18 + 1} class="seq-frag-tag-label">
+                {f.kind}
+              </text>
+              {f.label && (
+                <text x={f.left + 60} y={f.top + 14} class="seq-frag-label">
+                  {f.label}
+                </text>
+              )}
+            </g>
+          ))
+        }
+      </g>
+
+      {/* Lifelines */}
+      <g class="seq-lifelines">
+        {
+          actors.map((a) => {
+            const x = actorX.get(a.id)!;
+            return <line x1={x} y1={TOP + HEAD_H} x2={x} y2={bottomY} class="seq-lifeline" />;
+          })
+        }
+      </g>
+
+      {/* Actor heads (top and bottom) */}
+      <g class="seq-heads">
+        {
+          actors.map((a) => {
+            const x = actorX.get(a.id)!;
+            return (
+              <>
+                <rect x={x - HEAD_W / 2} y={TOP} width={HEAD_W} height={HEAD_H} rx={8} class="seq-head" />
+                <text x={x} y={TOP + HEAD_H / 2} class="seq-head-label">{a.label}</text>
+                <rect x={x - HEAD_W / 2} y={bottomY} width={HEAD_W} height={HEAD_H} rx={8} class="seq-head" />
+                <text x={x} y={bottomY + HEAD_H / 2} class="seq-head-label">{a.label}</text>
+              </>
+            );
+          })
+        }
+      </g>
+
+      {/* Messages */}
+      <g class="seq-messages">
+        {
+          rendered.map((m) => {
+            const cls = `seq-msg seq-msg--${m.kind}`;
+            const marker = m.kind === 'return' ? `url(#${salt}-arrow-open)` : `url(#${salt}-arrow)`;
+            if (m.self) {
+              const x = m.x1;
+              const loop = `M ${x} ${m.y} h 34 v 18 h -34`;
+              return (
+                <g class={cls} style={`--i:${m.i}`}>
+                  <path d={loop} fill="none" class="seq-line" marker-end={marker} />
+                  {m.label && (
+                    <text x={x + 40} y={m.y + 10} class="seq-msg-label seq-msg-label--self">{m.label}</text>
+                  )}
+                </g>
+              );
+            }
+            const midX = (m.x1 + m.x2) / 2;
+            return (
+              <g class={cls} style={`--i:${m.i}`}>
+                <line x1={m.x1} y1={m.y} x2={m.x2} y2={m.y} class="seq-line" marker-end={marker} />
+                {m.label && (
+                  <text x={midX} y={m.y - 7} class="seq-msg-label">{m.label}</text>
+                )}
+              </g>
+            );
+          })
+        }
+      </g>
+    </svg>
+  </div>
+  {desc && <figcaption class="seq-caption">{desc}</figcaption>}
+</figure>

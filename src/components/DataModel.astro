@@ -1,0 +1,131 @@
+---
+/**
+ * DataModel — an entity-relationship model (the data model of a design) rendered
+ * as titled entity cards plus a relationship list. The house target for the
+ * source design docs' mermaid `erDiagram` blocks, which the blog cannot render.
+ *
+ * Rather than a fragile auto-laid-out ER graph, this renders each entity as a
+ * card (its fields, with PK/FK markers) and the relationships as a labeled list
+ * with crow's-foot-style cardinality (one / zero-or-one / many). That keeps every
+ * bit of the ER information — entities, fields, keys, relationships, cardinality
+ * — readable and mobile-safe with zero JS, matching the blog's other primitives.
+ *
+ * A build-time gate throws on a relationship that names an unknown entity.
+ *
+ * Usage in MDX:
+ *   <DataModel title="Lead data model" desc="…"
+ *     entities={[
+ *       {id:'LEAD', label:'Lead', fields:[
+ *         {name:'id', type:'uuid', key:'pk'},
+ *         {name:'candidate_id', type:'uuid', key:'fk'},
+ *         {name:'score', type:'float'}]},
+ *       {id:'CONTACT', label:'Contact'},
+ *     ]}
+ *     relations={[
+ *       {from:'LEAD', to:'CONTACT', label:'has', card:'one-to-zero-or-one'},
+ *     ]} />
+ */
+export type FieldKey = 'pk' | 'fk';
+export interface EntityField {
+  name: string;
+  type?: string;
+  key?: FieldKey;
+  note?: string;
+}
+export interface Entity {
+  id: string;
+  label: string;
+  fields?: EntityField[];
+}
+export type Cardinality =
+  'one-to-one' | 'one-to-many' | 'one-to-zero-or-one' | 'one-to-zero-or-many' | 'many-to-many';
+export interface Relation {
+  from: string;
+  to: string;
+  label?: string;
+  card?: Cardinality;
+}
+interface Props {
+  title: string;
+  desc?: string;
+  entities: Entity[];
+  relations: Relation[];
+}
+
+const { title, desc, entities, relations } = Astro.props;
+
+// ---- Build-time gate: every relation references a real entity --------------
+{
+  const ids = new Set(entities.map((e) => e.id));
+  relations.forEach((r, i) => {
+    if (!ids.has(r.from))
+      throw new Error(`DataModel "${title}": relation ${i} from "${r.from}" is not an entity id.`);
+    if (!ids.has(r.to))
+      throw new Error(`DataModel "${title}": relation ${i} to "${r.to}" is not an entity id.`);
+  });
+  if (!desc || !desc.trim())
+    console.warn(`[data-model] warning: "${title}" has no desc — add desc= for screen readers.`);
+}
+
+// Crow's-foot-ish notation for each cardinality (source to target).
+const CARD: Record<Cardinality, { a: string; b: string; gloss: string }> = {
+  'one-to-one': { a: '1', b: '1', gloss: 'one to one' },
+  'one-to-many': { a: '1', b: '*', gloss: 'one to many' },
+  'one-to-zero-or-one': { a: '1', b: '0..1', gloss: 'one to zero-or-one' },
+  'one-to-zero-or-many': { a: '1', b: '0..*', gloss: 'one to zero-or-many' },
+  'many-to-many': { a: '*', b: '*', gloss: 'many to many' },
+};
+
+const labelOf = (id: string) => entities.find((e) => e.id === id)?.label ?? id;
+---
+
+<figure class="data-model">
+  <div class="dm-entities">
+    {
+      entities.map((e) => (
+        <div class="dm-entity">
+          <div class="dm-entity-head">{e.label}</div>
+          {e.fields && e.fields.length > 0 && (
+            <ul class="dm-fields">
+              {e.fields.map((f) => (
+                <li class="dm-field">
+                  {f.key && (
+                    <span class={`dm-key dm-key--${f.key}`} title={f.key === 'pk' ? 'primary key' : 'foreign key'}>
+                      {f.key.toUpperCase()}
+                    </span>
+                  )}
+                  <span class="dm-field-name">{f.name}</span>
+                  {f.type && <span class="dm-field-type">{f.type}</span>}
+                  {f.note && <span class="dm-field-note">{f.note}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))
+    }
+  </div>
+
+  <div class="dm-relations">
+    <p class="dm-relations-label">Relationships</p>
+    <ul>
+      {
+        relations.map((r) => {
+          const c = r.card ? CARD[r.card] : undefined;
+          return (
+            <li class="dm-relation">
+              <span class="dm-rel-entity">{labelOf(r.from)}</span>
+              <span class="dm-rel-card" title={c?.gloss}>
+                {c ? `${c.a} — ${c.b}` : '—'}
+              </span>
+              <span class="dm-rel-entity">{labelOf(r.to)}</span>
+              {r.label && <span class="dm-rel-label">{r.label}</span>}
+            </li>
+          );
+        })
+      }
+    </ul>
+  </div>
+
+  {desc && <figcaption class="dm-caption">{desc}</figcaption>}
+</figure>

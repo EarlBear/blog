@@ -1,0 +1,43 @@
+---
+/**
+ * Callout — an admonition box (note / info / tip / warning). The house target for
+ * the source design docs' `:::note[Title]` / `:::info[Title]` / `:::tip[Title]`
+ * admonitions, which have no plain-markdown equivalent here (a blockquote carries
+ * no severity). Zero JavaScript, semantic tokens only, single light theme.
+ *
+ * Each kind maps to a status token pair (accent + tint background): note→info,
+ * info→info, tip→success, warning→warning. The optional `title` renders as the
+ * labeled header; the slot carries the body (prose, lists, or another component).
+ *
+ * Usage in MDX:
+ *   <Callout kind="tip" title="Design implication">
+ *   Body prose here.
+ *   </Callout>
+ */
+export type CalloutKind = 'note' | 'info' | 'tip' | 'warning';
+
+interface Props {
+  kind?: CalloutKind;
+  /** Bold header label, e.g. "Scope", "Terminology", "Design implication". */
+  title?: string;
+}
+
+const { kind = 'note', title } = Astro.props;
+
+// The default header word when a callout carries no explicit title, so the box is
+// never unlabeled (the source admonitions always had a bracket title).
+const DEFAULT_LABEL: Record<CalloutKind, string> = {
+  note: 'Note',
+  info: 'Info',
+  tip: 'Tip',
+  warning: 'Warning',
+};
+const label = title ?? DEFAULT_LABEL[kind];
+---
+
+<aside class={`eb-callout eb-callout--${kind}`} role="note">
+  <p class="eb-callout-label">{label}</p>
+  <div class="eb-callout-body">
+    <slot />
+  </div>
+</aside>
