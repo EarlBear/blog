@@ -103,9 +103,22 @@ Consequences worth knowing:
   re-tints the accent), persisted in `localStorage`. Guarded by `import.meta.env.DEV`
   so it is tree-shaken from every production build (verified: no toggle button/script
   in `dist/`). A preview, not the real external build (see the table above).
+- **Comments are internal-only** (a Figma-style, fragment-anchored comment layer;
+  see the gtm repo's `docs/comments-design.md`). This is the blog's first Cloudflare
+  Pages Function (`functions/api/auth-token.js`) and first Supabase integration.
+  The comment layer (`src/components/CommentLayer.astro` + `supabaseClient.ts` +
+  `comments.ts`) is guarded by `import.meta.env.PUBLIC_AUDIENCE === 'internal'` so
+  its JS + supabase-js are **tree-shaken from the external bundle**, and its styles
+  are `<style is:inline>` so they ship only when the component renders. The external
+  (GitHub Pages) build has no server, no CF Access, and RLS denies anon — so comments
+  are structurally absent there, not just filtered. `check-audience.py --check-dist`
+  fails the deploy if any comment-layer artifact (`data-comment-layer` / `cl-*` /
+  `blog_comments` / `@supabase`) leaks into the external `dist/`.
 - One-time infra (not in this repo): create the `earlbear-blog-internal` CF Pages
   project, attach `blog.internal.earlbear.com`, and provision the CF Access app via
   `earlbear-domain` (`make cf-access-app-upsert`). The `domains.yaml` record is
-  marked `awaiting_deploy` until the first internal deploy ships.
+  marked `awaiting_deploy` until the first internal deploy ships. For comments, also
+  set the CF Pages secrets `SUPABASE_SIGNING_KEY`, `CF_ACCESS_TEAM_DOMAIN`, and the
+  **blog's own** `CF_ACCESS_AUDIENCE` (distinct from gtm's) on `earlbear-blog-internal`.
 - `src/content/blog/internal-only-example.md` is a fixture proving the split; delete
   it once you have a real internal post.
