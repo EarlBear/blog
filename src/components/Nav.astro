@@ -12,6 +12,9 @@ const { internal = false } = Astro.props;
 // It is a preview, not the real external build — that is `npm run build:external`
 // (dev shows every audience regardless of PUBLIC_AUDIENCE). Never rendered in prod.
 const devToggle = import.meta.env.DEV && internal;
+// The Drafts toggle is dev-only too, but independent of audience — drafts exist on
+// both the internal and external working sets, so it shows on any localhost build.
+const devDrafts = import.meta.env.DEV;
 
 const links = [
   { href: '/', label: 'Posts' },
@@ -43,6 +46,17 @@ const links = [
       aria-pressed="false"
     >
       <span data-toggle-label>internal</span>
+    </button>
+  )}
+  {devDrafts && (
+    <button
+      type="button"
+      class="drafts-badge drafts-badge--toggle"
+      data-drafts-toggle
+      title="Show or hide draft post cards (dev only). Drafts are always shown by default in dev; toggle off to preview the list as it will read once they publish. Never affects the real build."
+      aria-pressed="true"
+    >
+      <span data-drafts-label>drafts on</span>
     </button>
   )}
   <div class="links">
@@ -85,6 +99,36 @@ const links = [
         if (btn)
           btn.addEventListener('click', () => {
             const next = root.getAttribute('data-preview') === 'external' ? 'internal' : 'external';
+            localStorage.setItem(KEY, next);
+            apply(next);
+          });
+      })();
+    </script>
+  )
+}
+
+{
+  /* DEV-ONLY: the Drafts pill toggles hiding draft post cards. Sets data-drafts="hide"
+     on <html> (CSS hides .card[data-post-draft]), persists in localStorage. Default is
+     "show" (drafts visible), matching dev today. import.meta.env.DEV is statically false
+     in any production build, so this block is tree-shaken out — it never ships. */
+  devDrafts && (
+    <script is:inline>
+      (() => {
+        const KEY = 'eb-drafts-visibility';
+        const root = document.documentElement;
+        const btn = document.querySelector('[data-drafts-toggle]');
+        const label = btn && btn.querySelector('[data-drafts-label]');
+        function apply(state) {
+          if (state === 'hide') root.setAttribute('data-drafts', 'hide');
+          else root.removeAttribute('data-drafts');
+          if (btn) btn.setAttribute('aria-pressed', state === 'hide' ? 'false' : 'true');
+          if (label) label.textContent = state === 'hide' ? 'drafts off' : 'drafts on';
+        }
+        apply(localStorage.getItem(KEY) || 'show');
+        if (btn)
+          btn.addEventListener('click', () => {
+            const next = root.getAttribute('data-drafts') === 'hide' ? 'show' : 'hide';
             localStorage.setItem(KEY, next);
             apply(next);
           });
@@ -204,6 +248,30 @@ const links = [
   .internal-badge--toggle::after {
     content: ' ⇄';
     opacity: 0.6;
+  }
+  /* Dev-only Drafts toggle: a neutral (muted) sibling pill beside the audience toggle,
+     so it reads as a secondary control rather than competing with the accent badge. */
+  .drafts-badge {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-secondary);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    padding: 2px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    cursor: pointer;
+    transition: filter 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  .drafts-badge--toggle:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text);
+  }
+  /* When drafts are hidden (aria-pressed=false), dim the pill to signal the "off" state. */
+  .drafts-badge--toggle[aria-pressed='false'] {
+    opacity: 0.62;
   }
   /* The nav links carry the single margin-left:auto — this pushes the links (and,
      on the internal build, the sign-out cluster that follows) to the right, with

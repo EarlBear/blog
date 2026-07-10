@@ -40,6 +40,15 @@ use to clone EarlBear's edge.
   append-only log we replay").
 
 **Hold back (the moat) — flag for softening:**
+- **The go-to-market / core-workflow MECHANISM in plain prose** — this is the one the
+  tell-based checks miss, and the one that bites. A post can name *zero* prompts,
+  configs, or numbers and still hand over the moat by narrating **how EarlBear makes
+  its money or gets its edge**: how it *discovers* which stores to target, *finds* a
+  verified contact, *scores* a lead and *why*, *sequences* the outreach, *decides* what
+  to fix on a storefront. If the passage is a walkthrough of the business mechanism a
+  competitor could copy to run the same play, it's moat — softening means keeping the
+  *outcome* ("we surface qualified leads with reasons") and dropping the *how-we-do-it*
+  pipeline. **Ask: is this describing our competitive edge, step by step?**
 - **Exact mechanism**: verbatim LLM prompts, full config/manifests, precise
   algorithms or formulas presented copy-paste-ready.
 - **Tuning knobs as numbers**: the specific thresholds, temperatures, timeouts,
@@ -53,6 +62,15 @@ use to clone EarlBear's edge.
 - Techniques that are already open-source or industry-common knowledge.
 - Deliberate thought-leadership we *want* to be known for.
 - A code sample that illustrates a shape without being the whole recipe.
+
+**The trap — polish is NOT safety.** The failure mode is a post that reads like
+beautiful, confident customer-facing product writing *and is our moat narrated nicely*.
+Good marketing prose and a leaked competitive edge look identical to a keyword scanner —
+and even to the classification heuristic, which reads "polished, no internal-infra
+signals" as "safe to be public." It is not. **A well-told moat is still a moat.** When a
+post cleanly explains how our core play works and would read great to a customer, that is
+exactly when to stop and ask whether a competitor just got the playbook for free — not to
+wave it through because it's well written.
 
 The test for a passage: *would a competitor, reading only this, be able to reproduce
 our advantage?* If yes → soften. If it just makes us look like we know what we're
@@ -68,7 +86,11 @@ doing → keep.
    verbatim-prompt blocks, large config blocks, recipe framing ("the trick is…"),
    exact tuning values, internal cost figures — and prints candidates per post. It
    is **advisory and over-flags on purpose**; a clean pass is not a guarantee, and a
-   flagged line is a candidate, not a verdict.
+   flagged line is a candidate, not a verdict. The hook also **nudges on every new or
+   changed external post** (PostToolUse), even when the scan finds nothing — because the
+   costliest miss is the moat *narrated in plain prose* (the "business mechanism"
+   category above), which no keyword scan can see. Treat that nudge as your cue to do
+   step 3's judgment, not as a checkbox the empty scan already ticked.
 
 3. **Read and judge each candidate (and skim the rest).** For every flagged passage,
    decide: keep, or soften — and say why in one line (which moat category it hits, or

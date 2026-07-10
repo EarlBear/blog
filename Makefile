@@ -9,7 +9,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev build build-internal preview deploy deploy-internal audience-check sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check check \
+        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check anchor-ids-check check \
         bench-diagram reconcile-comments clean
 
 help: ## List available targets
@@ -135,7 +135,10 @@ repo-map-check: ## Check the internal Repo Map (src/repo-map/artifact.html) data
 secrets-check: ## Fail if any tracked .env* holds a plaintext value (structural dotenvx guard)
 	@python3 .claude/hooks/check-env-encrypted.py --check
 
-check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check ## Run all governance checks
+anchor-ids-check: build-internal ## Fail if any commentable diagram element (node/edge/row) in the built dist/ lacks its stable anchor id
+	@python3 .claude/hooks/check-anchor-ids.py --check dist
+
+check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check anchor-ids-check ## Run all governance checks
 
 ## --- measure --------------------------------------------------------------
 

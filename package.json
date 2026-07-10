@@ -12,6 +12,7 @@
     "preview": "astro preview",
     "audience-check": "python3 .claude/hooks/check-audience.py --check-dist dist",
     "secrets-check": "python3 .claude/hooks/check-env-encrypted.py --check",
+    "anchor-ids-check": "python3 .claude/hooks/check-anchor-ids.py --check dist",
     "deploy": "PUBLIC_AUDIENCE=external python3 .claude/hooks/check-audience.py --assert-target external && npm run build:external && npm run audience-check && gh-pages -d dist --dotfiles --nojekyll -m \"Deploy blog\"",
     "deploy:internal": "PUBLIC_AUDIENCE=internal python3 .claude/hooks/check-audience.py --assert-target internal && npm run build:internal && python3 .claude/hooks/check-audience.py --check-dist dist --audience internal && rm -f dist/CNAME && ./node_modules/.bin/dotenvx run --quiet -- ./node_modules/.bin/wrangler pages deploy dist --project-name earlbear-blog-internal --branch main --commit-dirty=true",
     "key-backup": "scripts/lastpass-key.sh backup",

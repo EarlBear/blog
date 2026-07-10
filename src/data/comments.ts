@@ -5,7 +5,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase, currentEmail } from './supabaseClient';
 
-export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity' | 'prose' | 'range';
+export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity' | 'prose' | 'range' | 'edge';
 
 export interface Comment {
   id: string;
@@ -66,6 +66,14 @@ export const ALLOW_RULES: AllowRule[] = [
     selector: '.prose .flow-node[data-node]',
     kind: 'node',
     anchorOf: (el) => el.getAttribute('data-node'),
+  },
+  {
+    // A diagram EDGE (arrow). data-edge is a stable id from the engine (from__to, NOT the label),
+    // so an edge is a fixed comment target whether or not it carries a label — the affordance
+    // lands on the arrow's <g> (chip if labeled, line if not; both are inside the same <g>).
+    selector: '.prose .flow-edge[data-edge]',
+    kind: 'edge',
+    anchorOf: (el) => el.getAttribute('data-edge'),
   },
   {
     selector: '.prose .data-model [data-entity]',
@@ -129,6 +137,8 @@ export function resolveAnchor(anchorId: string): HTMLElement | null {
   if (byNode) return byNode;
   const byEntity = document.querySelector<HTMLElement>(`.prose [data-entity="${cssEscape(anchorId)}"]`);
   if (byEntity) return byEntity;
+  const byEdge = document.querySelector<HTMLElement>(`.prose [data-edge="${cssEscape(anchorId)}"]`);
+  if (byEdge) return byEdge;
   return null;
 }
 

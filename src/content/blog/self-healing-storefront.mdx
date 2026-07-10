@@ -54,6 +54,7 @@ whose behavior is the signal every experiment reads.
     { id: 'ledger', label: 'Read the wins', detail: 'The owner sees shipped wins and the dollar lift in plain language, not a statistics dashboard.' },
     { id: 'supervise', label: 'Supervise', detail: 'The operator keeps many stores safe and productive.' },
     { id: 'run', label: 'Run experiments', detail: 'The agent ideates, builds variants, runs them on live traffic, and decides what to keep.' },
+    { id: 'shop', label: 'Shopping', detail: 'The shopper browses and buys as usual — never seeing the agent. Their behavior is the signal every experiment reads.' },
   ]}
   links={[
     { from: 'owner', to: 'guard' },
@@ -61,7 +62,7 @@ whose behavior is the signal every experiment reads.
     { from: 'owner', to: 'ledger' },
     { from: 'op', to: 'supervise' },
     { from: 'agent', to: 'run' },
-    { from: 'shopper', to: 'run' },
+    { from: 'shopper', to: 'shop' },
   ]}
 />
 
@@ -99,7 +100,7 @@ traffic, and reports the lift. Step through it:
         <div style="flex: 1; border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem; text-align: center; font-size: 0.7rem;"><div style="height: 34px; background: var(--color-surface-sunken); border-radius: 5px; margin-bottom: 0.3rem;"></div>Cap</div>
       </div>
       <div id="sf-scan-issue" style="margin: 0.3rem 0.85rem 0.85rem; border: 2px solid var(--eb-warning); border-radius: 9px; padding: 0.6rem 0.7rem; background: var(--eb-warning-bg); position: relative;">
-        <span style="position: absolute; top: -0.65rem; left: 0.6rem; background: var(--eb-warning); color: var(--color-text-inverse); font-weight: 800; font-size: 0.6rem; padding: 0.1rem 0.45rem; border-radius: 999px;">Issue identified</span>
+        <span style="position: absolute; top: -0.75rem; left: 0.6rem; z-index: 1; background: var(--eb-warning); color: var(--color-text-inverse); font-weight: 800; font-size: 0.6rem; line-height: 1.2; padding: 0.15rem 0.5rem; border-radius: 999px;">Issue identified</span>
         <div style="font-weight: 700; font-size: 0.78rem; margin-top: 0.2rem;">Mobile checkout</div>
         <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Loads slowly on mobile, and cart abandonment is high</div>
       </div>

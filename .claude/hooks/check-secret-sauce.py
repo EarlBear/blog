@@ -222,14 +222,34 @@ def main() -> int:
     fm, _ = parse_frontmatter(post.read_text(encoding="utf-8", errors="ignore"))
     if fm.get("audience") == "internal":
         return 0  # internal posts can share freely
+
+    # This is a NEW or CHANGED external post. Nudge a content-review acknowledgement EVERY time —
+    # not only when the keyword scan finds a tell. The costly miss (the ecommerce-site-scanner
+    # case) is the moat narrated in plain prose: no prompt, no config, no number for the scan to
+    # catch, yet a competitor gets the playbook. The scan can't see that; a human/agent applying
+    # the external-post-review skill's judgment can. So the nudge fires on the trigger (an external
+    # post was touched), and the tell-scan just adds specifics when it has any.
     findings = review_post(post, root)
+    print(
+        "secret-sauce (advisory): you touched an EXTERNAL post. Before it ships, confirm it's "
+        "clear of secret sauce — run the external-post-review skill.",
+        file=sys.stderr,
+    )
+    print(
+        "  The scan below catches recipe TELLS (prompts/configs/tuning numbers/economics). It does "
+        "NOT catch the moat narrated in plain prose — e.g. HOW we discover, find, score, or "
+        "sequence our core play. Polished, customer-friendly writing is NOT proof it's safe; a "
+        "well-told moat is still a moat. Ask: could a competitor reproduce our edge from this?",
+        file=sys.stderr,
+    )
     if findings:
-        print("secret-sauce (advisory): this EXTERNAL post has passages that may over-share "
-              "proprietary how-to — consider softening (not moving):", file=sys.stderr)
+        print("  Tells the scan flagged (candidates to soften, not verdicts):", file=sys.stderr)
         for f in findings:
-            print("  • " + f, file=sys.stderr)
-        print("This is a nudge, not a block. Run the external-post-review skill for a full pass.",
+            print("    • " + f, file=sys.stderr)
+    else:
+        print("  (The tell-scan found nothing — but that is NOT a clear signal. Judge the prose.)",
               file=sys.stderr)
+    print("This is a nudge, not a block.", file=sys.stderr)
     return 0  # advisory: never blocks
 
 

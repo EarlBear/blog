@@ -1911,3 +1911,19 @@ a:focus:not(:focus-visible) {
   --color-text-accent: #9a3d21;
   --color-border-focus: var(--eb-terra, #b14726);
 }
+/* The external preview also hides DRAFT cards — the public build excludes drafts
+   (posts.ts draft gate), so previewing external should match that. */
+:root[data-preview='external'] .card[data-post-draft='true'] {
+  display: none;
+}
+
+/* ============================================================================
+   DEV-ONLY Drafts toggle (the Drafts pill in Nav, beside the audience toggle).
+   data-drafts="hide" is set on <html> only by the dev toggle script (import.meta.env.DEV),
+   so these rules are inert in any production build. Effect: hide every draft post card,
+   independently of the audience preview — so an author can see the list as it will read
+   once the drafts publish. Default (attribute absent) shows drafts, matching dev today.
+   ============================================================================ */
+:root[data-drafts='hide'] .card[data-post-draft='true'] {
+  display: none;
+}

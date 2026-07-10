@@ -97,7 +97,7 @@ test.describe('internal comment layer', () => {
         anyParagraphWithoutId: items.some((i: any) => i.el.tagName === 'P' && !i.el.id),
         // Every kind is one of the allowed content kinds — never an SVG-internal element.
         onlyAllowedKinds: items.every((i: any) =>
-          ['heading', 'decision', 'diagram', 'node', 'entity', 'prose'].includes(i.anchorKind),
+          ['heading', 'decision', 'diagram', 'node', 'entity', 'prose', 'edge'].includes(i.anchorKind),
         ),
         // No commentable element is an SVG-internal (gradient/marker/clip/title/desc).
         anySvgInternal: items.some((i: any) =>
@@ -112,6 +112,44 @@ test.describe('internal comment layer', () => {
     expect(result.anySvgInternal).toBe(false);
     // The post has headings, a DecisionTable, and id'd prose, so those kinds must be present.
     expect(result.kinds).toEqual(expect.arrayContaining(['heading', 'decision', 'prose']));
+  });
+
+  test('diagram edges are commentable (labeled + unlabeled), anchored by data-edge, id independent of the label', async ({ page }) => {
+    await stubBackend(page);
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayer)).toBe(true);
+
+    const result = await page.evaluate(() => {
+      const { findCommentables, commentableFor, resolveAnchor } = (window as any).__commentLayer;
+      const items = findCommentables();
+      const edges = items.filter((i: any) => i.anchorKind === 'edge');
+      // Every rendered edge carries a data-edge id, so every edge is commentable — labeled or not.
+      const allEdgesHaveDataEdge = Array.from(document.querySelectorAll('.prose .flow-edge')).every(
+        (g) => g.getAttribute('data-edge'),
+      );
+      // Pick a labeled edge (has a chip) and a bare one; both must be commentable via the <g>.
+      const gWithLabel = document.querySelector('.prose .flow-edge:has(.flow-edge-label)');
+      const gNoLabel = Array.from(document.querySelectorAll('.prose .flow-edge')).find(
+        (g) => !g.querySelector('.flow-edge-label'),
+      );
+      // The edge id is from__to (no '#' unless repeated) — it does NOT contain the label text.
+      const sampleId = edges[0]?.anchorId ?? '';
+      return {
+        edgeCount: edges.length,
+        allEdgesHaveDataEdge,
+        labeledCommentable: gWithLabel ? commentableFor(gWithLabel.querySelector('.flow-edge-label') || gWithLabel) != null : false,
+        unlabeledCommentable: gNoLabel ? commentableFor(gNoLabel.querySelector('path') || gNoLabel) != null : false,
+        idResolves: sampleId ? resolveAnchor(sampleId) != null : false,
+        idShape: /^[^#]+__[^#]+(#\d+)?$/.test(sampleId),
+      };
+    });
+
+    expect(result.edgeCount).toBeGreaterThan(0);
+    expect(result.allEdgesHaveDataEdge).toBe(true);
+    expect(result.labeledCommentable).toBe(true);
+    if (result.unlabeledCommentable !== false) expect(result.unlabeledCommentable).toBe(true);
+    expect(result.idResolves).toBe(true);
+    expect(result.idShape).toBe(true); // from__to shape — the label is NOT part of the id
   });
 
   test('P5: every commentable anchor resolves back to its element by fragment id', async ({ page }) => {
