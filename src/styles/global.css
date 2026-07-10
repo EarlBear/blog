@@ -1633,6 +1633,43 @@ a:focus:not(:focus-visible) {
   font-size: 11px;
   text-anchor: middle;
 }
+/* Click-to-highlight a key across tables (PK ↔ its FKs). */
+.data-model .dm-field--key {
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background 0.1s ease;
+}
+.data-model .dm-field--key:hover,
+.data-model .dm-field--key:focus-visible {
+  background: var(--color-surface-sunken);
+  outline: none;
+}
+/* When a key is active: dim the rest, spotlight the matching fields + their boxes. */
+.data-model.dm-has-active .dm-entity {
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+.data-model.dm-has-active .dm-entity.dm-entity-active {
+  opacity: 1;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+.data-model .dm-field.dm-key-active {
+  background: var(--color-accent-soft);
+}
+.data-model .dm-field.dm-key-active .dm-field-name {
+  color: var(--color-text-accent);
+  font-weight: var(--fw-semibold);
+}
+.data-model.dm-has-active .dm-edge {
+  opacity: 0.35;
+}
+.data-model .dm-edge.dm-edge-active {
+  opacity: 1;
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+}
+
 /* Draw-in animation, reduced-motion gated. */
 @media (prefers-reduced-motion: no-preference) {
   .data-model.dm-drawn .dm-edge {

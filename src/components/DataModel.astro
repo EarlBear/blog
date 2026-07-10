@@ -29,6 +29,9 @@ export interface EntityField {
   type?: string;
   key?: FieldKey;
   note?: string;
+  /** For an FK: the "ENTITY.field" it references, so clicking either end lights up
+   *  the whole key chain. Optional — without it, fields are linked by matching name. */
+  ref?: string;
 }
 export interface Entity {
   id: string;
@@ -114,6 +117,29 @@ const salt =
     .replace(/^-|-$/g, '')
     .slice(0, 24);
 
+// ---- Key groups (for click-to-highlight-across-tables) ---------------------
+// A "key group" ties a PK to the FKs that reference it, so clicking any of them
+// lights up the whole chain. Membership is decided by an explicit `ref`
+// ("ENTITY.field") when present, else by matching field NAME among key fields.
+// The group id is the canonical "owner.field" (the PK's, when we can find it).
+const keyGroupOf = new Map<string, string>(); // `${entityId}.${fieldName}` -> group id
+{
+  // Canonical owner for a name = the entity whose field of that name is the PK.
+  const pkOwner = new Map<string, string>(); // fieldName -> `${entityId}.${name}`
+  for (const e of entities)
+    for (const f of e.fields ?? [])
+      if (f.key === 'pk') pkOwner.set(f.name, `${e.id}.${f.name}`);
+  for (const e of entities)
+    for (const f of e.fields ?? []) {
+      if (!f.key) continue;
+      const self = `${e.id}.${f.name}`;
+      const group = f.ref ?? pkOwner.get(f.name) ?? self;
+      keyGroupOf.set(self, group);
+    }
+}
+const fieldGroup = (entityId: string, name: string) =>
+  keyGroupOf.get(`${entityId}.${name}`);
+
 // Edge list with resolved cardinality ends, for the overlay script + SR list.
 const edges = relations.map((r, i) => {
   const c = r.card ? CARD[r.card] : undefined;
@@ -150,21 +176,32 @@ const edges = relations.map((r, i) => {
               <div class="dm-entity-head">{e.label}</div>
               {e.fields && e.fields.length > 0 && (
                 <ul class="dm-fields">
-                  {e.fields.map((f) => (
-                    <li class="dm-field">
-                      {f.key && (
-                        <span
-                          class={`dm-key dm-key--${f.key}`}
-                          title={f.key === 'pk' ? 'primary key' : 'foreign key'}
-                        >
-                          {f.key.toUpperCase()}
-                        </span>
-                      )}
-                      <span class="dm-field-name">{f.name}</span>
-                      {f.type && <span class="dm-field-type">{f.type}</span>}
-                      {f.note && <span class="dm-field-note">{f.note}</span>}
-                    </li>
-                  ))}
+                  {e.fields.map((f) => {
+                    const grp = f.key ? fieldGroup(e.id, f.name) : undefined;
+                    return (
+                      <li
+                        class={`dm-field${grp ? ' dm-field--key' : ''}`}
+                        data-keygroup={grp}
+                        tabindex={grp ? 0 : undefined}
+                        role={grp ? 'button' : undefined}
+                        aria-label={
+                          grp ? `${f.name} — highlight this key across tables` : undefined
+                        }
+                      >
+                        {f.key && (
+                          <span
+                            class={`dm-key dm-key--${f.key}`}
+                            title={f.key === 'pk' ? 'primary key' : 'foreign key'}
+                          >
+                            {f.key.toUpperCase()}
+                          </span>
+                        )}
+                        <span class="dm-field-name">{f.name}</span>
+                        {f.type && <span class="dm-field-type">{f.type}</span>}
+                        {f.note && <span class="dm-field-note">{f.note}</span>}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -288,6 +325,8 @@ const edges = relations.map((r, i) => {
         const path = document.createElementNS(SVGNS, 'path');
         path.setAttribute('d', `M ${pa.x} ${pa.y} L ${pb.x} ${pb.y}`);
         path.setAttribute('class', 'dm-edge');
+        path.setAttribute('data-from', ed.from);
+        path.setAttribute('data-to', ed.to);
         path.style.setProperty('--i', idx);
         svg.appendChild(path);
 
@@ -319,5 +358,48 @@ const edges = relations.map((r, i) => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(draw);
     });
+
+    // Click a key field → highlight that key everywhere it appears (PK ↔ its FKs),
+    // the entities that hold it, and the edges between them. Click again / click
+    // elsewhere / Escape clears. Keyboard-operable (fields are role=button).
+    const keyFields = fig.querySelectorAll('.dm-field--key');
+    let activeGroup = null;
+    function clearHighlight() {
+      activeGroup = null;
+      fig.classList.remove('dm-has-active');
+      fig.querySelectorAll('.dm-key-active').forEach((el) => el.classList.remove('dm-key-active'));
+      fig.querySelectorAll('.dm-entity-active').forEach((el) => el.classList.remove('dm-entity-active'));
+      svg.querySelectorAll('.dm-edge-active').forEach((el) => el.classList.remove('dm-edge-active'));
+    }
+    function highlight(group) {
+      if (!group) return;
+      if (activeGroup === group) { clearHighlight(); return; }
+      clearHighlight();
+      activeGroup = group;
+      fig.classList.add('dm-has-active');
+      const entitiesInGroup = new Set();
+      fig.querySelectorAll(`.dm-field--key[data-keygroup="${group}"]`).forEach((li) => {
+        li.classList.add('dm-key-active');
+        const box = li.closest('.dm-entity');
+        if (box) { box.classList.add('dm-entity-active'); entitiesInGroup.add(box.getAttribute('data-entity')); }
+      });
+      // Emphasize edges whose BOTH ends are in the highlighted entity set.
+      svg.querySelectorAll('.dm-edge').forEach((p) => {
+        const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+        if (entitiesInGroup.has(f) && entitiesInGroup.has(t)) p.classList.add('dm-edge-active');
+      });
+    }
+    keyFields.forEach((li) => {
+      const act = () => highlight(li.getAttribute('data-keygroup'));
+      li.addEventListener('click', act);
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); }
+      });
+    });
+    // Click outside a key field, or Escape, clears.
+    fig.addEventListener('click', (e) => {
+      if (!e.target.closest('.dm-field--key')) clearHighlight();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') clearHighlight(); });
   })();
 </script>
