@@ -101,6 +101,14 @@
     // Comments keyed by anchor_id → array (top-level + replies flattened; parent_id threads them).
     let byAnchor = new Map<string, Comment[]>();
 
+    // Mutable UI state — declared BEFORE the wiring calls below, or the wiring functions would
+    // reference these `let`s while they're still in the temporal dead zone (a ReferenceError).
+    let hoverBtn: HTMLButtonElement | null = null;
+    let hoverTarget: Commentable | null = null;
+    let hideT: number | undefined;
+    let composeFor: Commentable | null = null;
+    let openThreadAnchor: string | null = null;
+
     // Wire the interactions FIRST (synchronously) so the affordance/composer are live
     // immediately — never blocked on the network. The async identity + comment load follow.
     wireHoverAffordance(prose, postSlug);
@@ -180,8 +188,7 @@
     }
 
     // ---- hover affordance --------------------------------------------------
-    let hoverBtn: HTMLButtonElement | null = null;
-    let hoverTarget: Commentable | null = null;
+    // (hoverBtn / hoverTarget are declared at the top of initCommentLayer.)
 
     function wireHoverAffordance(proseEl: Element, slug: string) {
       hoverBtn = document.createElement('button');
@@ -229,7 +236,6 @@
       hoverBtn.style.left = `${window.scrollX + r.right + 8}px`;
       hoverBtn.hidden = false;
     }
-    let hideT: number | undefined;
     function hideAffordanceSoon() {
       clearTimeout(hideT);
       hideT = window.setTimeout(() => {
@@ -239,7 +245,7 @@
     }
 
     // ---- composer ----------------------------------------------------------
-    let composeFor: Commentable | null = null;
+    // (composeFor is declared at the top of initCommentLayer.)
     function wireComposer(slug: string) {
       const input = composer.querySelector<HTMLTextAreaElement>('[data-cl-input]')!;
       const who = composer.querySelector<HTMLElement>('[data-cl-who]')!;
@@ -282,7 +288,7 @@
     }
 
     // ---- thread popover ----------------------------------------------------
-    let openThreadAnchor: string | null = null;
+    // (openThreadAnchor is declared at the top of initCommentLayer.)
     function wireThread(slug: string) {
       threadDlg.querySelector('[data-cl-thread-close]')!.addEventListener('click', () => threadDlg.close());
       threadDlg.addEventListener('click', (e) => {

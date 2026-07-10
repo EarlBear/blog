@@ -31,6 +31,24 @@ test.describe('internal comment layer', () => {
     await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayerReady)).toBe(true);
   });
 
+  test('the hover affordance is created and appears on a commentable element (regression: TDZ)', async ({ page }) => {
+    // Regression guard: initCommentLayer wires the affordance synchronously, referencing `let`s
+    // that must be declared before the wiring call. A temporal-dead-zone error there throws
+    // silently (the layer "initializes" but the affordance button is never created). This test
+    // exercises the FULL init path (not just the exposed pure helpers), so it catches that.
+    await stubBackend(page);
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayerReady)).toBe(true);
+    // The affordance button must exist after init (it's appended by wireHoverAffordance).
+    await expect.poll(() => page.evaluate(() => !!document.querySelector('.cl-add'))).toBe(true);
+    // And it un-hides when a commentable heading is hovered.
+    await page.evaluate(() => {
+      const h = document.querySelector('.prose h2[id]') as HTMLElement;
+      h.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    await expect(page.locator('.cl-add')).toBeVisible({ timeout: 2000 });
+  });
+
   test('P6: the commentable allowlist matches fragment-anchored content, never bare <p> or SVG internals', async ({ page }) => {
     await stubBackend(page);
     await page.goto(POST);
