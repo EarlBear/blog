@@ -49,7 +49,7 @@ test.describe('internal comment layer', () => {
     await expect(page.locator('.cl-add')).toBeVisible({ timeout: 2000 });
   });
 
-  test('P6: the commentable allowlist matches fragment-anchored content, never bare <p> or SVG internals', async ({ page }) => {
+  test('P6: the commentable allowlist matches fragment-anchored content (incl. rehype-id prose), never a <p> WITHOUT an id or an SVG internal', async ({ page }) => {
     await stubBackend(page);
     await page.goto(POST);
     await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayer)).toBe(true);
@@ -60,11 +60,12 @@ test.describe('internal comment layer', () => {
       return {
         count: items.length,
         kinds: [...new Set(items.map((i: any) => i.anchorKind))].sort(),
-        // No commentable is a bare <p> (bare paragraphs have no anchor).
-        anyBareParagraph: items.some((i: any) => i.el.tagName === 'P'),
+        // A commentable <p> is ONLY one that has an id (from the rehype-block-ids plugin);
+        // a paragraph without an id must never be commentable.
+        anyParagraphWithoutId: items.some((i: any) => i.el.tagName === 'P' && !i.el.id),
         // Every kind is one of the allowed content kinds — never an SVG-internal element.
         onlyAllowedKinds: items.every((i: any) =>
-          ['heading', 'decision', 'diagram', 'node', 'entity'].includes(i.anchorKind),
+          ['heading', 'decision', 'diagram', 'node', 'entity', 'prose'].includes(i.anchorKind),
         ),
         // No commentable element is an SVG-internal (gradient/marker/clip/title/desc).
         anySvgInternal: items.some((i: any) =>
@@ -74,11 +75,11 @@ test.describe('internal comment layer', () => {
     });
 
     expect(result.count).toBeGreaterThan(0);
-    expect(result.anyBareParagraph).toBe(false);
+    expect(result.anyParagraphWithoutId).toBe(false);
     expect(result.onlyAllowedKinds).toBe(true);
     expect(result.anySvgInternal).toBe(false);
-    // The post has headings and a DecisionTable, so those kinds must be present.
-    expect(result.kinds).toEqual(expect.arrayContaining(['heading', 'decision']));
+    // The post has headings, a DecisionTable, and id'd prose, so those kinds must be present.
+    expect(result.kinds).toEqual(expect.arrayContaining(['heading', 'decision', 'prose']));
   });
 
   test('P5: every commentable anchor resolves back to its element by fragment id', async ({ page }) => {
@@ -101,7 +102,7 @@ test.describe('internal comment layer', () => {
     expect(result.goneResolvesNull).toBe(true);
   });
 
-  test('commentableFor: a heading is commentable; a bare paragraph is not', async ({ page }) => {
+  test('commentableFor: a heading + an id-stamped paragraph are commentable; an id-less element is not', async ({ page }) => {
     await stubBackend(page);
     await page.goto(POST);
     await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayer)).toBe(true);
@@ -109,17 +110,21 @@ test.describe('internal comment layer', () => {
     const result = await page.evaluate(() => {
       const { commentableFor } = (window as any).__commentLayer;
       const heading = document.querySelector('.prose h2[id]');
-      // A bare paragraph directly under .prose (not inside a commentable).
-      const bareP = [...document.querySelectorAll('.prose > p')].find(
-        (p) => !(p as HTMLElement).closest('figure,table,.data-model'),
-      );
+      // A prose paragraph with a rehype-stamped id (now commentable, kind 'prose').
+      const idP = document.querySelector('.prose p[id]');
+      // A synthetic id-LESS paragraph appended to .prose — must never be commentable.
+      const orphan = document.createElement('p');
+      orphan.textContent = 'no id here';
+      document.querySelector('.prose')!.appendChild(orphan);
       return {
         headingCommentable: heading ? commentableFor(heading) != null : false,
-        bareParagraphCommentable: bareP ? commentableFor(bareP) != null : true,
+        idParagraphCommentable: idP ? commentableFor(idP) != null : false,
+        idlessParagraphCommentable: commentableFor(orphan) != null,
       };
     });
 
     expect(result.headingCommentable).toBe(true);
-    expect(result.bareParagraphCommentable).toBe(false);
+    expect(result.idParagraphCommentable).toBe(true);
+    expect(result.idlessParagraphCommentable).toBe(false);
   });
 });

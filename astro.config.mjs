@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
 import { devAuthToken } from './integrations/dev-auth-token.ts';
+import { rehypeBlockIds } from './integrations/rehype-block-ids.mjs';
 
 // Which site this build is for, chosen by PUBLIC_AUDIENCE (set by the
 // build:internal / deploy:internal npm scripts). This picks the canonical
@@ -50,5 +51,10 @@ export default defineConfig({
       theme: 'github-light',
       wrap: false,
     },
+    // Stamp a stable content-hash id onto each prose block (p/li/blockquote) so the
+    // internal comment layer can anchor a comment to a paragraph, not just a heading or
+    // component. Harmless on the external build (just extra ids). See
+    // integrations/rehype-block-ids.mjs + docs/comments-design.md (B3).
+    rehypePlugins: [rehypeBlockIds],
   },
 });

@@ -5,7 +5,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase, currentEmail } from './supabaseClient';
 
-export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity';
+export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity' | 'prose';
 
 export interface Comment {
   id: string;
@@ -35,6 +35,11 @@ interface AllowRule {
 export const ALLOW_RULES: AllowRule[] = [
   { selector: '.prose h2[id]', kind: 'heading', anchorOf: (el) => el.id || null },
   { selector: '.prose h3[id]', kind: 'heading', anchorOf: (el) => el.id || null },
+  // Prose blocks get a stable content-hash id from the rehype-block-ids plugin, so a
+  // comment can attach to a paragraph/list-item/quote — not just a heading (B3).
+  { selector: '.prose p[id]', kind: 'prose', anchorOf: (el) => el.id || null },
+  { selector: '.prose li[id]', kind: 'prose', anchorOf: (el) => el.id || null },
+  { selector: '.prose blockquote[id]', kind: 'prose', anchorOf: (el) => el.id || null },
   { selector: '.prose tr.dt-row[id]', kind: 'decision', anchorOf: (el) => el.id || null },
   {
     selector: '.prose figure.flow-diagram[data-flow]',
