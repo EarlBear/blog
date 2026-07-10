@@ -1677,3 +1677,180 @@ a:focus:not(:focus-visible) {
   color: var(--color-text-muted);
   text-align: center;
 }
+
+/* ============================================================================
+   Design-post skeleton blocks — Requirements, Personas, UseCases. The substance
+   scaffolding a design post should carry (per the design-post-review skill):
+   whose life, what they can/can't/must do, and what it powers per actor.
+   Zero JS, semantic tokens, single light theme.
+   ============================================================================ */
+
+/* Shared eyebrow title for the skeleton blocks. */
+.requirements .req-title,
+.personas .pers-title,
+.usecases .uc-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.requirements,
+.personas,
+.usecases {
+  margin: var(--space-8) 0;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-sunken);
+}
+
+/* Requirements — one row per actor; must / can / cannot columns. */
+.requirements .req-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.requirements .req-group {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 3fr;
+  gap: var(--space-4);
+  align-items: start;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.requirements .req-group:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.requirements .req-actor {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.requirements .req-caps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+}
+.requirements .req-cap-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  margin-bottom: var(--space-1);
+}
+.requirements .req-cap--must .req-cap-label {
+  color: var(--eb-success);
+}
+.requirements .req-cap--can .req-cap-label {
+  color: var(--color-text-muted);
+}
+.requirements .req-cap--cannot .req-cap-label {
+  color: var(--eb-danger, var(--color-accent));
+}
+.requirements .req-cap ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+}
+.requirements .req-cap li + li {
+  margin-top: var(--space-1);
+}
+.requirements .req-caption,
+.personas .pers-caption,
+.usecases .uc-caption {
+  margin-top: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+/* Personas — role → impact, one per line. */
+.personas .pers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.personas .pers-item {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 3fr;
+  gap: var(--space-4);
+  align-items: baseline;
+}
+.personas .pers-role {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.personas .pers-impact {
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+}
+.personas .pers-before {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* UseCases — the three-column (EarlBear / Agent / Customer) value grid. */
+.usecases .uc-cols {
+  display: grid;
+  grid-template-columns: repeat(var(--uc-cols, 3), 1fr);
+  gap: var(--space-5);
+}
+.usecases .uc-actor {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.usecases .uc-col ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.usecases .uc-col li {
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+  padding-left: var(--space-3);
+  position: relative;
+}
+.usecases .uc-col li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+.usecases .uc-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* Stack the skeleton grids on narrow screens. */
+@media (max-width: 640px) {
+  .requirements .req-group,
+  .personas .pers-item {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  .usecases .uc-cols {
+    grid-template-columns: 1fr;
+  }
+}

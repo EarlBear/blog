@@ -103,16 +103,16 @@ A design post earns its place by teaching a real decision to someone who wasn't
 there. These are the substance checks — the ones the geometry gates can't see.
 
 **Do — the design-post skeleton** (a design post should answer these; see also
-`design-to-blog`):
-- **Requirements**, framed **per actor** as can / cannot / must — e.g. "EarlBear
-  leadership must be able to X", "the agent *should* do A and must *not* do B",
-  "customers can do C". Not a vague wishlist; an actor × capability contract.
-- **Personas** — *whose* life does this design touch? (leadership, operator, agent,
-  customer, partner — a consistent cast).
-- **Impact** — *what do they do with it*; the outcome / job-to-be-done, in concrete
-  terms.
-- **Use cases** — what does it power, framed in **three columns: EarlBear · Agent ·
-  Customer** (the same cast as the personas; `UseCaseDiagram` for the actor graph).
+`design-to-blog`). Each has a **component** — use it, don't hand-roll the section:
+- **Requirements** → the `Requirements` component: framed **per actor** as must /
+  can / cannot — "EarlBear leadership must be able to X", "the agent must *not* do
+  B", "customers can do C". An actor × capability contract, not a vague wishlist.
+- **Personas + impact** → the `Personas` component: *whose* life does this touch
+  (leadership, operator, agent, customer, partner — a consistent cast), and *what
+  they do with it* (the outcome/JTBD, concrete). role → impact, one per line.
+- **Use cases** → the `UseCases` component: what it powers in **three columns —
+  EarlBear · Agent · Customer** (same cast as the personas); pair it with a
+  `UseCaseDiagram` for the actor↔use-case graph.
 - **Options tied to the above** — the architecture-options section evaluates each
   option **against the stated requirements and use cases**, and justifies the
   choice by them. Generic, not project-jargon; the reader sees *why* the winner

@@ -1,0 +1,78 @@
+---
+/**
+ * UseCases — what a design powers, in three columns by actor: EarlBear · Agent ·
+ * Customer. It sits under (or beside) a UseCaseDiagram: the diagram shows the
+ * actor↔use-case graph; this lists the concrete use cases each actor gets, so the
+ * reader sees the value from every side. The three-column framing is deliberate —
+ * a design that only lists EarlBear's use cases hasn't shown the customer's.
+ *
+ * Columns default to EarlBear / Agent / Customer (the house cast) but can be
+ * overridden. Any column may be empty (renders a muted "—") so the asymmetry is
+ * visible rather than hidden.
+ *
+ * Usage in MDX:
+ *   <UseCases title="What it powers"
+ *     earlbear={['Attribute cost per employee', 'Rank leads by fit']}
+ *     agent={['Redact + sync telemetry', 'Draft outreach for review']}
+ *     customer={['Request a store review', 'See their own report']} />
+ *
+ * Or with custom columns:
+ *   <UseCases columns={[{ actor: 'Operator', items: [...] }, ...]} />
+ *
+ * Zero JavaScript, semantic tokens only. Gate: at least one column non-empty.
+ */
+export interface UseCaseColumn {
+  actor: string;
+  items: string[];
+}
+interface Props {
+  title?: string;
+  desc?: string;
+  /** The house three columns (any may be omitted / empty). */
+  earlbear?: string[];
+  agent?: string[];
+  customer?: string[];
+  /** Or supply columns explicitly (overrides the three above). */
+  columns?: UseCaseColumn[];
+}
+const { title = 'What it powers', desc, earlbear, agent, customer, columns } = Astro.props;
+
+const cols: UseCaseColumn[] = columns ?? [
+  { actor: 'EarlBear', items: earlbear ?? [] },
+  { actor: 'Agent', items: agent ?? [] },
+  { actor: 'Customer', items: customer ?? [] },
+];
+
+{
+  if (cols.every((c) => c.items.length === 0))
+    throw new Error(
+      `UseCases "${title}": every column is empty — give at least one actor a use case, ` +
+        `or drop the block.`
+    );
+}
+---
+
+<figure class="usecases" role="group" aria-label={desc ?? title} style={`--uc-cols:${cols.length}`}>
+  <p class="uc-title">{title}</p>
+  <div class="uc-cols">
+    {
+      cols.map((c) => (
+        <div class="uc-col">
+          <div class="uc-actor">{c.actor}</div>
+          {c.items.length > 0 ? (
+            <ul>
+              {c.items.map((item) => (
+                <li>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p class="uc-empty" aria-label="none">
+              —
+            </p>
+          )}
+        </div>
+      ))
+    }
+  </div>
+  {desc && <figcaption class="uc-caption">{desc}</figcaption>}
+</figure>
