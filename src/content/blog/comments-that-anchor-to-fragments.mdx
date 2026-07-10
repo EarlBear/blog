@@ -1,0 +1,166 @@
+---
+title: "Comments that anchor to a URL fragment, not a paragraph"
+description: "We wanted Figma-style comments on our internal blog: point at a spot in a post, leave a note, discuss it live. The hard part of every annotator is re-attaching a comment to text that moves when the post is edited. We sidestepped it entirely by only letting you comment on things that already have a URL fragment — a heading, a decision row, a diagram node — so re-attaching is a getElementById, not a fuzzy text match."
+pubDate: 2026-07-09
+tags: [engineering, agents]
+expects: [flow]
+authors: [omar]
+draft: true
+design: blog-comments
+audience: internal
+questions:
+  - Why is anchoring a comment to a paragraph the hard part, and how do you avoid it?
+  - How do comments get a verified @earlbear.com author without adding a login or a user table?
+  - How do you keep a database-write feature off the public build entirely, not just hidden?
+  - What happens to a comment when the thing it was attached to gets edited away?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
+
+We review each other's design posts, but the reviewing happened *around* the posts — in
+Slack threads, in a call, in memory. The feedback wasn't attached to the thing it was
+about, so it got lost. We wanted what Figma has: point at a spot, leave a comment, and
+have a threaded discussion anchored right there, live to whoever else is reading.
+
+The obvious way to build that is also the way that hurts. This is the design for the way
+that didn't.
+
+## The hard part is re-attaching, not attaching
+
+Attaching a comment is easy — you have a selection, you store it, you draw a marker.
+The pain is the *next* page load, after the post has been edited. The paragraph you
+commented on has a new sentence in front of it; the section was reordered; a typo was
+fixed three words away. Your stored "this is at character 4,210" now points at the middle
+of a different word.
+
+Every serious web annotator — Hypothesis, Medium, Google Docs — spends most of its
+complexity here. The web standard for it, the
+[W3C `TextQuoteSelector`](https://www.w3.org/TR/annotation-model/), stores the exact
+quoted text plus a prefix and suffix, then fuzzy-matches to re-find it after an edit.
+It works, mostly, and when it doesn't the comment "orphans" — it floats off, or worse,
+re-anchors to the wrong place.
+
+We didn't want to build or maintain that. So we changed the question: what if you could
+*only* comment on things that already have a stable address?
+
+## The constraint that removed the problem
+
+Our posts are full of stable anchors already — because we use them for deep-linking.
+Every heading has a slug id (`#the-hard-part`). Every decision row in a `DecisionTable`
+has an id (`#d1`). Every diagram node carries a `data-flow` or `data-node` attribute.
+These don't drift when you edit the prose around them; a heading id only changes if you
+reword the heading itself.
+
+So the rule is: **you can comment on an element only if it has a URL fragment pointing at
+it.** A comment stores that fragment id and nothing else. Re-attaching on load is then a
+one-liner — `document.getElementById(anchorId)` — with no fuzzy matching, no prefix and
+suffix, no orphan drift. Every comment thread is itself deep-linkable, for free.
+
+The trade is real and worth stating: you can't comment on an arbitrary sentence in a
+bare paragraph, because a bare `<p>` has no id. For reviewing *design decisions* — which
+is what these posts are — that turned out to be fine: the things worth arguing about are
+the headings, the decisions, and the diagram nodes, and those all have ids. If we ever
+want sentence-level comments, we can stamp ids onto paragraphs at build time and add them
+to the allowlist. It's an addition, not a rewrite. That's the tell of a good constraint:
+relaxing it later is cheap.
+
+<ComparisonMatrix
+  title="Ways to anchor a comment"
+  desc="Three anchoring models. Fragment-id-only trades reach for robustness — the right trade when the content already has the anchors."
+  options={[
+    { id: 'quote', label: '1. Text-quote (W3C)' },
+    { id: 'frag', label: '2. Fragment id only', chosen: true },
+    { id: 'block', label: '3. Build-time block ids' },
+  ]}
+  criteria={[
+    { label: 'Comment on arbitrary prose', cells: { quote: 'yes', frag: 'no', block: 'yes' } },
+    { label: 'Survives an edit without drift', cells: { quote: 'partial', frag: 'yes', block: 'yes' } },
+    { label: 'Re-attach is a simple lookup', cells: { quote: 'no', frag: 'yes', block: 'yes' } },
+    { label: 'No fuzzy matching / orphaning', cells: { quote: 'no', frag: 'yes', block: 'yes' } },
+    { label: 'Every thread is deep-linkable', cells: { quote: 'no', frag: 'yes', block: 'partial' } },
+    { label: 'Nothing new to build', cells: { quote: 'no', frag: 'yes', block: 'no' } },
+  ]}
+/>
+
+The allowlist is a *positive* list of selectors — headings, decision rows, diagram nodes,
+entity boxes — not a blocklist. That matters more than it sounds: a diagram's internal
+SVG carries ids too (gradients, markers, clip paths), and so do the modal titles our
+components render. A blocklist would have to know about all of those and would leak the
+next one we forget. An allowlist commits to the handful of things that are genuinely
+content.
+
+## The author has to be real, and the database has to know it
+
+A comment needs an author you can trust, and "trust" means the *database* enforces it,
+not the browser. The internal blog already sits behind Cloudflare Access, so we know
+you're an `@earlbear.com` Google account — but Cloudflare gates the *page*, and Supabase,
+where the comments live, had no idea who you were.
+
+We'd already solved exactly this for the dashboard (see
+[Who are you, to Supabase?](/blog/who-are-you-to-supabase/)): a Cloudflare Pages Function
+verifies the Access login and mints a short-lived Supabase JWT carrying your email, and
+supabase-js carries that token on both the REST calls and the live Realtime connection.
+RLS then does the enforcing.
+
+The only new decision was to stop copying that Function around. It had already been
+duplicated once, from another app into the dashboard, and the comment layer would have
+been a third copy. So we factored it into a shared package both apps import. The mint is
+the same; there's now one place it can be wrong.
+
+Row-level security does the rest, and it's the part worth checking on the wire, not just
+reasoning about:
+
+<FlowDiagram
+  title="A comment write, gated end to end"
+  desc="Cloudflare Access verifies the login; a Pages Function mints a Supabase JWT; RLS enforces the domain and pins the author to the verified email."
+  shape="pipeline"
+  legend
+  nodes={[
+    { id: 'you', label: 'You (@earlbear.com)', kind: 'external' },
+    { id: 'access', label: 'CF Access', detail: 'Gates the page via Google SSO; verified, unforgeable.' },
+    { id: 'mint', label: '/api/auth-token', detail: 'A Pages Function verifies the Access JWT and mints a 30-min Supabase JWT with your email claim.' },
+    { id: 'rls', label: 'RLS', kind: 'store', detail: 'Reads gated to %@earlbear.com; the insert pins author_email to the verified email — you cannot post as someone else.' },
+  ]}
+  edges={[
+    { from: 'you', to: 'access' },
+    { from: 'access', to: 'mint', label: 'verify' },
+    { from: 'mint', to: 'rls', label: 'Bearer JWT' },
+  ]}
+/>
+
+Proven against the real table with real minted tokens: a logged-in `@earlbear.com`
+account reads its post's comments; a validly-*signed* token for `attacker@evil.com` reads
+zero rows, because the filter is on the email claim, not the signature; an attempt to
+insert a comment with someone else's `author_email` is rejected with a 403; the anon key
+alone, with no token, reads nothing. The identity is in the database, not just at the
+door.
+
+## The public site gets none of this
+
+The same posts render on our public blog, which is a static GitHub Pages build with no
+server, no Cloudflare Access, and no business hosting a database-write path. So the goal
+wasn't to *hide* the comment layer on the public build — it was to make it structurally
+absent.
+
+Two mechanisms do that. The comment code's entry point is wrapped in a build-time check
+of which site is being built, so on the public build the whole thing — and the Supabase
+client it imports — is dead code the bundler drops. The styles are written so they ship
+only when the component actually renders, which on the public build it never does. And
+because "we did that correctly" is a claim, not a fact, the deploy step greps the built
+public output for any trace of the comment layer and fails if it finds one. The invariant
+is enforced, not asserted.
+
+## What would make this wrong
+
+The fragment-anchor bet is that the content you want to discuss already has stable
+addresses. That holds for design posts. It would break for, say, a long narrative essay
+where the interesting thing to comment on is a specific sentence in the middle of a
+paragraph — there, the reach of text-quote anchoring would be worth its fragility, or
+we'd reach for build-time block ids to give every paragraph an address. And the whole
+feature leans on the minted-JWT path; if maintaining the signing key ever costs more than
+the live updates are worth, the fallback is to drop Realtime and load comments on page
+open. The schema, the RLS, and the anchoring all survive that; only the "live" goes.
+
+None of those are true today, which is the point of writing them down: they're the
+conditions under which we'd change our minds.
