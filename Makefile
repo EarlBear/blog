@@ -8,9 +8,9 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status dev build build-internal preview deploy deploy-internal audience-check sync-assets \
+.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev build build-internal preview deploy deploy-internal audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check check \
-        bench-diagram clean
+        bench-diagram reconcile-comments clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -46,9 +46,14 @@ collect-secret: ## Seed placeholder(s) for VARS=<name...> in .env (gitignored), 
 
 encrypt: ## Encrypt .env in place (after pasting a secret — plaintext → dotenvx ciphertext)
 	./node_modules/.bin/dotenvx encrypt
+	@# Nudge: a new/changed secret means .env.keys may have changed (a first-ever encrypt
+	@# creates it). LastPass is its only backup — lose it and every `encrypted:` value is
+	@# unrecoverable. Advisory only (never blocks). Skip with EB_NO_BACKUP_NUDGE=1.
+	@[ "$${EB_NO_BACKUP_NUDGE:-}" = "1" ] || sh scripts/key-backup-nudge.sh
 
 decrypt: ## Decrypt .env locally (rarely needed; requires .env.keys)
 	./node_modules/.bin/dotenvx decrypt
+	@echo "  reminder: .env now holds PLAINTEXT — do NOT commit; run 'make encrypt' when done."
 
 key-backup: ## Back up .env.keys (dotenvx private key) to LastPass (source of truth)
 	@npm run --silent key-backup
@@ -58,6 +63,9 @@ key-restore: ## Restore .env.keys from LastPass (on a fresh clone / new machine)
 
 key-status: ## Show whether .env.keys is backed up in LastPass + present locally
 	@npm run --silent key-status
+
+signing-key-status: ## Report the local ES256 signing key (dev token-mint): present? shared symlink? gitignored?
+	@sh scripts/signing-key-status.sh
 
 ## --- develop -------------------------------------------------------------
 
@@ -124,12 +132,36 @@ expects-check: ## Nudge: flag a post whose frontmatter `expects` a visual it lac
 repo-map-check: ## Check the internal Repo Map (src/repo-map/artifact.html) data against the live earlbear-* ecosystem (drift → exit 1)
 	@node .claude/skills/manage-repo-map/scripts/scan-repos.mjs
 
-check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check ## Run all governance checks
+secrets-check: ## Fail if any tracked .env* holds a plaintext value (structural dotenvx guard)
+	@python3 .claude/hooks/check-env-encrypted.py --check
+
+check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check ## Run all governance checks
 
 ## --- measure --------------------------------------------------------------
 
 bench-diagram: ## A/B + perf harness for the use-case diagram → docs/diagram-bench.md
 	npm run bench:diagram
+
+## --- comments -------------------------------------------------------------
+
+# Range-anchored comments store their passage as text + context + a content-hash (Axis B4). When
+# a post is EDITED, that hash drifts. reconcile-comments re-locates each range passage in the
+# freshly-built post and emits the UPDATEs to re-anchor them — or FAILS LOUD (exit 1, full debug)
+# on a passage that's genuinely gone. Run it on-demand after editing a post that has comments;
+# it is NOT wired into build/deploy (keeps those fast + offline). See docs/comments-design.md B4.
+#
+# The DB read (fetch this post's range comments) + write-back (apply the UPDATEs) are done by the
+# operator via the Supabase MCP / a service-role wrapper — this target runs the pure reconcile
+# ENGINE over the built HTML + a comments JSON, so no service key touches this Makefile. Usage:
+#   make build-internal                                   # produce dist/blog/<slug>/index.html
+#   # fetch range comments for the post as JSON → comments.json (MCP select), then:
+#   make reconcile-comments SLUG=<slug> COMMENTS=comments.json
+#   # apply the printed `updates` as UPDATEs (MCP); orphans (exit 1) are reconciled by hand.
+reconcile-comments: ## Re-anchor a post's range comments after an edit (fail-loud on a gone passage). SLUG=<slug> COMMENTS=<file.json>
+	@test -n "$(SLUG)" || { echo "Usage: make reconcile-comments SLUG=<post-slug> COMMENTS=<file.json> [ALLOW_ORPHANS=1]"; exit 2; }
+	@test -n "$(COMMENTS)" || { echo "Usage: make reconcile-comments SLUG=<post-slug> COMMENTS=<file.json> [ALLOW_ORPHANS=1]"; exit 2; }
+	node scripts/reconcile-comments.mjs --slug "$(SLUG)" --comments "$(COMMENTS)" \
+	  $(if $(POST_COMMIT),--post-commit "$(POST_COMMIT)",) $(if $(ALLOW_ORPHANS),--allow-orphans,)
 
 ## --- ship ----------------------------------------------------------------
 

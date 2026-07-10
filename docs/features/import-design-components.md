@@ -52,8 +52,8 @@ the diagram catalog (`.claude/skills/enrich-post/catalog.md`).
 - https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Walkthrough.astro#L1-L69 — Walkthrough: interactive scene stepper (default slot = app scene, `scene-0…5` named slots, `steps` reference scenes by index + targets by selector).
 - https://github.com/EarlBear/blog/blob/0ce95f1/src/components/DecisionTable.astro#L1-L98 — DecisionTable: D1…Dn decisions with status badges, row anchors, click-to-focus detail modal; gate on duplicate id / unknown status.
 - https://github.com/EarlBear/blog/blob/0ce95f1/src/components/SequenceDiagram.astro#L1-L118 — SequenceDiagram: UML lifelines + ordered messages (sync/return/self) + loop/alt fragments; gate on unknown actor / out-of-bounds fragment.
-- https://github.com/EarlBear/blog/blob/0ce95f1/src/components/DataModel.astro#L1-L83 — DataModel: ER entity cards (PK/FK fields) + relationship list with crow's-foot cardinality; gate on unknown entity.
-- https://github.com/EarlBear/blog/blob/0ce95f1/src/styles/global.css#L829-L1141 — component styling (Callout, Assumption, Mockup, Walkthrough) in the shared global stylesheet, token-driven and reduced-motion-safe.
+- https://github.com/EarlBear/blog/blob/0ce95f1/src/components/DataModel.astro#L1-L426 — DataModel: a TRUE ERD — entity boxes (PK/FK fields) on a deterministic grid, connected by crow's-foot cardinality edges drawn as an SVG overlay; click a key to highlight it across related tables (PK ↔ its FKs); accepts native spec OR a Mermaid `erDiagram` string (parsed by `parseMermaidER`); visually-hidden relationship list is the no-JS/a11y fallback; gate on unknown entity.
+- https://github.com/EarlBear/blog/blob/0ce95f1/src/styles/global.css#L841-L1153 — component styling (Callout, Assumption, Mockup, Walkthrough) in the shared global stylesheet, token-driven and reduced-motion-safe.
 
 ## Notes
 

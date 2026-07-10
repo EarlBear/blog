@@ -9,18 +9,13 @@
 // Zero new dependencies: a manual hast tree walk (no unist-util-visit import needed). A rehype
 // plugin is just `() => (tree) => { … }`. Applied to every post via astro.config.mjs.
 
-const BLOCK_TAGS = new Set(['p', 'li', 'blockquote']);
+// hashText is the SHARED FNV-1a from src/lib/anchor-core.mjs — the same hash the browser and the
+// build-time reconcile use, so `eb-<hash>` block ids and range content_hashes never disagree.
+import { hashText } from '../src/lib/anchor-core.mjs';
 
-// A small, stable, non-cryptographic string hash (FNV-1a) → base36. Deterministic across
-// builds and Node versions; good enough to disambiguate blocks within a post.
-function hashText(s) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36);
-}
+// Note: this plugin id's p/li/blockquote (the B3 prose blocks). The reconcile's block set
+// (anchor-core BLOCK_TAGS) additionally includes h2/h3 for range context — a superset; fine.
+const BLOCK_TAGS = new Set(['p', 'li', 'blockquote']);
 
 // Collect the visible text of a hast node (its text descendants), collapsed.
 function textOf(node) {

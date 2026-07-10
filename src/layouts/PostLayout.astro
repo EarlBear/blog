@@ -14,6 +14,7 @@ interface Props {
   authors: string[];
   questions: string[];
   readingTime: number;
+  postCommit?: string;
 }
 
 const {
@@ -25,6 +26,7 @@ const {
   authors,
   questions,
   readingTime,
+  postCommit,
 } = Astro.props;
 const kicker = tags[0] ?? 'Blog post';
 ---
@@ -35,7 +37,7 @@ const kicker = tags[0] ?? 'Blog post';
   ogType="article"
   publishedTime={pubDate}
 >
-  <article class="article">
+  <article class="article" data-post-commit={postCommit}>
     <header class="post-header">
       <div class="brand-row">
         <span class="mark"><EarlMark size={24} /></span>

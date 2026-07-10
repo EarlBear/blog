@@ -1,9 +1,19 @@
 node_modules/
 dist/
 .astro/
-.env
-.env.keys
 .DS_Store
 __pycache__/
 *.pyc
-.signing-key.jwk.json
+
+# Secrets — NEVER commit. dotenvx keeps values in .env as `encrypted:` ciphertext, but the
+# raw files and the private decryption keys must stay local. Globbed so a renamed variant
+# (.env.local, .env.production.keys, .signing-key.dev.json) can't slip through. Mirrors
+# earlbear-agentic-workflow/.gitignore; the check-env-encrypted hook is the belt to this
+# suspenders (it fails a commit if a tracked .env* still holds a plaintext value).
+.env
+.env.local
+.env.keys
+.env.*.keys
+# ES256 signing key for the Supabase token exchange — private JWK (also matches the symlink
+# to the shared gtm key used for the local /api/auth-token mint). NEVER commit.
+.signing-key*.json

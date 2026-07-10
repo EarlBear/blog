@@ -5,7 +5,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase, currentEmail } from './supabaseClient';
 
-export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity' | 'prose';
+export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity' | 'prose' | 'range';
 
 export interface Comment {
   id: string;
@@ -19,7 +19,23 @@ export interface Comment {
   parent_id: string | null;
   resolved: boolean;
   created_at: string;
+  // Range-anchor durability fields (kind 'range' only; NULL for element anchors). See the
+  // three-layer model in docs/comments-design.md (Axis B4). Stored as TEXT + CONTEXT, never
+  // offsets/line-numbers — those don't survive an edit.
+  prefix: string | null; // ~PREFIX_LEN chars immediately before the selection
+  suffix: string | null; // ~SUFFIX_LEN chars immediately after the selection
+  context_anchor: string | null; // the enclosing block's full text (the fuzzy-match haystack)
+  post_commit: string | null; // git SHA of the post source when the comment was made
+  content_hash: string | null; // hash of context_anchor at comment time (drift detector)
 }
+
+// ---- Shared content-hash primitives ----------------------------------------------------------
+// hashText / normalizeText / similarity live in src/lib/anchor-core.mjs — the ONE canonical
+// implementation shared by the browser (here), the rehype block-id plugin, and the build-time
+// reconcile, so all three agree on when a block's text has drifted. Re-exported so existing
+// imports of these from './comments' keep working.
+export { hashText, normalizeText, similarity } from '../lib/anchor-core.mjs';
+import { hashText, normalizeText, similarity } from '../lib/anchor-core.mjs';
 
 // ---- Commentable-element ALLOWLIST -----------------------------------------
 // Only elements that already have a URL fragment (a meaningful content id) are
@@ -117,9 +133,29 @@ export function resolveAnchor(anchorId: string): HTMLElement | null {
 }
 
 function snapshotText(el: Element): string {
-  const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+  const t = normalizeText(el.textContent || '');
   return t.length > 80 ? t.slice(0, 77) + '…' : t;
 }
+
+// ---- Range anchoring (Axis B4) ---------------------------------------------
+// A comment on a free-text SELECTION that has no pre-existing fragment id. We stamp a real id,
+// wrap the selection in <mark data-comment-anchor="c-<hash>"> so it's an always-visible,
+// re-highlightable landmark, and persist enough CONTEXT (prefix/suffix + the enclosing block's
+// text + a content hash) to re-find the passage after the content is edited. See the three
+// layers in docs/comments-design.md.
+
+// buildRangeAnchor / wrapRange / resolveRangeAnchor + the three-layer re-anchor now live in the
+// shared @earlbear/comments lib (src/range.js). Re-exported here (the lib's defaults ARE the blog's
+// .prose selectors) so existing imports of these from './comments' keep working unchanged.
+export {
+  buildRangeAnchor,
+  wrapRange,
+  resolveRangeAnchor,
+  PREFIX_LEN,
+  SUFFIX_LEN,
+  FUZZY_THRESHOLD,
+} from '@earlbear/comments';
+export type { RangeAnchor } from '@earlbear/comments';
 
 function cssEscape(s: string): string {
   // Minimal CSS attribute-value escape (CSS.escape isn't for attribute values).
@@ -161,6 +197,12 @@ export interface NewComment {
   quotedText: string | null;
   body: string;
   parentId?: string | null;
+  // Range-anchor context (kind 'range' only). Left undefined for element anchors → stored NULL.
+  prefix?: string | null;
+  suffix?: string | null;
+  contextAnchor?: string | null;
+  postCommit?: string | null;
+  contentHash?: string | null;
 }
 
 /** Insert a comment. author_email is pinned by RLS to the JWT email; we send it to satisfy the
@@ -182,6 +224,12 @@ export async function postComment(c: NewComment): Promise<Comment | null> {
     body: c.body,
     author_email: author,
     parent_id: c.parentId ?? null,
+    // Range durability fields — NULL for element anchors, populated for kind 'range'.
+    prefix: c.prefix ?? null,
+    suffix: c.suffix ?? null,
+    context_anchor: c.contextAnchor ?? null,
+    post_commit: c.postCommit ?? null,
+    content_hash: c.contentHash ?? null,
   };
   const { data, error } = await sb.from(TABLE).insert(row).select().single();
   if (error) {

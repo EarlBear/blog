@@ -21,6 +21,13 @@
 {/* One shared composer dialog + one popover, reused for every anchor. The root is a
     positioning context for the absolutely-placed markers/affordances the script appends. */}
 <div class="cl-root" data-comment-layer>
+  {/* Comment-mode banner — shown while the reader is in "pick a target" mode (press C). Tells
+      them how to place a comment and how to exit. Hidden by default; toggled by the script. */}
+  <div class="cl-mode-hint" data-cl-mode-hint hidden role="status">
+    <span class="cl-mode-dot"></span>
+    <span>Comment mode — click a highlighted spot or select any text. <kbd>Esc</kbd> to exit.</span>
+  </div>
+
   <dialog class="cl-composer" aria-label="Add a comment">
     <form method="dialog" class="cl-composer-form">
       <p class="cl-composer-eyebrow">Comment on <span data-cl-target></span></p>
@@ -60,12 +67,16 @@
     findCommentables,
     commentableFor,
     resolveAnchor,
+    resolveRangeAnchor,
+    buildRangeAnchor,
+    wrapRange,
     loadComments,
     postComment,
     setResolved,
     subscribeComments,
     type Comment,
     type Commentable,
+    type RangeAnchor,
   } from '../data/comments';
   import { ensureIdentity, currentEmail } from '../data/supabaseClient';
 
@@ -81,7 +92,14 @@
 
     // Test hook: expose the pure allowlist/anchoring helpers so the Playwright suite can
     // assert them against the real rendered DOM (no backend needed). Harmless in prod.
-    (window as any).__commentLayer = { findCommentables, commentableFor, resolveAnchor };
+    (window as any).__commentLayer = {
+      findCommentables,
+      commentableFor,
+      resolveAnchor,
+      resolveRangeAnchor,
+      buildRangeAnchor,
+      wrapRange,
+    };
 
     if (root.dataset.audience === 'internal' && layer && prose && slugMatch) {
       const postSlug = decodeURIComponent(slugMatch[1]);
@@ -100,18 +118,25 @@
 
     // Comments keyed by anchor_id → array (top-level + replies flattened; parent_id threads them).
     let byAnchor = new Map<string, Comment[]>();
+    // The comment row backing each range anchor id — resolveRangeAnchor needs the full row
+    // (context/hash/prefix), not just the id, to re-find a drifted passage.
+    let rangeComments = new Map<string, Comment>();
 
     // Mutable UI state — declared BEFORE the wiring calls below, or the wiring functions would
     // reference these `let`s while they're still in the temporal dead zone (a ReferenceError).
-    let hoverBtn: HTMLButtonElement | null = null;
-    let hoverTarget: Commentable | null = null;
-    let hideT: number | undefined;
-    let composeFor: Commentable | null = null;
+    let commentMode = false; // C-mode: the "pick a target" cursor state (press C to toggle)
+    let composeFor: Commentable | null = null; // element anchor being composed on
+    let composeRange: RangeAnchor | null = null; // range anchor being composed on (kind 'range')
     let openThreadAnchor: string | null = null;
 
-    // Wire the interactions FIRST (synchronously) so the affordance/composer are live
-    // immediately — never blocked on the network. The async identity + comment load follow.
-    wireHoverAffordance(prose, postSlug);
+    // The post's version pin (git SHA of its source at build) — stamped onto range comments.
+    const postCommit = document.querySelector<HTMLElement>('article[data-post-commit]')?.dataset.postCommit || null;
+
+    const hint = layer.querySelector<HTMLElement>('[data-cl-mode-hint]');
+
+    // Wire the interactions FIRST (synchronously) so mode-toggle/composer are live immediately —
+    // never blocked on the network. The async identity + comment load follow.
+    wireCommentMode(prose, postSlug);
     wireComposer(postSlug);
     wireThread(postSlug);
 
@@ -146,21 +171,37 @@
 
     function indexComments(cs: Comment[]) {
       byAnchor = new Map();
+      rangeComments = new Map();
       for (const c of cs) {
         const list = byAnchor.get(c.anchor_id) ?? [];
         list.push(c);
         byAnchor.set(c.anchor_id, list);
+        // Keep the top-level range row (the one carrying the anchor context) per anchor id.
+        if (c.anchor_kind === 'range' && !c.parent_id) rangeComments.set(c.anchor_id, c);
       }
     }
 
     // ---- markers -----------------------------------------------------------
+    // Anchors whose element/passage couldn't be re-found this render. Surfaced in a reader-facing
+    // panel (#121) so a comment on drifted/deleted content is visibly ORPHANED, reachable via its
+    // thread — never silently missing. A range anchor reaches here only if all three re-anchor
+    // layers failed (exact hash, fuzzy context, existing mark).
+    let orphanAnchors: string[] = [];
+
     function renderAllMarkers() {
       // Clear existing markers, then place a count badge on each anchored element that has
       // comments and still resolves to a live element.
       layer.querySelectorAll('.cl-marker').forEach((m) => m.remove());
+      orphanAnchors = [];
       for (const [anchorId, list] of byAnchor) {
-        const el = resolveAnchor(anchorId);
-        if (!el) continue; // orphaned (element gone) — thread still exists, just no inline marker
+        // Range anchors re-find their passage via the durable-context resolver (layer 3);
+        // element anchors resolve by fragment id / data-* attribute.
+        const rangeRow = rangeComments.get(anchorId);
+        const el = rangeRow ? resolveRangeAnchor(rangeRow) : resolveAnchor(anchorId);
+        if (!el) {
+          orphanAnchors.push(anchorId); // thread still exists, just no inline marker
+          continue;
+        }
         const topLevel = list.filter((c) => !c.parent_id);
         const marker = document.createElement('button');
         marker.type = 'button';
@@ -176,7 +217,20 @@
         });
         positionMarker(marker, el);
         layer.appendChild(marker);
+
+        // For a range anchor, the <mark> highlight is itself the click target — clicking the
+        // highlighted phrase opens its thread (not just the gutter marker). Wire once per render.
+        if (rangeRow && el.classList.contains('cl-range') && !el.dataset.clWired) {
+          el.dataset.clWired = '1';
+          el.addEventListener('click', (e) => {
+            // Don't hijack a click that's placing a NEW selection while in comment mode.
+            if (commentMode && window.getSelection()?.toString().trim()) return;
+            e.stopPropagation();
+            openThread(anchorId);
+          });
+        }
       }
+      renderOrphanPanel();
     }
 
     function positionMarker(marker: HTMLElement, el: Element) {
@@ -187,86 +241,159 @@
       marker.style.left = `${window.scrollX + r.left - 34}px`;
     }
 
-    // ---- hover affordance --------------------------------------------------
-    // (hoverBtn / hoverTarget are declared at the top of initCommentLayer.)
-
-    function wireHoverAffordance(proseEl: Element, slug: string) {
-      hoverBtn = document.createElement('button');
-      hoverBtn.type = 'button';
-      hoverBtn.className = 'cl-add';
-      hoverBtn.title = 'Comment on this';
-      hoverBtn.setAttribute('aria-label', 'Comment on this');
-      hoverBtn.innerHTML =
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-      hoverBtn.hidden = true;
-      hoverBtn.addEventListener('click', () => {
-        if (hoverTarget) openComposer(hoverTarget, slug);
+    // ---- orphan panel (#121) ----------------------------------------------
+    // A reader-facing surface for comments whose anchored content has drifted/been deleted since
+    // they were written. Without it, an orphaned comment would just vanish from the page and a
+    // reader would never know a thread existed. The panel shows the count and, on click, lists
+    // each orphaned thread (its saved quote) so it's still reachable. Only appears when >0.
+    function renderOrphanPanel() {
+      let panel = layer.querySelector<HTMLElement>('[data-cl-orphans]');
+      if (orphanAnchors.length === 0) {
+        panel?.remove();
+        return;
+      }
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.className = 'cl-orphans';
+        panel.setAttribute('data-cl-orphans', '');
+        layer.appendChild(panel);
+      }
+      const n = orphanAnchors.length;
+      panel.replaceChildren();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cl-orphans-toggle';
+      btn.innerHTML = `<span class="cl-orphans-dot"></span>${n} comment${n === 1 ? '' : 's'} on changed content`;
+      const list = document.createElement('div');
+      list.className = 'cl-orphans-list';
+      list.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      btn.addEventListener('click', () => {
+        list.hidden = !list.hidden;
+        btn.setAttribute('aria-expanded', String(!list.hidden));
       });
-      layer.appendChild(hoverBtn);
+      for (const anchorId of orphanAnchors) {
+        const first = (byAnchor.get(anchorId) ?? [])[0];
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'cl-orphans-item';
+        // textContent only — the saved quote is user/authored text, never set:html.
+        const quote = first?.quoted_text || '(no quoted text)';
+        item.textContent = `“${quote.length > 60 ? quote.slice(0, 57) + '…' : quote}”`;
+        item.title = 'Open this thread — its anchored text was edited or removed';
+        item.addEventListener('click', () => openThread(anchorId));
+        list.appendChild(item);
+      }
+      panel.append(btn, list);
+      (window as any).__commentOrphans = orphanAnchors.length; // test hook (#121)
+    }
 
-      proseEl.addEventListener('mouseover', (e) => {
+    // ---- comment mode (C-mode) ---------------------------------------------
+    // C toggles a persistent "pick a target" cursor mode: every commentable element is
+    // highlighted, and while in mode a click on one (or a text selection) opens the composer.
+    // Esc or C again exits. This replaces the old hover-only affordance — you no longer have to
+    // find the right element by hovering; you enter mode and the whole post shows what's
+    // commentable, including free-text selection anywhere in the prose.
+    function wireCommentMode(proseEl: Element, slug: string) {
+      document.addEventListener('keydown', (e) => {
+        if (isTyping(e)) return;
+        // Toggle on plain "c" (no modifiers, so it never shadows ⌘C / Ctrl-C copy).
+        if ((e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          setCommentMode(!commentMode);
+        } else if (e.key === 'Escape' && commentMode) {
+          e.preventDefault();
+          setCommentMode(false);
+        }
+      });
+
+      // In mode: a click on a commentable ELEMENT composes an element anchor. (A text selection
+      // is handled on mouseup below, so a plain click that isn't a drag falls through to here.)
+      proseEl.addEventListener('click', (e) => {
+        if (!commentMode) return;
+        // If the reader just made a selection, let the selection path own it (don't double-fire).
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
         const c = commentableFor(e.target as Element);
         if (c) {
-          clearTimeout(hideT);
-          showAffordance(c);
-        } else if (e.target !== hoverBtn && !hoverBtn?.contains(e.target as Node)) {
-          // Over prose but not a commentable (and not the affordance itself) → hide it.
-          hideAffordanceSoon();
+          e.preventDefault();
+          openComposer(c, slug);
         }
       });
-      // Keep the affordance up while the cursor is on the button itself.
-      hoverBtn.addEventListener('mouseenter', () => clearTimeout(hideT));
-      hoverBtn.addEventListener('mouseleave', () => hideAffordanceSoon());
-      proseEl.addEventListener('mouseleave', () => hideAffordanceSoon());
-      // Keyboard: pressing "c" with a commentable focused/hovered opens the composer.
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'c' && hoverTarget && !isTyping(e)) {
-          e.preventDefault();
-          openComposer(hoverTarget, slug);
-        }
+
+      // In mode: finishing a text selection inside the prose opens the range composer.
+      document.addEventListener('mouseup', () => {
+        if (!commentMode) return;
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
+        // Only if the selection is inside the prose.
+        const anchorNode = sel.anchorNode;
+        if (!anchorNode || !(anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as Element))?.closest('.prose'))
+          return;
+        const ra = buildRangeAnchor(sel);
+        if (ra) openRangeComposer(ra, slug);
       });
     }
 
-    function showAffordance(c: Commentable) {
-      hoverTarget = c;
-      if (!hoverBtn) return;
-      const r = c.el.getBoundingClientRect();
-      hoverBtn.style.position = 'absolute';
-      hoverBtn.style.top = `${window.scrollY + r.top}px`;
-      hoverBtn.style.left = `${window.scrollX + r.right + 8}px`;
-      hoverBtn.hidden = false;
-    }
-    function hideAffordanceSoon() {
-      clearTimeout(hideT);
-      hideT = window.setTimeout(() => {
-        if (hoverBtn) hoverBtn.hidden = true;
-        hoverTarget = null;
-      }, 250);
+    function setCommentMode(on: boolean) {
+      commentMode = on;
+      root.dataset.commentMode = on ? 'true' : '';
+      if (!on) delete root.dataset.commentMode;
+      if (hint) hint.hidden = !on;
+      // Mark/unmark commentable elements so CSS can outline them while in mode.
+      prose.querySelectorAll('[data-cl-commentable]').forEach((el) => el.removeAttribute('data-cl-commentable'));
+      if (on) {
+        for (const c of findCommentables(prose)) c.el.setAttribute('data-cl-commentable', '');
+      }
+      (window as any).__commentMode = on; // test hook
     }
 
     // ---- composer ----------------------------------------------------------
-    // (composeFor is declared at the top of initCommentLayer.)
+    // (composeFor / composeRange are declared at the top of initCommentLayer.)
     function wireComposer(slug: string) {
       const input = composer.querySelector<HTMLTextAreaElement>('[data-cl-input]')!;
       const who = composer.querySelector<HTMLElement>('[data-cl-who]')!;
-      composer.querySelector('[data-cl-cancel]')!.addEventListener('click', () => composer.close());
+      composer.querySelector('[data-cl-cancel]')!.addEventListener('click', () => closeComposer());
       composer.querySelector('[data-cl-submit]')!.addEventListener('click', async () => {
         const body = input.value.trim();
-        if (!body || !composeFor) return;
+        if (!body) return;
         const email = currentEmail();
         if (!email) {
           who.textContent = 'Not signed in — cannot comment.';
           return;
         }
-        await postComment({
-          postSlug: slug,
-          anchorId: composeFor.anchorId,
-          anchorKind: composeFor.anchorKind,
-          quotedText: composeFor.label,
-          body,
-        });
+        if (composeRange) {
+          // Range anchor: stamp the <mark> into the live DOM NOW so the highlight is immediate,
+          // then persist the durable context (prefix/suffix/context_anchor/content_hash + the
+          // version pin). If the selection can't be wrapped we still save the anchor — the
+          // resolver re-finds it on reload.
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed) wrapRange(sel, composeRange.anchorId);
+          await postComment({
+            postSlug: slug,
+            anchorId: composeRange.anchorId,
+            anchorKind: 'range',
+            quotedText: composeRange.quotedText,
+            body,
+            prefix: composeRange.prefix,
+            suffix: composeRange.suffix,
+            contextAnchor: composeRange.contextAnchor,
+            contentHash: composeRange.contentHash,
+            postCommit,
+          });
+        } else if (composeFor) {
+          await postComment({
+            postSlug: slug,
+            anchorId: composeFor.anchorId,
+            anchorKind: composeFor.anchorKind,
+            quotedText: composeFor.label,
+            body,
+          });
+        } else {
+          return;
+        }
         input.value = '';
-        composer.close();
+        closeComposer();
         // Realtime will refresh; also refresh immediately for the author.
         loadComments(slug).then((cs) => {
           indexComments(cs);
@@ -274,12 +401,28 @@
         });
       });
       composer.addEventListener('click', (e) => {
-        if (e.target === composer) composer.close();
+        if (e.target === composer) closeComposer();
       });
+    }
+    function closeComposer() {
+      composeFor = null;
+      composeRange = null;
+      composer.close();
     }
     function openComposer(c: Commentable, _slug: string) {
       composeFor = c;
+      composeRange = null;
       composer.querySelector('[data-cl-target]')!.textContent = c.label || c.anchorId;
+      showComposer();
+    }
+    function openRangeComposer(ra: RangeAnchor, _slug: string) {
+      composeRange = ra;
+      composeFor = null;
+      const label = ra.quotedText.length > 60 ? ra.quotedText.slice(0, 57) + '…' : ra.quotedText;
+      composer.querySelector('[data-cl-target]')!.textContent = `“${label}”`;
+      showComposer();
+    }
+    function showComposer() {
       const who = composer.querySelector<HTMLElement>('[data-cl-who]')!;
       const email = currentEmail();
       who.textContent = email ? `as ${email}` : 'Not signed in';
@@ -394,31 +537,133 @@
     left: 0;
   }
 
-  /* Hover affordance — a small comment button beside a commentable element. */
-  .cl-add {
-    z-index: 40;
+  /* ---- Comment mode (C-mode) -------------------------------------------- */
+  /* While in mode the whole reading column gets a comment cursor, and every commentable
+     element is outlined so the reader can see what's targetable without hovering. Free-text
+     selection works anywhere in the prose (range anchors), so we also cue that. */
+  html[data-comment-mode='true'] .prose {
+    cursor: crosshair;
+  }
+  html[data-comment-mode='true'] [data-cl-commentable] {
+    outline: 2px dashed var(--color-accent);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+  }
+  html[data-comment-mode='true'] [data-cl-commentable]:hover {
+    outline-style: solid;
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+
+  /* Mode banner — a fixed status pill telling the reader they're in comment mode + how to exit.
+     The [hidden] attribute must win over this display rule, or the banner stays visible when the
+     script sets .hidden = true (CSS display beats the attribute's implicit display:none). */
+  .cl-mode-hint[hidden] {
+    display: none;
+  }
+  .cl-mode-hint {
+    position: fixed;
+    z-index: 60;
+    left: 50%;
+    bottom: var(--space-5, 1.25rem);
+    transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: var(--radius-md, 8px);
+    gap: var(--space-2, 0.5rem);
+    padding: 8px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
     background: var(--color-surface);
     color: var(--color-text-secondary);
+    font-size: var(--fs-sm);
+    box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.16));
+  }
+  .cl-mode-hint kbd {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    padding: 1px 5px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-surface-sunken);
+  }
+  .cl-mode-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-accent);
+  }
+
+  /* ---- Orphan panel (#121) ---------------------------------------------- */
+  /* A fixed, unobtrusive pill (top-right) that appears only when some comments couldn't be
+     re-anchored — their content drifted or was deleted. Click to list the orphaned threads so
+     they stay reachable instead of silently vanishing. */
+  .cl-orphans {
+    position: fixed;
+    z-index: 55;
+    top: var(--space-4, 1rem);
+    right: var(--space-4, 1rem);
+    max-width: min(320px, 88vw);
+  }
+  .cl-orphans-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2, 0.5rem);
+    padding: 6px 12px;
+    border: 1px solid var(--color-warning, var(--color-border));
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: var(--fs-sm);
     cursor: pointer;
-    box-shadow: var(--shadow-pop, 0 4px 24px rgba(32, 30, 26, 0.12));
-    transition: color 0.12s ease, border-color 0.12s ease;
+    box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.16));
   }
-  .cl-add:hover {
-    color: var(--color-accent);
-    border-color: var(--color-accent);
+  .cl-orphans-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-warning, var(--color-accent));
   }
-  .cl-add svg {
-    display: block;
-    width: 14px;
-    height: 14px;
+  .cl-orphans-list {
+    margin-top: var(--space-2, 0.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1, 0.25rem);
+    padding: var(--space-2, 0.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.16));
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  .cl-orphans-item {
+    text-align: left;
+    padding: 6px 8px;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .cl-orphans-item:hover {
+    background: var(--color-surface-sunken);
+    color: var(--color-text);
+  }
+
+  /* ---- Range highlight -------------------------------------------------- */
+  /* An always-visible mark on a commented text passage (kind 'range'). Uses a soft accent tint
+     so it reads as "annotated", not as a native <mark> yellow. Clickable to open the thread. */
+  .prose mark.cl-range {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: inherit;
+    border-radius: var(--radius-sm, 4px);
+    padding: 0 1px;
+    cursor: pointer;
+    box-decoration-break: clone;
+  }
+  .prose mark.cl-range:hover {
+    background: color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
 
   /* Per-anchor marker (comment count) in the gutter. */

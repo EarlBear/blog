@@ -11,6 +11,7 @@
     "build:internal": "PUBLIC_AUDIENCE=internal astro build",
     "preview": "astro preview",
     "audience-check": "python3 .claude/hooks/check-audience.py --check-dist dist",
+    "secrets-check": "python3 .claude/hooks/check-env-encrypted.py --check",
     "deploy": "PUBLIC_AUDIENCE=external python3 .claude/hooks/check-audience.py --assert-target external && npm run build:external && npm run audience-check && gh-pages -d dist --dotfiles --nojekyll -m \"Deploy blog\"",
     "deploy:internal": "PUBLIC_AUDIENCE=internal python3 .claude/hooks/check-audience.py --assert-target internal && npm run build:internal && python3 .claude/hooks/check-audience.py --check-dist dist --audience internal && rm -f dist/CNAME && ./node_modules/.bin/dotenvx run --quiet -- ./node_modules/.bin/wrangler pages deploy dist --project-name earlbear-blog-internal --branch main --commit-dirty=true",
     "key-backup": "scripts/lastpass-key.sh backup",
@@ -28,6 +29,8 @@
     "features:seed": "python3 scripts/features_check.py --seed",
     "regen-favicon": "node scripts/gen-favicon.mjs",
     "bench:diagram": "node --experimental-websocket scripts/diagram-bench.mjs",
+    "reconcile-comments": "node scripts/reconcile-comments.mjs",
+    "test:reconcile": "npm --prefix ../earlbear-comments test",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -35,6 +38,7 @@
     "@astrojs/rss": "^4.0.11",
     "@astrojs/sitemap": "^3.2.1",
     "@earlbear/cf-supabase-auth": "file:../earlbear-cf-supabase-auth",
+    "@earlbear/comments": "file:../earlbear-comments",
     "@earlbear/ui": "file:../earlbear-design-system",
     "@supabase/supabase-js": "^2.47.10",
     "astro": "^5.1.1"

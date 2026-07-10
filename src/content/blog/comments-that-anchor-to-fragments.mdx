@@ -1,6 +1,6 @@
 ---
-title: "Comments that anchor to a URL fragment, not a paragraph"
-description: "We wanted Figma-style comments on our internal blog: point at a spot in a post, leave a note, discuss it live. The hard part of every annotator is re-attaching a comment to text that moves when the post is edited. We sidestepped it entirely by only letting you comment on things that already have a URL fragment — a heading, a decision row, a diagram node — so re-attaching is a getElementById, not a fuzzy text match."
+title: "Comments that anchor to a URL fragment — until they had to anchor to a sentence"
+description: "We wanted Figma-style comments on our internal blog: point at a spot in a post, leave a note, discuss it live. The hard part of every annotator is re-attaching a comment to text that moves when the post is edited. We sidestepped it entirely by only letting you comment on things with a URL fragment — a heading, a decision row, a diagram node. Then the product needed to comment on a sentence, so we had to face the problem we'd dodged. This is both halves: the constraint that removed the hard part, and the three-layer durability model we built when we had to put it back."
 pubDate: 2026-07-09
 tags: [engineering, agents]
 expects: [flow]
@@ -10,9 +10,10 @@ design: blog-comments
 audience: internal
 questions:
   - Why is anchoring a comment to a paragraph the hard part, and how do you avoid it?
+  - When you can't avoid it, how do you keep a comment from being lost when a typo is fixed near it?
+  - Can a comment be pinned to the git version of the content it was written against?
   - How do comments get a verified @earlbear.com author without adding a login or a user table?
   - How do you keep a database-write feature off the public build entirely, not just hidden?
-  - What happens to a comment when the thing it was attached to gets edited away?
 ---
 
 import FlowDiagram from '../../components/FlowDiagram.astro';
@@ -67,21 +68,27 @@ relaxing it later is cheap.
 
 <ComparisonMatrix
   title="Ways to anchor a comment"
-  desc="Three anchoring models. Fragment-id-only trades reach for robustness — the right trade when the content already has the anchors."
+  desc="Four anchoring models. Fragment-id-only trades reach for robustness — the right first trade. Range-with-durability adds reach back, and pays for it with three layers of machinery instead of one lookup."
   options={[
     { id: 'quote', label: '1. Text-quote (W3C)' },
     { id: 'frag', label: '2. Fragment id only', chosen: true },
     { id: 'block', label: '3. Build-time block ids' },
+    { id: 'range', label: '4. Range + durability' },
   ]}
   criteria={[
-    { label: 'Comment on arbitrary prose', cells: { quote: 'yes', frag: 'no', block: 'yes' } },
-    { label: 'Survives an edit without drift', cells: { quote: 'partial', frag: 'yes', block: 'yes' } },
-    { label: 'Re-attach is a simple lookup', cells: { quote: 'no', frag: 'yes', block: 'yes' } },
-    { label: 'No fuzzy matching / orphaning', cells: { quote: 'no', frag: 'yes', block: 'yes' } },
-    { label: 'Every thread is deep-linkable', cells: { quote: 'no', frag: 'yes', block: 'partial' } },
-    { label: 'Nothing new to build', cells: { quote: 'no', frag: 'yes', block: 'no' } },
+    { label: 'Comment on arbitrary prose', cells: { quote: 'yes', frag: 'no', block: 'yes', range: 'yes' } },
+    { label: 'Highlight a phrase, not a block', cells: { quote: 'yes', frag: 'no', block: 'no', range: 'yes' } },
+    { label: 'Survives an edit without drift', cells: { quote: 'partial', frag: 'yes', block: 'yes', range: 'yes' } },
+    { label: 'Survives a typo fix in the passage', cells: { quote: 'partial', frag: 'yes', block: 'yes', range: 'yes' } },
+    { label: 'Re-attach is a simple lookup', cells: { quote: 'no', frag: 'yes', block: 'yes', range: 'no' } },
+    { label: 'Never misplaces onto wrong text', cells: { quote: 'no', frag: 'yes', block: 'yes', range: 'yes' } },
+    { label: 'Nothing new to build', cells: { quote: 'no', frag: 'yes', block: 'no', range: 'no' } },
   ]}
 />
+
+The first three rows are why we started at column 2 and stayed there for v1. The story
+below is how column 4 earned its place — and why it isn't just column 1 with a coat of
+paint.
 
 The allowlist is a *positive* list of selectors — headings, decision rows, diagram nodes,
 entity boxes — not a blocklist. That matters more than it sounds: a diagram's internal
@@ -151,16 +158,83 @@ because "we did that correctly" is a claim, not a fact, the deploy step greps th
 public output for any trace of the comment layer and fails if it finds one. The invariant
 is enforced, not asserted.
 
+## Then someone wanted to comment on a sentence
+
+The section above ends by naming the case that would break the bet: "a specific sentence
+in the middle of a paragraph." A few weeks in, that was the first thing people reached
+for. Highlight a phrase, leave a note, come back to it later. Fragment ids can't do that —
+a fragment addresses a whole element, never a span inside one. We had shipped the elegant
+constraint and immediately hit its edge.
+
+So we did the thing the v1 post said we might: we put the hard problem back. But not
+naively — text-quote anchoring alone is exactly the fragility we'd avoided, and the honest
+requirement was stronger than Hypothesis's "mostly works." The bar the team set was
+concrete: **a comment must not be lost because someone fixed a typo three words away.**
+Meeting that took three layers, not one.
+
+**Layer one — pin the comment to a version.** When you highlight a passage, we store the
+exact text, a little context on each side to disambiguate it, the id of the block it lives
+in — and two things a plain annotator doesn't keep: the **git commit** of the post at that
+moment, and a **hash of that block's text**. Now a comment isn't floating in an eternal
+present. On any later load we can ask a precise question: *has this block changed since the
+comment was written?* If the hash matches, the passage is byte-identical and we re-attach
+with zero searching. The hard case only runs when the content actually moved.
+
+**Layer two — reconcile at edit time, not on every reader's screen.** The usual annotator
+re-finds its anchors in the reader's browser, every load, forever — guessing against
+content it can't see the history of. We flipped that. When a post with comments is rebuilt,
+a step walks each commented passage, re-locates it in the *new* content while the diff is
+right there, and rewrites the stored anchor to match — new text, new hash, new commit. A
+typo fixed near the passage is absorbed here, once, authoritatively, instead of being
+re-guessed by everyone who opens the page. The comment heals at the moment of the edit.
+
+<FlowDiagram
+  title="Re-finding a highlighted passage, strongest signal first"
+  desc="On load or reconcile, a range comment resolves through a chain: unchanged block hash re-attaches instantly; a changed block falls to fuzzy text matching scoped by context; a passage that's genuinely gone degrades to the thread list and is never placed on the wrong text."
+  shape="branch"
+  legend
+  nodes={[
+    { id: 'start', label: 'Place a range' },
+    { id: 'hash', label: 'Hash match?', kind: 'edge', detail: 'Has the anchored block changed since the comment was written? A stored content-hash answers instantly.' },
+    { id: 'exact', label: 'Exact re-attach', detail: 'The passage is byte-identical to when the comment was written. 100% confidence, no search.' },
+    { id: 'fuzzy', label: 'Fuzzy match', detail: 'Search the saved quote within its block by similarity (≥ ~0.8, not exact), disambiguated by the surrounding text. Absorbs typos and small edits.' },
+    { id: 'found', label: 'Re-highlight', detail: 'Wrap the found range in a mark others can see, dimmed until hovered.' },
+    { id: 'orphan', label: 'Thread list', kind: 'store', detail: 'Flagged "passage no longer found," with its saved quote and author. Never placed on the wrong text.' },
+  ]}
+  edges={[
+    { from: 'start', to: 'hash' },
+    { from: 'hash', to: 'exact', label: 'yes' },
+    { from: 'hash', to: 'fuzzy', label: 'no' },
+    { from: 'fuzzy', to: 'found', label: 'match' },
+    { from: 'fuzzy', to: 'orphan', label: 'no match' },
+  ]}
+/>
+
+**Layer three — fail loud, never silently.** The reconcile is only trustworthy if a green
+build means *every* comment was accounted for. So an unresolved passage doesn't get quietly
+dropped — the build fails and tells us exactly what it needs: which post, which comment,
+who wrote it, the text it was on, the closest near-miss it found and how close, and what to
+do about it. A skipped comment that no one notices is worse than a build that stops and
+asks. The invariant is that comments are reconciled on purpose, not lost by accident.
+
+What we deliberately *don't* store is telling: no character offsets, no line numbers, no
+start/stop markers written into the post itself. Readers can't write into a committed post,
+and offsets shatter on the first reflow or rebuild. The anchor is text plus context plus a
+version — the things that let us re-derive the exact span every time, or admit honestly
+that we can't.
+
 ## What would make this wrong
 
-The fragment-anchor bet is that the content you want to discuss already has stable
-addresses. That holds for design posts. It would break for, say, a long narrative essay
-where the interesting thing to comment on is a specific sentence in the middle of a
-paragraph — there, the reach of text-quote anchoring would be worth its fragility, or
-we'd reach for build-time block ids to give every paragraph an address. And the whole
-feature leans on the minted-JWT path; if maintaining the signing key ever costs more than
-the live updates are worth, the fallback is to drop Realtime and load comments on page
-open. The schema, the RLS, and the anchoring all survive that; only the "live" goes.
+Two bets, two ways to be wrong. The first: that range comments are worth their machinery.
+If the reconcile starts flagging too many passages as needs-review at our editing pace, the
+fallback is to stop anchoring to spans and anchor a range comment to its enclosing block
+instead — keeping the exact selection only as displayed quote text. That trades the
+pixel-precise highlight for zero orphans, and everything under it — the schema, the version
+pin, the RLS — still stands. The second, unchanged from v1: the whole feature leans on the
+minted-JWT path; if maintaining the signing key ever costs more than live updates are
+worth, we drop Realtime and load comments on page open. The identity, the schema, and the
+anchoring all survive that; only the "live" goes.
 
-None of those are true today, which is the point of writing them down: they're the
-conditions under which we'd change our minds.
+Neither is true today, which is the point of writing them down: they're the conditions
+under which we'd change our minds — the same way "a sentence in a paragraph," written down
+in the first version of this post, is exactly the condition that got us here.

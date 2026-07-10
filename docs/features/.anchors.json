@@ -13,6 +13,13 @@
     "label": "Callout: `:::note/info/tip/warning[Title]` admonitions \u2192 a status-token box.",
     "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Callout.astro#L1-L36"
   },
+  "src/components/DataModel.astro#L1-L426": {
+    "context": "sha256:f130e0ed590db7e999c3add0396a53334fb476f227011b51f2f863fde6a50358",
+    "feature": "import-design-components",
+    "hash": "sha256:f130e0ed590db7e999c3add0396a53334fb476f227011b51f2f863fde6a50358",
+    "label": "DataModel: a TRUE ERD \u2014 entity boxes (PK/FK fields) on a deterministic grid, connected by crow's-foot cardinality edges drawn as an SVG overlay; click a key to highlight it across related tables (PK \u2194 its FKs); accepts native spec OR a Mermaid `erDiagram` string (parsed by `parseMermaidER`); visually-hidden relationship list is the no-JS/a11y fallback; gate on unknown entity.",
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/DataModel.astro#L1-L426"
+  },
   "src/components/DataModel.astro#L1-L83": {
     "context": "sha256:121b74d9b81a1e88ffd9d3c18f487b6c0362e6a9331f8bfe9b5cae3dd5a0a8af",
     "feature": "import-design-components",
@@ -48,7 +55,7 @@
     "label": "Walkthrough: interactive scene stepper (default slot = app scene, `scene-0\u20265` named slots, `steps` reference scenes by index + targets by selector).",
     "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Walkthrough.astro#L1-L69"
   },
-  "src/styles/global.css#L829-L1141": {
+  "src/styles/global.css#L841-L1153": {
     "context": "sha256:498dbb5d86c7a0e111d957e4261d4ffe858dc77ad1fddda9d40c399f0310bd79",
     "feature": "import-design-components",
     "hash": "sha256:7feaf15339d57ef1ee97bc1620a22c0a962b84a0f7cecb44ff4d75d7e82da2b2",
