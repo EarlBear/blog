@@ -1,0 +1,269 @@
+---
+title: "Supabase as our API: every frontend call and the RLS behind it"
+description: "Our frontends have no backend of their own — they talk to Postgres directly. This is the complete map: every read, write, and realtime subscription the browser makes, the table it hits, and the exact Row-Level Security predicate that is the real API contract."
+pubDate: 2026-07-10
+tags: [engineering, security]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - Our sites have no backend — so what exactly does the browser talk to, and how many different database calls does it make?
+  - For each of those calls, which table does it hit and what is it actually allowed to do?
+  - Where is the API contract enforced, if there's no API server to enforce it?
+  - Which calls can write, and what stops a logged-in user from writing something they shouldn't?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Three of our surfaces — the gtm dashboard, the Shopify scan fleet, and the blog's comment
+layer — are static sites. They build to HTML and JavaScript and sit on a CDN. None of them
+runs a server process of its own, and none of them has a REST API we wrote. Yet all three
+read and write a database, live.
+
+They do it by talking to Postgres directly. `supabase-js` in the browser is our API client;
+Supabase's PostgREST is our API server; and the API *contract* — who can call what, and what
+each call is allowed to return or change — is **Row-Level Security**, enforced in the database
+on every request. There is no middle tier to trust, because there is no middle tier.
+
+That design is only safe if you can point at every call the browser makes and say exactly what
+the database will let it do. This post is that inventory. It's the companion to
+[Every key in the system](/blog/every-key-in-the-system/) — that page maps every *credential*;
+this one maps every *call*. And it builds on [Who are you, to Supabase?](/blog/who-are-you-to-supabase/),
+which explains the one thing that makes RLS able to enforce identity at all: a minted
+`@earlbear.com` JWT the browser carries on every request.
+
+## Three surfaces, one database, no backend
+
+Every call below goes to the same shared Supabase project (`ldvaleamtfocaueqebvy`). The
+browser sends two things on each request: the **publishable key** (`apikey` header — public,
+identifies the project) and, when the user is logged in, the **minted JWT** (`Authorization`
+header — carries the verified `@earlbear.com` email). RLS reads that email out of the JWT and
+decides. No token, or a non-earlbear one, and every gated call returns nothing.
+
+<FlowDiagram
+  title="Who calls what"
+  shape="pipeline"
+  legend
+  desc="Three static frontends — the gtm dashboard, the scan fleet, and the blog comment layer — each call supabase-js in the browser, which reaches PostgREST and Realtime over the publishable key plus a minted @earlbear.com JWT; Row-Level Security in Postgres is the contract that decides every read, write, and subscription."
+  nodes={[
+    { id: 'front', label: 'Frontends', kind: 'external', detail: 'gtm dashboard (marts), scan fleet (sites/requests/runs), blog comment layer. All static, all behind CF Access on deploy.' },
+    { id: 'sbjs', label: 'supabase-js', detail: 'The browser client. Sends the publishable key as apikey and the minted JWT as the accessToken on every REST and Realtime call.' },
+    { id: 'rest', label: 'PostgREST', detail: 'Supabase turns each .from(table).select/insert/update into a SQL statement. There is no API code of ours here.' },
+    { id: 'rls', label: 'RLS', kind: 'edge', detail: 'The contract. Every statement runs under a policy that reads auth.jwt()->>email. This is where "who can do what" actually lives.' },
+    { id: 'pg', label: 'Postgres', kind: 'store', detail: 'The tables: marts, scan fleet, blog_comments. Also the source of Realtime postgres_changes events, which are re-filtered through the same RLS before delivery.' },
+  ]}
+  edges={[
+    { from: 'front', to: 'sbjs', label: 'call' },
+    { from: 'sbjs', to: 'rest', label: 'key + JWT' },
+    { from: 'rest', to: 'rls', label: 'check' },
+    { from: 'rls', to: 'pg', label: 'allow / deny' },
+  ]}
+/>
+
+The rest of this post walks the three surfaces and, for each call, gives the table, the
+operation, and the RLS predicate verbatim. The predicates are quoted from the migrations in
+`earlbear-clis/transcripts-cli/migrations/` — the source of truth, applied to Supabase via
+the `_prod.sql` half of each migration (the portable half holds only the table DDL, so the
+same schema runs in local Docker Postgres without any of this RLS).
+
+## Surface 1 — the dashboard reads the marts
+
+The gtm dashboard's "live" mode reads pre-aggregated metrics straight from Supabase
+(`src/data/useSnapshot.ts`). Five tables, all read-only, all plain `select *`:
+
+| Call (frontend) | Table | Op | What RLS allows |
+| --- | --- | --- | --- |
+| `sb.from('mart_workflow_metrics').select('*')` | `mart_workflow_metrics` | SELECT | authenticated `@earlbear.com` only |
+| `sb.from('mart_funnel_daily').select('*')` | `mart_funnel_daily` | SELECT | authenticated `@earlbear.com` only |
+| `sb.from('mart_recent_sessions').select('*')` | `mart_recent_sessions` | SELECT | authenticated `@earlbear.com` only |
+| `sb.from('mart_event_cost').select('*')` | `mart_event_cost` | SELECT | authenticated `@earlbear.com` only |
+| `sb.from('mart_agent_reporting').select('*')` | `mart_agent_reporting` | SELECT | authenticated `@earlbear.com` only |
+
+Every one of the five carries the identical read policy (from migration `011_marts_identity_prod`,
+later given a perf rewrite in `013`):
+
+```sql
+create policy mart_workflow_metrics_read on public.mart_workflow_metrics
+  for select to authenticated
+  using (((select auth.jwt()) ->> 'email') like '%@earlbear.com');
+```
+
+There is **no write policy** on any mart, and no column grant beyond `select` — the frontend
+can never change a mart. Marts are rebuilt server-side by the pipeline, not by anyone's browser.
+And the marts are **not** in the Realtime publication, so the dashboard's live reads are plain
+PostgREST `SELECT`s, not subscriptions — a refresh, not a push.
+
+The important detail is what happens *without* a token. These marts began life (migration `003`)
+with an anon `using (true)` read — anyone with the public key could read them. Migration `011`
+closed that: it revoked anon `select` and replaced `using (true)` with the identity predicate
+above. So the publishable key **alone** now reads nothing from any mart (a bare load returns 401 /
+empty). The key is inert; the minted JWT is what admits the read. That is the whole reason we
+could bake the publishable key into the browser bundle — it opens nothing on its own.
+
+## Surface 2 — the scan fleet reads three tables and writes one
+
+The scan-fleet page (`src/data/useScanFleet.ts`) shows a live wall of Shopify sites. It reads
+three tables, subscribes to all three for realtime updates, and can insert into exactly one.
+
+### The three reads (and their subscriptions)
+
+```ts
+sb.from('scan_sites').select('*').order('priority', { ascending: false })
+sb.from('scan_requests').select('*').order('requested_at', { ascending: false })
+sb.from('scan_runs').select('*').order('started_at', { ascending: false }).limit(300)
+```
+
+All three carry the same `@earlbear.com` read policy shape (migration `009`, InitPlan-rewritten
+in `014`):
+
+```sql
+create policy scan_sites_read on public.scan_sites
+  for select to authenticated
+  using (((select auth.jwt()) ->> 'email') like '%@earlbear.com');
+```
+
+All three are in the Realtime publication with `replica identity full`, so the page's one
+`.channel('scan-fleet')` subscription — three `postgres_changes` listeners on `scan_sites`,
+`scan_requests`, `scan_runs` — receives live inserts and updates. Realtime is not a way around
+RLS: Supabase re-runs the same read policy against each changed row before delivering the event,
+so a subscriber only ever receives rows they were already allowed to `select`.
+
+### The one write
+
+The only thing a dashboard user can write into the fleet is a review *request* — the "request a
+review" affordance:
+
+```ts
+sb.from('scan_requests').insert({ target_url, page_url, status: 'queued', requested_by: email })
+```
+
+This is the most instructive call in the whole map, because it shows how the database refuses to
+be lied to. The insert policy (migration `009`, `014`):
+
+```sql
+create policy scan_requests_authed_insert on public.scan_requests
+  for insert to authenticated
+  with check (
+    ((select auth.jwt()) ->> 'email') like '%@earlbear.com'
+    and requested_by = ((select auth.jwt()) ->> 'email')
+    and status      = 'queued'
+    and run_id      is null
+    and started_at  is null
+    and finished_at is null
+  );
+```
+
+Read the `with check` as the API's request validator, except it lives in Postgres and can't be
+skipped. It pins `requested_by` to *your own* JWT email — you cannot file a request as someone
+else. And it forces the row to be a genuinely fresh request: `status='queued'`, no `run_id`, no
+timestamps. A user cannot insert a row that pretends to already be running or finished, and cannot
+advance a request's state — there is **no update or delete policy** on `scan_requests` for
+authenticated at all. Only the service-role writer (the scan agent, off in its own process with
+the secret key) transitions `queued → scanning → done`. The frontend can ask; only the backend
+worker can answer.
+
+The column grant reinforces it — the browser may only insert four columns:
+
+```sql
+grant insert (target_url, page_url, status, requested_by) on public.scan_requests to authenticated;
+```
+
+## Surface 3 — the comment layer reads, inserts, and updates its own rows
+
+The blog's comment layer (`src/data/comments.ts`) is the richest surface: it reads, subscribes,
+inserts, and updates — all against one table, `blog_comments`.
+
+| Call (frontend) | Op | What RLS allows |
+| --- | --- | --- |
+| `.from('blog_comments').select('*').eq('post_slug', …).eq('env', …)` | SELECT | any `@earlbear.com` reader |
+| `.from('blog_comments').insert(row)` | INSERT | `@earlbear.com`, `author_email` pinned to you, `env ∈ {local, internal}` |
+| `.from('blog_comments').update({ resolved }).eq('id', …)` | UPDATE | only the row's **author** |
+| `.from('blog_comments').update({ deleted }).eq('id', …)` | UPDATE | only the row's **author** |
+| `.channel('blog_comments:…').on('postgres_changes', …)` | subscribe | delivered rows re-checked by the read policy |
+
+Reads are open to any `@earlbear.com` account (migration `015`):
+
+```sql
+create policy blog_comments_read on public.blog_comments
+  for select to authenticated
+  using (((select auth.jwt()) ->> 'email') like '%@earlbear.com');
+```
+
+Note what the read policy does *not* do: it doesn't filter on `post_slug`, `env`, `resolved`, or
+`deleted`. Those are client-side query filters (`.eq('post_slug', …).eq('env', …)`), not security
+boundaries. That's deliberate. Keeping soft-deleted rows `select`-able is what lets a deleted
+comment leave a "comment deleted" tombstone without orphaning its replies — the client hides the
+body; RLS still returns the row. The `env` filter separates the `local` scratch pool from the
+`internal` deploy pool, but it's a convenience, not a wall: both pools are equally readable by any
+signed-in teammate. (There is no external/public pool at all — the public site ships no comment
+layer, no functions, and no Supabase key, so anon reads nothing regardless.)
+
+Inserting a comment pins the author the same way the fleet pins the requester (migration `015`):
+
+```sql
+create policy blog_comments_insert on public.blog_comments
+  for insert to authenticated
+  with check (
+    (((select auth.jwt()) ->> 'email') like '%@earlbear.com')
+    and author_email = ((select auth.jwt()) ->> 'email')
+    and env in ('local', 'internal')
+  );
+```
+
+You cannot post a comment under someone else's name, and you cannot write an `env` outside the
+enum. Editing and deleting are the same single policy, scoped to the author (migration `015`):
+
+```sql
+create policy blog_comments_update_own on public.blog_comments
+  for update to authenticated
+  using      (author_email = ((select auth.jwt()) ->> 'email'))
+  with check (author_email = ((select auth.jwt()) ->> 'email'));
+```
+
+There is no separate policy for "resolve" versus "soft-delete" — both are just an `UPDATE`, and
+both are gated by *you own this row*. What distinguishes them is the **column grant**: the browser
+is allowed to update only three columns (migration `020`):
+
+```sql
+grant update (body, resolved, deleted) on public.blog_comments to authenticated;
+```
+
+So even the row's author cannot rewrite `post_slug`, `anchor_id`, `author_email`, or `created_at`
+through the client — only the three columns that editing, resolving, and soft-deleting actually
+touch. And there is **no delete policy**: comments are never hard-deleted from the browser, which
+is why a delete is really a `deleted=true` update. Like the fleet, `blog_comments` is in the
+Realtime publication with `replica identity full`, and delivered `postgres_changes` events are
+re-filtered by the read policy before they reach a subscriber.
+
+## The pattern: the write predicate is the API validator
+
+Line the write policies up and the shape is the same every time:
+
+- **`scan_requests` insert** pins `requested_by = auth.jwt()->>'email'`.
+- **`blog_comments` insert** pins `author_email = auth.jwt()->>'email'`.
+- **`blog_comments` update** requires `author_email = auth.jwt()->>'email'` to touch a row at all.
+
+In a conventional app this logic lives in an API handler: read the session, set `author = session.user`,
+reject anything else. We have the identical logic — but it lives in a `with check` clause, runs
+inside the transaction, and cannot be bypassed by calling a different endpoint, because there is no
+endpoint. The database is the endpoint, and the policy is the handler. A column grant then narrows
+*which fields* a call may touch, the way a validation schema would whitelist a request body.
+
+That's the whole trick of running without a backend: everything a backend would normally enforce —
+authentication, authorization, ownership, field-level write scoping — is expressed as RLS policies
+and grants on the tables themselves. The browser can issue any statement it likes; the contract is
+enforced one layer down, where the browser can't reach.
+
+## When this decision would be wrong
+
+This works because our authorization rules are *row-shaped and simple*: domain-gated reads, and
+writes that pin one column to the caller's identity. RLS expresses that cleanly. It would stop
+being the right tool the moment the rules stop being row-shaped — multi-row transactional
+invariants, a write whose legality depends on aggregating other rows, a workflow with steps that
+must run in order and can't be expressed as a per-row `with check`. The scan pipeline's
+`queued → scanning → done` transitions are exactly that kind of rule, which is why they *aren't*
+in a policy — they live in the service-role worker, deliberately outside the frontend's reach. The
+reversal trigger is the same one that applies to any "no backend" design: the first authorization
+rule you can't write as a predicate over a single row is the signal that this surface has earned a
+real server-side handler. Until then, the tables are the API, and RLS is the contract.
