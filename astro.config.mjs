@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
+import { devAuthToken } from './integrations/dev-auth-token.ts';
 
 // Which site this build is for, chosen by PUBLIC_AUDIENCE (set by the
 // build:internal / deploy:internal npm scripts). This picks the canonical
@@ -26,6 +27,10 @@ export default defineConfig({
   // in for .mdx files. No client JS is added — components render at build time.
   integrations: [
     mdx(),
+    // DEV/PREVIEW-ONLY: mints a local @earlbear.com token at /api/auth-token so the comment
+    // layer is testable in `astro dev` without CF Access. Its only hook is astro:server:setup,
+    // which never runs in a real `astro build`, so it adds nothing to a deployed artifact.
+    devAuthToken(),
     sitemap({
       // /repo-map/ is an INTERNAL-only standalone page (src/pages/repo-map.astro
       // self-guards to 404 on the external build). The sitemap integration

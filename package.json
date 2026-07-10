@@ -33,8 +33,10 @@
     "@astrojs/mdx": "^4.3.14",
     "@astrojs/rss": "^4.0.11",
     "@astrojs/sitemap": "^3.2.1",
-    "astro": "^5.1.1",
-    "@earlbear/ui": "file:../earlbear-design-system"
+    "@earlbear/cf-supabase-auth": "file:../earlbear-cf-supabase-auth",
+    "@earlbear/ui": "file:../earlbear-design-system",
+    "@supabase/supabase-js": "^2.47.10",
+    "astro": "^5.1.1"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.75.1",
