@@ -1891,3 +1891,23 @@ a:focus:not(:focus-visible) {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================
+   DEV-ONLY external-preview toggle (the internal badge in Nav). The attribute
+   data-preview="external" is set on <html> only by the dev toggle script, which
+   itself only exists in `astro dev` (import.meta.env.DEV). In any production
+   build the script is tree-shaken and the attribute never appears, so these
+   rules are inert there. Effect: hide internal-only post cards and re-tint the
+   accent to the external terra, to approximate the public site.
+   ============================================================================ */
+:root[data-preview='external'] .card[data-post-audience='internal'] {
+  display: none;
+}
+:root[data-preview='external'] {
+  --color-accent: var(--eb-terra, #b14726);
+  --color-accent-hover: #9a3d21;
+  --color-accent-press: #85351c;
+  --color-accent-soft: color-mix(in oklab, var(--eb-terra, #b14726) 12%, var(--color-surface));
+  --color-text-accent: #9a3d21;
+  --color-border-focus: var(--eb-terra, #b14726);
+}

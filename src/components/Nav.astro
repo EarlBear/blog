@@ -7,6 +7,11 @@ interface Props {
   internal?: boolean;
 }
 const { internal = false } = Astro.props;
+// On localhost only, the internal badge becomes a toggle that PREVIEWS the
+// external view (hides audience:internal post cards, swaps the theme + label).
+// It is a preview, not the real external build — that is `npm run build:external`
+// (dev shows every audience regardless of PUBLIC_AUDIENCE). Never rendered in prod.
+const devToggle = import.meta.env.DEV && internal;
 
 const links = [
   { href: '/', label: 'Posts' },
@@ -28,7 +33,18 @@ const links = [
     <span class="brand-text">EarlBear</span>
     <span class="brand-sub">blog</span>
   </a>
-  {internal && <span class="internal-badge">internal</span>}
+  {internal && !devToggle && <span class="internal-badge">internal</span>}
+  {devToggle && (
+    <button
+      type="button"
+      class="internal-badge internal-badge--toggle"
+      data-audience-toggle
+      title="Preview the external view (dev only). This hides internal-only posts and swaps the theme — it is a preview, not the real external build (npm run build:external)."
+      aria-pressed="false"
+    >
+      <span data-toggle-label>internal</span>
+    </button>
+  )}
   <div class="links">
     {links.map((l) => <a href={l.href}>{l.label}</a>)}
   </div>
@@ -46,6 +62,36 @@ const links = [
     </div>
   )}
 </nav>
+
+{
+  /* DEV-ONLY: the internal badge toggles an external PREVIEW. Sets data-preview on
+     <html> (CSS hides internal cards + swaps the theme), persists in localStorage.
+     import.meta.env.DEV is statically false in any production build, so this whole
+     block is tree-shaken out — it never ships. */
+  devToggle && (
+    <script is:inline>
+      (() => {
+        const KEY = 'eb-preview-audience';
+        const root = document.documentElement;
+        const btn = document.querySelector('[data-audience-toggle]');
+        const label = btn && btn.querySelector('[data-toggle-label]');
+        function apply(preview) {
+          if (preview === 'external') root.setAttribute('data-preview', 'external');
+          else root.removeAttribute('data-preview');
+          if (btn) btn.setAttribute('aria-pressed', preview === 'external' ? 'true' : 'false');
+          if (label) label.textContent = preview === 'external' ? 'external' : 'internal';
+        }
+        apply(localStorage.getItem(KEY) || 'internal');
+        if (btn)
+          btn.addEventListener('click', () => {
+            const next = root.getAttribute('data-preview') === 'external' ? 'internal' : 'external';
+            localStorage.setItem(KEY, next);
+            apply(next);
+          });
+      })();
+    </script>
+  )
+}
 
 {
   /* Internal-only: show the signed-in email. This is the ONLY client JS the internal blog ships,
@@ -146,6 +192,18 @@ const links = [
     text-transform: uppercase;
     letter-spacing: 0.08em;
     line-height: 1;
+  }
+  /* Dev-only preview toggle: same pill, but interactive. */
+  .internal-badge--toggle {
+    cursor: pointer;
+    transition: filter 0.12s ease;
+  }
+  .internal-badge--toggle:hover {
+    filter: brightness(0.96);
+  }
+  .internal-badge--toggle::after {
+    content: ' ⇄';
+    opacity: 0.6;
   }
   /* The nav links carry the single margin-left:auto — this pushes the links (and,
      on the internal build, the sign-out cluster that follows) to the right, with
