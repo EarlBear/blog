@@ -20,6 +20,7 @@ import DecisionTable from '../../components/DecisionTable.astro';
 import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
 import SequenceDiagram from '../../components/SequenceDiagram.astro';
 import DataModel from '../../components/DataModel.astro';
+import UseCases from '../../components/UseCases.astro';
 import Callout from '../../components/Callout.astro';
 import Assumption from '../../components/Assumption.astro';
 import Mockup from '../../components/Mockup.astro';
@@ -185,10 +186,10 @@ that becomes the action space for the future self-healing agent.
 
 ## Who is involved
 
-Three people meet the system directly: the growth operator who configures it and
-reviews leads, the sales partner who sends and reports outcomes, and the scanning
-agent that does the pipeline work. The prospect merchant is the target but never
-interacts with the system in Phase 1.
+Three roles act on the system: the growth operator configures it and reviews leads,
+the sales partner sends the approved outreach and reports outcomes, and the scanning
+agent runs the pipeline. The prospect merchant is the target but does not touch the
+system in Phase 1.
 
 <UseCaseDiagram
   title="Scanner and lead engine"
@@ -224,6 +225,16 @@ interacts with the system in Phase 1.
 LLM-driven orchestrator with tools), not a sales agent or a person. "Lead" means a
 scored, enriched ecommerce site record. "Operator" always means the growth operator.
 </Callout>
+
+<UseCases
+  title="What it powers, by actor"
+  desc="The same pipeline serves three sides: EarlBear's growth team, the agent that runs it, and — in the later self-healing phase — the prospect merchant."
+  columns={[
+    { actor: 'EarlBear', items: ['A ranked lead queue with auditable reasons', 'Per-employee throughput and cost', 'A repeatable ICP instead of hand-prospecting'] },
+    { actor: 'Agent', items: ['Discover, scan, size, contact, score, draft — cheap-first', 'Escalate to paid signals only as a lead earns it', 'Reuse every scan as an asset for the next stage'] },
+    { actor: 'Merchant (Phase 2)', items: ['A specific, prioritized fix list from the same scan', 'Self-healing remediation once detection is trusted'] },
+  ]}
+/>
 
 ## The eight decisions
 
@@ -284,42 +295,45 @@ asset; and a human on the send.
 
 ### Architecture options
 
-The options differ on how much we build versus buy and where the orchestration lives.
-They span a spectrum from renting a generic stack to owning a purpose-built engine.
+The build-versus-buy choice is really a question of who it serves. Each actor's use
+cases above set a bar: the operator needs a ranked queue with *auditable* reasons
+(not a vendor's opaque score), the agent needs to *own the signal taxonomy* so a scan
+is a reusable asset for the Phase 2 fix list, and EarlBear needs cost-per-lead under
+control at volume. The three options differ on how much of that they let us own — from
+renting a generic stack to owning a purpose-built engine. The criteria below are
+scored against those needs, not just engineering effort.
 
 <ComparisonMatrix
   title="Build-versus-buy options"
-  desc="Three ways to build the engine. Purpose-built over best-of-breed APIs is the best balance for a two-person Phase 1."
+  desc="Three ways to build the engine, scored against what each actor needs. Purpose-built over best-of-breed APIs is the best balance for a two-person Phase 1."
   options={[
     { id: 'clay', label: '1. Wrap an orchestrator' },
     { id: 'built', label: '2. Purpose-built + APIs', chosen: true },
     { id: 'inhouse', label: '3. Maximal in-house' },
   ]}
   criteria={[
-    { label: 'Time to first lead', cells: { clay: 'fastest', built: 'medium', inhouse: 'slowest' } },
-    { label: 'Build effort', cells: { clay: 'low', built: 'medium', inhouse: 'high' } },
-    { label: 'Cost at target volume', cells: { clay: 'high', built: 'medium', inhouse: 'low-ish' } },
+    { label: 'Operator: auditable score reasons', cells: { clay: 'no', built: 'yes', inhouse: 'yes' } },
+    { label: 'Agent: owns the signal taxonomy (Phase 2 asset)', cells: { clay: 'no', built: 'yes', inhouse: 'yes' } },
+    { label: 'EarlBear: cost-per-lead at target volume', cells: { clay: 'high', built: 'medium', inhouse: 'low-ish' } },
     { label: 'Ecommerce specialization', cells: { clay: 'no', built: 'yes', inhouse: 'yes' } },
-    { label: 'Owns signal taxonomy', cells: { clay: 'no', built: 'yes', inhouse: 'yes' } },
-    { label: 'Vendor lock-in', cells: { clay: 'high', built: 'partial', inhouse: 'yes' } },
-    { label: 'Maintenance burden', cells: { clay: 'low', built: 'medium', inhouse: 'high' } },
-    { label: 'Fit for two-person Phase 1', cells: { clay: 'partial', built: 'yes', inhouse: 'no' } },
+    { label: 'Time to first lead', cells: { clay: 'fastest', built: 'medium', inhouse: 'slowest' } },
+    { label: 'Build + maintenance burden', cells: { clay: 'low', built: 'medium', inhouse: 'high' } },
+    { label: 'Vendor lock-in (swappability)', cells: { clay: 'high', built: 'partial', inhouse: 'yes' } },
+    { label: 'Fit for a two-person Phase 1', cells: { clay: 'partial', built: 'yes', inhouse: 'no' } },
   ]}
 />
 
-The recommendation is option 2, a purpose-built engine over best-of-breed APIs, with
-a pragmatic on-ramp borrowed from option 1. Phase 1a stands up the pipeline skeleton
-but leans on the highest-leverage paid API per stage to prove the loop and unit
-economics fast; Phase 1b deepens the scanner and signal taxonomy (the Phase 2 asset)
-and tunes the cheap-first escalation to hit the cost-per-lead ceiling. Option 3
-(maximal in-house over raw substrate) is deferred until volume economics justify the
-engineering.
-
-Option 2 is the only option that simultaneously controls cost at the target volume,
-produces the reusable signal taxonomy that de-risks Phase 2 (option 1 does not), and
-avoids the premature engineering load of option 3 for a two-person team. Every
-external provider sits behind our own interface, so any single vendor is swappable
-without re-architecting.
+Option 2 wins because it is the only one that clears every actor's bar at once. It
+gives the operator auditable reasons and the agent an owned signal taxonomy — which
+option 1 (wrapping a generic orchestrator) cannot, because the score and the taxonomy
+live inside the vendor. It controls cost-per-lead at volume without option 3's
+premature engineering load, which a two-person team can't carry. The on-ramp borrows
+option 1's speed: Phase 1a stands up the pipeline skeleton but leans on the
+highest-leverage paid API per stage to prove the loop and unit economics fast; Phase
+1b deepens the scanner and the signal taxonomy and tunes the cheap-first escalation to
+the cost-per-lead ceiling. Option 3 (maximal in-house over raw substrate) is deferred
+until volume economics justify the engineering. Every external provider sits behind
+our own interface, so any single vendor is swappable without re-architecting.
 
 ## Components
 
