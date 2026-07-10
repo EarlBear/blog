@@ -22,7 +22,13 @@
  *
  * Props are UNCHANGED from the prior list-form DataModel, so existing posts keep
  * working — only the rendering became a real ER graph.
+ *
+ * Authoring: supply the native `entities`/`relations` spec, OR a Mermaid `erDiagram`
+ * string via `mermaid=` — the shared engine's parseMermaidER converts it (our own
+ * extended Mermaid, ER edition; no Mermaid runtime).
  */
+import { parseMermaidER } from '@earlbear/ui/diagram';
+
 export type FieldKey = 'pk' | 'fk';
 export interface EntityField {
   name: string;
@@ -49,13 +55,28 @@ export interface Relation {
 interface Props {
   title: string;
   desc?: string;
-  entities: Entity[];
-  relations: Relation[];
+  /** Native spec — supply these, OR supply `mermaid` and the engine parses it. */
+  entities?: Entity[];
+  relations?: Relation[];
+  /** A Mermaid `erDiagram` string (the extended-Mermaid path). Parsed into
+   *  entities/relations via @earlbear/ui/diagram's parseMermaidER. */
+  mermaid?: string;
   /** Fixed number of grid columns. Default: a near-square packing of the count. */
   columns?: number;
 }
 
-const { title, desc, entities, relations, columns } = Astro.props;
+const { title, desc, mermaid, columns } = Astro.props;
+
+// Either a native spec (entities/relations) or a Mermaid erDiagram string. The parser
+// output already matches the Entity/Relation shape.
+const { entities, relations } =
+  mermaid != null
+    ? (parseMermaidER(mermaid) as { entities: Entity[]; relations: Relation[] })
+    : { entities: Astro.props.entities ?? [], relations: Astro.props.relations ?? [] };
+
+if (!mermaid && (Astro.props.entities == null || Astro.props.relations == null)) {
+  throw new Error(`DataModel "${title}": supply either \`mermaid\` or both \`entities\` and \`relations\`.`);
+}
 
 // ---- Build-time gates ------------------------------------------------------
 {
