@@ -49,20 +49,57 @@ Note the current posts describe real EarlBear systems (the agentic workflow, the
 telemetry pipeline) but at a *storytelling* level — that's external-safe. It tips
 to internal only when it exposes something unreleased or operationally sensitive.
 
+## The paired-post pattern (read this before judging)
+
+A common EarlBear shape: a topic ships as **two posts** — an external *"what it does"*
+lead (`X.mdx`, `audience: external`) plus a more detailed internal companion
+(`X-design.mdx`, `audience: internal`). The pair is deliberate: the public lead tells the
+story; the internal `-design` post holds the mechanism, decisions, data model, and anything
+that would over-share.
+
+This changes the judgment two ways:
+- **A `-design` companion being `internal` is correct by design** — don't "fix" it toward
+  external just because it reads polished. `check-audience-fit.py` knows this and suppresses
+  that nudge for paired posts; apply the same restraint by hand.
+- **The external LEAD deserves *extra* scrutiny, not less.** Because its detailed half is
+  hidden internally, it's tempting to let the public lead carry more mechanism than it
+  should. Run `external-post-review` on the lead specifically (the moat can be narrated in
+  plain prose — see that skill). If softening the lead guts it, the lead itself may belong
+  internal too — which is exactly what happened with `ecommerce-site-scanner` (both halves
+  are now internal).
+
 ## Recommending and making moves
 
 1. For each flagged post, decide: leave, or move — and **say why** in one line
    (which criterion it hits). Don't move on the check's say-so alone; the check
    finds candidates, you make the call.
-2. To move a post, change only its `audience:` frontmatter field
-   (`external` ↔ `internal`). Nothing else changes — the same source post just
-   builds into a different site.
+2. **To move a post to `internal`, do the full flip — not just the field.** The
+   `audience:` change is the core of it, but confirm the rest so the move is complete and
+   traceable:
+   - **`audience:`** — set to `internal` (the one field that actually reroutes the build).
+   - **`blog:` / `design:` traceability** — if a design doc points at this post via a
+     `blog:` back-reference (or this post carries a `design:` link), check the chain still
+     makes sense internal-side; `check-traceability` validates it. Moving a post doesn't
+     break the link, but a *published* external post that becomes internal shouldn't still
+     be advertised as the public face of a design — reconcile the back-reference.
+     (`comments-design.md` deliberately leaves `blog:` unwired until public publish — the
+     same principle: don't claim a public URL for something that isn't public.)
+   - **`draft:`** — a post moving to internal is often still WIP; leave `draft: true` unless
+     it's genuinely ready for the internal review pool. Drafts are excluded from the public
+     build regardless, so this only affects what the internal site shows.
+   - **RSS/sitemap** — automatic: the external build excludes internal posts from
+     `rss.xml` + the sitemap, so a moved post drops out of public discovery on the next
+     build. Nothing to hand-edit; just don't assume the *old* public URL keeps working.
+   - Moving the OTHER direction (`internal → external`) is the dangerous one — treat it like
+     a publish: run `external-post-review` first (§paired-post), then the leak gate below.
 3. **Verify the move didn't leak.** Before any public deploy, build external and run
    the deploy gate: `npm run build:external && npm run audience-check` (greps the
    built `dist/` — the real artifact). A post moved to `internal` must be absent
    from the external `dist/`.
-4. Record notable moves (and the reason) so the classification rationale is
-   discoverable, not just a silent frontmatter flip.
+4. **Record the move + why** in `docs/features/audience-split.md` (the "Reclassification
+   log" — a dated one-liner) so the rationale is discoverable, not a silent frontmatter flip
+   — especially for a post that *was* public and is now internal (someone may have the old
+   URL).
 
 ## When to run
 

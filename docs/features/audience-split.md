@@ -122,3 +122,28 @@ Consequences worth knowing:
   **blog's own** `CF_ACCESS_AUDIENCE` (distinct from gtm's) on `earlbear-blog-internal`.
 - `src/content/blog/internal-only-example.md` is a fixture proving the split; delete
   it once you have a real internal post.
+
+## Paired posts (external lead + internal `-design` companion)
+
+A recurring shape: a topic ships as **two** posts — an external *"what it does"* lead
+(`X.mdx`, `audience: external`) and a detailed internal companion (`X-design.mdx`,
+`audience: internal`). The pair is deliberate: the public lead tells the story; the internal
+`-design` post holds the mechanism, decisions, and anything that would over-share.
+`check-audience-fit.py` is pair-aware — it does **not** nudge an internal post toward external
+just for reading polished when it's part of a pair, and it applies *extra* scrutiny to the
+external lead (its detail lives hidden internally, so the moat can creep into the public half).
+When judging a lead, run the `external-post-review` skill on it specifically; if softening
+guts it, the lead itself belongs internal too. See the `audience-audit` skill for the full
+reclassification workflow.
+
+## Reclassification log
+
+Notable audience moves (dated), so the rationale is discoverable and old public URLs aren't a
+mystery. A public→internal move is the one worth recording — someone may have the old link.
+
+- **2026-07-10 — `ecommerce-site-scanner` → `internal`** (was `external`). The public lead of
+  the scanner/lead-engine pair narrated the go-to-market mechanism (how the agent discovers
+  stores, finds contacts, scores leads, drafts outreach) — EarlBear's moat, in plain prose.
+  Softening it to outcome-only would gut it, so the lead joined its `-design` companion as
+  internal. Both halves are now `internal`. This also drove the `external-post-review` skill's
+  "business mechanism in plain prose" moat category + the pair-aware audience-fit fix.
