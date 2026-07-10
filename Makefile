@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev build build-internal preview deploy deploy-internal audience-check sync-assets \
+.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check anchor-ids-check check \
         bench-diagram reconcile-comments clean
 
@@ -80,8 +80,27 @@ node_modules: package-lock.json
 	npm ci
 	@touch node_modules
 
-dev: ## Run the local dev server (drafts visible) at localhost:4343
+dev: ## Run the local dev server for the EXTERNAL/public site (drafts visible) at localhost:4343
+	@# Plain `astro dev` = the PUBLIC audience: no comment layer, no Supabase, no CF-Access-gated
+	@# content — a preview of exactly what ships to blog.earlbear.com. This is intentional; for the
+	@# INTERNAL site with the comment layer, use `make dev-internal`. Bare `astro dev` needs NO
+	@# secrets (the external build reads none), so it does not go through dotenvx.
 	npm run dev
+
+# The blessed way to run the INTERNAL site locally (comment layer, Supabase-backed). TWO things
+# the plain `astro dev` gets wrong and silently degrade with NO error until you hit the comment
+# layer (learned the hard way — see docs/run-locally.md / the run-blog-locally skill):
+#   1. PUBLIC_AUDIENCE=internal — else Astro compiles the internal audience OUT: the comment layer
+#      is tree-shaken, `data-audience=external`, and pressing C does nothing (looks like a bug).
+#   2. dotenvx run -- — else Astro reads .env as raw text and inlines the dotenvx CIPHERTEXT
+#      (`PUBLIC_SUPABASE_URL="encrypted:…"`) verbatim → supabase-js throws
+#      "Invalid supabaseUrl" at createClient and the layer never initializes. dotenvx DECRYPTS
+#      .env first (needs .env.keys), so the real https:// URL + publishable key reach the build.
+# Local token minting is handled by the DEV-ONLY dev-auth-token integration (identity defaults to
+# dev@earlbear.com / EB_DEV_LOGIN_EMAIL), which needs the local signing key — see
+# `make signing-key-status`. No key → the layer loads but reads nothing (the secure empty default).
+dev-internal: ## Run the local dev server for the INTERNAL site WITH the comment layer (dotenvx-decrypted, PUBLIC_AUDIENCE=internal) at localhost:4343
+	PUBLIC_AUDIENCE=internal ./node_modules/.bin/dotenvx run --quiet -- npx astro dev --port 4343
 
 build: node_modules ## Production build to dist/ (external site: drafts + internal posts excluded)
 	npm run build:external
