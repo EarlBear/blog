@@ -4,6 +4,11 @@ import EarlMark from '../components/EarlMark.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import TagPill from '../components/TagPill.astro';
 import Byline from '../components/Byline.astro';
+// hashText: the shared content-hash so the Questions box + each question get the same eb-<hash>
+// anchor ids the rehype stamper / comment reconcile use. The Questions aside lives HERE (outside
+// the content rehype sees), so it must be stamped in this layout to be commentable.
+import { hashText } from '../lib/anchor-core.mjs';
+const ebId = (text: string) => `eb-${hashText((text || '').replace(/\s+/g, ' ').trim())}`;
 
 interface Props {
   title: string;
@@ -64,10 +69,17 @@ const kicker = tags[0] ?? 'Blog post';
       </div>
     </header>
 
-    <aside class="questions" aria-label="Questions this post answers">
+    <aside
+      class="questions"
+      aria-label="Questions this post answers"
+      id={ebId('Questions this post answers ' + questions.join(' '))}
+      data-anchor-kind="component"
+    >
       <h2>Questions this post answers</h2>
       <ul>
-        {questions.map((q) => <li>{q}</li>)}
+        {questions.map((q) => (
+          <li id={ebId(q)} data-anchor-kind="row">{q}</li>
+        ))}
       </ul>
     </aside>
 

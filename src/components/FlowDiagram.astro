@@ -147,7 +147,13 @@ for (const w of warnings) console.warn(`[flow-diagram] warning: ${w}`);
               : `M ${ed.x1} ${ed.y1} L ${ed.x2} ${ed.y2}`;
             return (
               <g class="flow-edge" data-edge={ed.id}>
+                {/* Invisible WIDE hit-path over the same curve: the visible arrow is a ~1.5px
+                    hairline that's painful to hover for commenting, so this fat transparent band
+                    gives the pointer a generous target. No marker/animation — purely the hit area.
+                    Rendered first so the visible line + label paint on top. */}
+                <path class="flow-edge-hit" d={path} fill="none" />
                 <path
+                  class="flow-edge-line"
                   d={path}
                   fill="none"
                   marker-end={`url(#${salt}-arrow)`}

@@ -459,9 +459,19 @@ a:focus:not(:focus-visible) {
   text-anchor: middle;
   dominant-baseline: central;
 }
-.flow-diagram .flow-edge path {
+.flow-diagram .flow-edge-line {
   stroke: var(--color-border-strong);
   stroke-width: 1.5;
+}
+/* A fat transparent band along the arrow so the hairline is easy to hover/click (commenting).
+   pointer-events:stroke = only the stroked band is interactive, not the bounding box; the visible
+   line + marker sit on top and never intercept. Inert until the comment layer needs it, but a wide
+   invisible target does no harm at rest either. */
+.flow-diagram .flow-edge-hit {
+  stroke: transparent;
+  stroke-width: 16;
+  stroke-linecap: round;
+  pointer-events: stroke;
 }
 /* Edge labels sit in a chip so they stay legible over lines and gradient boxes. */
 .flow-diagram .flow-edge-label-chip {
@@ -483,8 +493,9 @@ a:focus:not(:focus-visible) {
   text-align: center;
 }
 
-/* Motion: edges draw in, boxes fade in. Reduced-motion → final state. */
-.flow-diagram .flow-edge path {
+/* Motion: edges draw in, boxes fade in. Reduced-motion → final state. Only the VISIBLE line
+   animates — the transparent hit-path has no --len and must not be dashed. */
+.flow-diagram .flow-edge-line {
   stroke-dasharray: var(--len);
   stroke-dashoffset: var(--len);
   animation: flow-draw var(--dur-deliberate, 480ms) var(--ease-decelerate, ease-out) forwards;
@@ -502,7 +513,7 @@ a:focus:not(:focus-visible) {
   to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .flow-diagram .flow-edge path {
+  .flow-diagram .flow-edge-line {
     stroke-dasharray: none;
     stroke-dashoffset: 0;
     animation: none;

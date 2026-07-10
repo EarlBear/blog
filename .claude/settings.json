@@ -29,6 +29,15 @@
             "command": "python3 .claude/hooks/guard-task-deletion.py"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-blog-dev-env.py"
+          }
+        ]
       }
     ],
     "PostToolUse": [

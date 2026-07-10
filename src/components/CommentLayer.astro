@@ -134,9 +134,16 @@
 
     const hint = layer.querySelector<HTMLElement>('[data-cl-mode-hint]');
 
+    // The comment ROOT is the whole `.article`, NOT just `.prose`. Commentable elements the build
+    // stamps (the "Questions this post answers" aside + other component boxes) live in PostLayout
+    // OUTSIDE `.prose` — a sibling under `.article`. Scoping the click/selection/highlight to
+    // `.prose` (as this once did) left those boxes recognized by the allowlist but un-clickable in
+    // comment mode. Everything interactive uses `commentRoot` so the aside is reachable too.
+    const commentRoot = (prose.closest('.article') as Element) || prose;
+
     // Wire the interactions FIRST (synchronously) so mode-toggle/composer are live immediately —
     // never blocked on the network. The async identity + comment load follow.
-    wireCommentMode(prose, postSlug);
+    wireCommentMode(commentRoot, postSlug);
     wireComposer(postSlug);
     wireThread(postSlug);
 
@@ -294,7 +301,7 @@
     // Esc or C again exits. This replaces the old hover-only affordance — you no longer have to
     // find the right element by hovering; you enter mode and the whole post shows what's
     // commentable, including free-text selection anywhere in the prose.
-    function wireCommentMode(proseEl: Element, slug: string) {
+    function wireCommentMode(rootEl: Element, slug: string) {
       document.addEventListener('keydown', (e) => {
         if (isTyping(e)) return;
         // Toggle on plain "c" (no modifiers, so it never shadows ⌘C / Ctrl-C copy).
@@ -309,7 +316,7 @@
 
       // In mode: a click on a commentable ELEMENT composes an element anchor. (A text selection
       // is handled on mouseup below, so a plain click that isn't a drag falls through to here.)
-      proseEl.addEventListener('click', (e) => {
+      rootEl.addEventListener('click', (e) => {
         if (!commentMode) return;
         // If the reader just made a selection, let the selection path own it (don't double-fire).
         const sel = window.getSelection();
@@ -321,15 +328,18 @@
         }
       });
 
-      // In mode: finishing a text selection inside the prose opens the range composer.
+      // In mode: finishing a text selection inside the post opens the range composer.
       document.addEventListener('mouseup', () => {
         if (!commentMode) return;
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
-        // Only if the selection is inside the prose.
+        // Only if the selection is inside the comment root (the whole .article, so text in the
+        // Questions box / other component boxes outside .prose is selectable-to-comment too).
         const anchorNode = sel.anchorNode;
-        if (!anchorNode || !(anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as Element))?.closest('.prose'))
-          return;
+        const host = anchorNode
+          ? (anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as Element))
+          : null;
+        if (!host || !rootEl.contains(host)) return;
         const ra = buildRangeAnchor(sel);
         if (ra) openRangeComposer(ra, slug);
       });
@@ -340,10 +350,12 @@
       root.dataset.commentMode = on ? 'true' : '';
       if (!on) delete root.dataset.commentMode;
       if (hint) hint.hidden = !on;
-      // Mark/unmark commentable elements so CSS can outline them while in mode.
-      prose.querySelectorAll('[data-cl-commentable]').forEach((el) => el.removeAttribute('data-cl-commentable'));
+      // Mark/unmark commentable elements so CSS can outline them while in mode. Scan the whole
+      // comment root (.article), not just .prose, so the Questions box + other component boxes
+      // that live outside .prose get outlined and are visibly targetable.
+      commentRoot.querySelectorAll('[data-cl-commentable]').forEach((el) => el.removeAttribute('data-cl-commentable'));
       if (on) {
-        for (const c of findCommentables(prose)) c.el.setAttribute('data-cl-commentable', '');
+        for (const c of findCommentables(commentRoot)) c.el.setAttribute('data-cl-commentable', '');
       }
       (window as any).__commentMode = on; // test hook
     }
@@ -541,7 +553,7 @@
   /* While in mode the whole reading column gets a comment cursor, and every commentable
      element is outlined so the reader can see what's targetable without hovering. Free-text
      selection works anywhere in the prose (range anchors), so we also cue that. */
-  html[data-comment-mode='true'] .prose {
+  html[data-comment-mode='true'] .article {
     cursor: crosshair;
   }
   html[data-comment-mode='true'] [data-cl-commentable] {

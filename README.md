@@ -50,7 +50,8 @@ npm run dev          # http://localhost:4343
 
 | Command | Does |
 |---|---|
-| `npm run dev` | Local dev server with hot reload (drafts visible). |
+| `make dev` (`npm run dev`) | Dev server for the **external/public** site (hot reload, drafts visible). No comment layer, no Supabase — a preview of what ships publicly. Needs no secrets. |
+| `make dev-internal` | Dev server for the **internal** site **with the comment layer** (Supabase-backed). Wraps `dotenvx run -- astro dev` + `PUBLIC_AUDIENCE=internal` — both are required or comments silently fail to load. See the `run-blog-locally` skill. |
 | `npm run build` | Production build to `dist/` (drafts excluded). |
 | `npm run preview` | Serve the built `dist/` locally. |
 | `npm run deploy` | Build, then push `dist/` to the `gh-pages` branch. |

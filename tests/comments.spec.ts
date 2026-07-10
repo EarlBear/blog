@@ -97,7 +97,7 @@ test.describe('internal comment layer', () => {
         anyParagraphWithoutId: items.some((i: any) => i.el.tagName === 'P' && !i.el.id),
         // Every kind is one of the allowed content kinds — never an SVG-internal element.
         onlyAllowedKinds: items.every((i: any) =>
-          ['heading', 'decision', 'diagram', 'node', 'entity', 'prose', 'edge'].includes(i.anchorKind),
+          ['heading', 'decision', 'diagram', 'node', 'entity', 'prose', 'edge', 'component', 'table', 'row', 'cell'].includes(i.anchorKind),
         ),
         // No commentable element is an SVG-internal (gradient/marker/clip/title/desc).
         anySvgInternal: items.some((i: any) =>
@@ -134,6 +134,17 @@ test.describe('internal comment layer', () => {
       );
       // The edge id is from__to (no '#' unless repeated) — it does NOT contain the label text.
       const sampleId = edges[0]?.anchorId ?? '';
+      // Every edge carries a WIDE transparent hit-path so the hairline arrow is easy to hover for
+      // commenting (the visible line stays thin). Guard both: the hit-path exists on each edge and
+      // its stroke is much wider than the visible line's.
+      const allEdgesHaveHit = Array.from(document.querySelectorAll('.prose .flow-edge')).every(
+        (g) => g.querySelector('.flow-edge-hit'),
+      );
+      const someHit = document.querySelector('.prose .flow-edge .flow-edge-hit');
+      const someLine = document.querySelector('.prose .flow-edge .flow-edge-line');
+      const hitW = someHit ? parseFloat(getComputedStyle(someHit).strokeWidth) : 0;
+      const lineW = someLine ? parseFloat(getComputedStyle(someLine).strokeWidth) : 0;
+
       return {
         edgeCount: edges.length,
         allEdgesHaveDataEdge,
@@ -141,6 +152,8 @@ test.describe('internal comment layer', () => {
         unlabeledCommentable: gNoLabel ? commentableFor(gNoLabel.querySelector('path') || gNoLabel) != null : false,
         idResolves: sampleId ? resolveAnchor(sampleId) != null : false,
         idShape: /^[^#]+__[^#]+(#\d+)?$/.test(sampleId),
+        allEdgesHaveHit,
+        hitWiderThanLine: hitW >= lineW * 5, // fat band, ~10x in practice
       };
     });
 
@@ -150,6 +163,137 @@ test.describe('internal comment layer', () => {
     if (result.unlabeledCommentable !== false) expect(result.unlabeledCommentable).toBe(true);
     expect(result.idResolves).toBe(true);
     expect(result.idShape).toBe(true); // from__to shape — the label is NOT part of the id
+    expect(result.allEdgesHaveHit).toBe(true); // wide hover target on every arrow
+    expect(result.hitWiderThanLine).toBe(true);
+  });
+
+  test('use-case diagram: ovals + actors are commentable (namespaced ids), and a click in C-mode composes a comment, NOT the detail modal', async ({ page }) => {
+    await stubBackend(page);
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayer)).toBe(true);
+
+    // Data layer: every use-case oval carries data-uc, every actor data-actor, both commentable
+    // under a namespaced anchor (uc:<id> / actor:<id>) that resolves round-trip.
+    const data = await page.evaluate(() => {
+      const { commentableFor, resolveAnchor } = (window as any).__commentLayer;
+      const oval = document.querySelector('.ucd-oval[data-uc]') as HTMLElement | null;
+      const actor = document.querySelector('.ucd-actor[data-actor]') as HTMLElement | null;
+      const allOvalsHaveId = Array.from(document.querySelectorAll('.ucd-oval')).every((g) => g.getAttribute('data-uc'));
+      const allActorsHaveId = Array.from(document.querySelectorAll('.ucd-actor')).every((g) => g.getAttribute('data-actor'));
+      const ovalC = oval ? commentableFor(oval) : null;
+      const actorC = actor ? commentableFor(actor) : null;
+      return {
+        allOvalsHaveId, allActorsHaveId,
+        ovalAnchor: ovalC?.anchorId ?? null,
+        actorAnchor: actorC?.anchorId ?? null,
+        ovalResolves: ovalC ? resolveAnchor(ovalC.anchorId) === oval : false,
+        actorResolves: actorC ? resolveAnchor(actorC.anchorId) === actor : false,
+      };
+    });
+    expect(data.allOvalsHaveId).toBe(true);
+    expect(data.allActorsHaveId).toBe(true);
+    expect(data.ovalAnchor).toMatch(/^uc:/);
+    expect(data.actorAnchor).toMatch(/^actor:/);
+    expect(data.ovalResolves).toBe(true);
+    expect(data.actorResolves).toBe(true);
+
+    // Interaction: in C-mode, clicking an oval opens the COMMENT composer and NOT the use-case
+    // detail modal (the oval's own click handler defers to comment mode).
+    await page.locator('body').press('c');
+    await expect.poll(() => page.evaluate(() => (window as any).__commentMode === true)).toBe(true);
+    await page.locator('.ucd-oval[data-uc]').first().scrollIntoViewIfNeeded();
+    await page.locator('.ucd-oval[data-uc]').first().click();
+    await expect(page.locator('.cl-composer')).toBeVisible();
+    expect(await page.evaluate(() => (document.querySelector('.ucd-modal') as HTMLDialogElement | null)?.open ?? false))
+      .toBe(false); // detail modal must NOT open in comment mode
+  });
+
+  test('broad anchors: the Questions box + its rows, tables, table rows + cells, and component boxes are commentable by stamped id', async ({ page }) => {
+    await stubBackend(page);
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayer)).toBe(true);
+
+    const result = await page.evaluate(() => {
+      const { findCommentables, commentableFor, resolveAnchor } = (window as any).__commentLayer;
+      const items = findCommentables();
+      const kinds = items.map((i: any) => i.anchorKind);
+
+      // The Questions aside lives OUTSIDE .prose (in PostLayout) — it must still be commentable,
+      // stamped with an eb-<hash> id + data-anchor-kind="component".
+      const questions = document.querySelector('.questions[id][data-anchor-kind="component"]') as HTMLElement | null;
+      const questionRow = document.querySelector('.questions li[id][data-anchor-kind="row"]') as HTMLElement | null;
+
+      // Any table + its rows/cells (not just DecisionTables).
+      const table = document.querySelector('.article table[id][data-anchor-kind="table"]') as HTMLElement | null;
+      const cell = document.querySelector('.article td[id][data-anchor-kind="cell"], .article th[id][data-anchor-kind="cell"]') as HTMLElement | null;
+
+      // Every element the stamper marked commentable carries an id (the anchor-ids invariant).
+      const allTaggedHaveId = Array.from(document.querySelectorAll('.article [data-anchor-kind]')).every(
+        (el) => (el as HTMLElement).id,
+      );
+
+      return {
+        counts: {
+          component: kinds.filter((k: string) => k === 'component').length,
+          row: kinds.filter((k: string) => k === 'row').length,
+          table: kinds.filter((k: string) => k === 'table').length,
+          cell: kinds.filter((k: string) => k === 'cell').length,
+        },
+        allTaggedHaveId,
+        // The Questions box + a question row are commentable AND resolve back by id (round-trip),
+        // even though they sit outside .prose.
+        questionsCommentable: questions ? commentableFor(questions) != null : false,
+        questionsResolves: questions ? resolveAnchor(questions.id) === questions : false,
+        questionRowCommentable: questionRow ? commentableFor(questionRow) != null : false,
+        tableCommentable: table ? commentableFor(table) != null : false,
+        cellCommentable: cell ? commentableFor(cell) != null : false,
+      };
+    });
+
+    // This fixture post (ecommerce-site-scanner-design) has the Questions box, a table, rows, cells.
+    expect(result.allTaggedHaveId).toBe(true);
+    expect(result.counts.component).toBeGreaterThan(0); // the Questions box
+    expect(result.counts.row).toBeGreaterThan(0);        // question rows + table rows
+    expect(result.counts.table).toBeGreaterThan(0);
+    expect(result.counts.cell).toBeGreaterThan(0);
+    expect(result.questionsCommentable).toBe(true);
+    expect(result.questionsResolves).toBe(true); // resolveAnchor scoped to .article, not just .prose
+    expect(result.questionRowCommentable).toBe(true);
+    expect(result.tableCommentable).toBe(true);
+    expect(result.cellCommentable).toBe(true);
+  });
+
+  test('C-mode reaches OUTSIDE .prose: the Questions box is highlighted AND clicking it opens the composer', async ({ page }) => {
+    // Regression: the Questions aside (and other component boxes stamped in PostLayout) live under
+    // .article but OUTSIDE .prose. The allowlist recognized them (previous test), but comment-mode
+    // WIRING was scoped to .prose — so the box was never highlighted and a click never opened the
+    // composer. This drives the real interaction to prove the mode is rooted at .article.
+    await stubBackend(page);
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayerReady)).toBe(true);
+
+    // Enter comment mode.
+    await page.locator('body').press('c');
+    await expect.poll(() => page.evaluate(() => (window as any).__commentMode === true)).toBe(true);
+
+    // The Questions aside — OUTSIDE .prose — must get the highlight marker while in mode.
+    const aside = page.locator('aside.questions[data-anchor-kind="component"]');
+    await expect(aside).toHaveAttribute('data-cl-commentable', '');
+    // And so must an individual question row.
+    await expect(page.locator('aside.questions li[data-anchor-kind="row"]').first())
+      .toHaveAttribute('data-cl-commentable', '');
+
+    // Clicking the box in mode opens the composer (the interaction that was broken).
+    await page.locator('aside.questions li[data-anchor-kind="row"]').first().click();
+    await expect(page.locator('.cl-composer')).toBeVisible();
+    // The composer targets THAT question's anchor id (element anchor, not a stray range).
+    const composedOnRow = await page.evaluate(() => {
+      const dlg = document.querySelector('.cl-composer') as HTMLDialogElement | null;
+      const li = document.querySelector('aside.questions li[data-anchor-kind="row"]') as HTMLElement | null;
+      // The composer heading echoes the row's text — a coarse but robust check it anchored to it.
+      return !!dlg?.open && !!li && (dlg.textContent || '').includes((li.textContent || '').slice(0, 20));
+    });
+    expect(composedOnRow).toBe(true);
   });
 
   test('P5: every commentable anchor resolves back to its element by fragment id', async ({ page }) => {

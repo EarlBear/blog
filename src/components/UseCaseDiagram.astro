@@ -588,7 +588,7 @@ const interactive = ucDetail.some(
                 {oval}
               </g>
             ) : (
-              <g class="ucd-oval" style={`--i:${i}`}>
+              <g class="ucd-oval" style={`--i:${i}`} data-uc={uc.id}>
                 {oval}
               </g>
             );
@@ -604,7 +604,7 @@ const interactive = ucDetail.some(
             const gx = p.cx - ACTOR_BOX / 2;
             const gy = p.cy - ACTOR_BOX / 2;
             return (
-              <g class={`ucd-actor ucd-actor--${p.kind}`}>
+              <g class={`ucd-actor ucd-actor--${p.kind}`} data-actor={a.id}>
                 <g
                   transform={`translate(${gx} ${gy})`}
                   set:html={actorGlyph(p.kind, ACTOR_BOX)}
@@ -680,10 +680,13 @@ const interactive = ucDetail.some(
             row('Extended by', d.extendedBy);
           dialog.showModal();
         }
+        // While the comment layer's C-mode is active, a click on an oval must compose a COMMENT,
+        // not open the use-case detail modal — defer to it (the comment layer owns the click then).
+        const inCommentMode = () => document.documentElement.dataset.commentMode === 'true';
         fig.querySelectorAll('.ucd-oval--interactive').forEach((el) => {
-          el.addEventListener('click', () => open(el.getAttribute('data-uc')));
+          el.addEventListener('click', () => { if (!inCommentMode()) open(el.getAttribute('data-uc')); });
           el.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(el.getAttribute('data-uc')); }
+            if ((e.key === 'Enter' || e.key === ' ') && !inCommentMode()) { e.preventDefault(); open(el.getAttribute('data-uc')); }
           });
         });
         // Click on the backdrop closes it.
