@@ -15,6 +15,7 @@ draft: true
 ---
 
 import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+import UseCases from '../../components/UseCases.astro';
 import FlowDiagram from '../../components/FlowDiagram.astro';
 import DecisionTable from '../../components/DecisionTable.astro';
 import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
@@ -85,6 +86,16 @@ never touches the agent, but their behavior is the signal every experiment reads
 The owner gets continuous, measured conversion optimization on autopilot, with control
 and no risk to the store; the operator supervises many stores at once as the automation
 earns trust; the shopper just gets a faster, clearer storefront.
+
+<UseCases
+  title="What it powers, by actor"
+  desc="The same experiment loop serves three sides: EarlBear operating the service, the agent running it, and the merchant whose store heals itself."
+  columns={[
+    { actor: 'EarlBear', items: ['Supervise many stores at once', 'Tune the ideation engine as it learns', 'A wins ledger that proves the dollar lift'] },
+    { actor: 'Agent', items: ['Ideate hypotheses from scanner findings + analytics', 'Generate on-brand, accessible variants within guardrails', 'Run, decide ship/kill on defensible stats, attribute lift'] },
+    { actor: 'Merchant', items: ['Set autonomy tier + revenue floors + no-touch zones', 'Approve higher-risk pricing/checkout tests', 'Read wins in plain language — a faster storefront for shoppers'] },
+  ]}
+/>
 
 <Callout kind="note" title="Scope">
 This document defines the autonomous CRO (conversion rate optimization) and A/B
