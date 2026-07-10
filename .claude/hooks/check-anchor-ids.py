@@ -70,6 +70,26 @@ RULES = [
         re.compile(rf'<tr[^>]*{_class_has("dt-row")}[^>]*>'),
         re.compile(r'\bid="'),
     ),
+    (
+        # A UseCaseDiagram use-case OVAL must carry data-uc so a comment can anchor to it (uc:<id>).
+        "UseCaseDiagram oval (.ucd-oval)",
+        re.compile(rf'<g[^>]*{_class_has("ucd-oval")}[^>]*>'),
+        re.compile(r'\bdata-uc="'),
+    ),
+    (
+        # A UseCaseDiagram ACTOR must carry data-actor so a comment can anchor to it (actor:<id>).
+        "UseCaseDiagram actor (.ucd-actor)",
+        re.compile(rf'<g[^>]*{_class_has("ucd-actor")}[^>]*>'),
+        re.compile(r'\bdata-actor="'),
+    ),
+    (
+        # Any element the build-time stamper marked commentable (component box / table / row /
+        # cell / question) MUST carry the eb-<hash> id — a data-anchor-kind without an id is a
+        # regression in the stamper, and that element would be un-commentable.
+        "commentable element (data-anchor-kind)",
+        re.compile(r'<[a-zA-Z]+[^>]*\bdata-anchor-kind="[^"]*"[^>]*>'),
+        re.compile(r'\bid="'),
+    ),
 ]
 
 

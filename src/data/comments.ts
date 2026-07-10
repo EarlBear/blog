@@ -5,7 +5,19 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase, currentEmail } from './supabaseClient';
 
-export type AnchorKind = 'heading' | 'decision' | 'diagram' | 'node' | 'entity' | 'prose' | 'range' | 'edge';
+export type AnchorKind =
+  | 'heading'
+  | 'decision'
+  | 'diagram'
+  | 'node'
+  | 'entity'
+  | 'prose'
+  | 'range'
+  | 'edge'
+  | 'component' // a rich box: callout, comparison matrix, the Questions aside, etc.
+  | 'table'
+  | 'row' // a table row, or a list item inside a component (e.g. one Question)
+  | 'cell';
 
 export interface Comment {
   id: string;
@@ -46,7 +58,18 @@ interface AllowRule {
   selector: string;
   kind: AnchorKind;
   anchorOf: (el: Element) => string | null;
+  // When set, the kind is read from the element at match time (for the general
+  // data-anchor-kind rule, where one selector covers table/row/cell/component).
+  kindOf?: (el: Element) => AnchorKind;
 }
+
+const ANCHOR_KINDS = new Set<string>([
+  'component',
+  'table',
+  'row',
+  'cell',
+  'prose',
+]);
 
 export const ALLOW_RULES: AllowRule[] = [
   { selector: '.prose h2[id]', kind: 'heading', anchorOf: (el) => el.id || null },
@@ -80,6 +103,42 @@ export const ALLOW_RULES: AllowRule[] = [
     kind: 'entity',
     anchorOf: (el) => el.getAttribute('data-entity'),
   },
+  {
+    // A UseCaseDiagram use-case OVAL. data-uc is the stable use-case id from the spec. Namespaced
+    // `uc:<id>` so the stored anchor can't collide with a FlowDiagram data-node of the same id on
+    // the same page. Kind 'node' — a use case is a diagram node you point a comment at, like a
+    // flow-node (no new anchor_kind / migration needed).
+    selector: '.prose .ucd-oval[data-uc]',
+    kind: 'node',
+    anchorOf: (el) => {
+      const id = el.getAttribute('data-uc');
+      return id ? `uc:${id}` : null;
+    },
+  },
+  {
+    // A UseCaseDiagram ACTOR (the Earl monogram / stick figure + its label). data-actor is the
+    // stable actor id; namespaced `actor:<id>` for the same collision-safety reason.
+    selector: '.prose .ucd-actor[data-actor]',
+    kind: 'node',
+    anchorOf: (el) => {
+      const id = el.getAttribute('data-actor');
+      return id ? `actor:${id}` : null;
+    },
+  },
+  {
+    // The GENERAL rule: any element the build-time stamper tagged with data-anchor-kind is
+    // commentable — tables, rows, cells, and rich component boxes (callouts, comparison matrices,
+    // the Questions aside). Scoped to `.article` (the whole post) so it also covers the Questions
+    // box, which lives in PostLayout OUTSIDE `.prose`. The id is the stamped eb-<hash>; the kind
+    // comes from the attribute. Excludes SVG-internal / diagram elements already covered above.
+    selector: '.article [id][data-anchor-kind]',
+    kind: 'component',
+    anchorOf: (el) => el.id || null,
+    kindOf: (el) => {
+      const k = el.getAttribute('data-anchor-kind') || '';
+      return (ANCHOR_KINDS.has(k) ? k : 'component') as AnchorKind;
+    },
+  },
 ];
 
 export interface Commentable {
@@ -99,7 +158,8 @@ export function findCommentables(root: ParentNode = document): Commentable[] {
       const anchorId = rule.anchorOf(el);
       if (!anchorId || seen.has(anchorId)) return;
       seen.add(anchorId);
-      out.push({ el, anchorId, anchorKind: rule.kind, label: snapshotText(el) });
+      const kind = rule.kindOf ? rule.kindOf(el) : rule.kind;
+      out.push({ el, anchorId, anchorKind: kind, label: snapshotText(el) });
     });
   }
   return out;
@@ -116,7 +176,7 @@ export function commentableFor(el: Element | null): Commentable | null {
           return {
             el: node as HTMLElement,
             anchorId,
-            anchorKind: rule.kind,
+            anchorKind: rule.kindOf ? rule.kindOf(node) : rule.kind,
             label: snapshotText(node),
           };
       }
@@ -128,9 +188,11 @@ export function commentableFor(el: Element | null): Commentable | null {
 
 /** Map a stored anchor_id back to its live element (re-attach on load). Null if gone. */
 export function resolveAnchor(anchorId: string): HTMLElement | null {
-  // Fragment ids resolve by getElementById; data-* anchors by attribute.
+  // Fragment ids resolve by getElementById; data-* anchors by attribute. Scope to `.article`
+  // (not just `.prose`) so anchors on the Questions aside + other component boxes that live
+  // OUTSIDE `.prose` still resolve.
   const byId = document.getElementById(anchorId);
-  if (byId && byId.closest('.prose')) return byId;
+  if (byId && byId.closest('.article')) return byId;
   const byFlow = document.querySelector<HTMLElement>(`.prose [data-flow="${cssEscape(anchorId)}"]`);
   if (byFlow) return byFlow;
   const byNode = document.querySelector<HTMLElement>(`.prose [data-node="${cssEscape(anchorId)}"]`);
@@ -139,6 +201,16 @@ export function resolveAnchor(anchorId: string): HTMLElement | null {
   if (byEntity) return byEntity;
   const byEdge = document.querySelector<HTMLElement>(`.prose [data-edge="${cssEscape(anchorId)}"]`);
   if (byEdge) return byEdge;
+  // UseCaseDiagram ovals/actors carry a namespaced anchor id (uc:<id> / actor:<id>) — strip the
+  // prefix and re-find by the matching data-* attribute.
+  if (anchorId.startsWith('uc:')) {
+    const byUc = document.querySelector<HTMLElement>(`.prose .ucd-oval[data-uc="${cssEscape(anchorId.slice(3))}"]`);
+    if (byUc) return byUc;
+  }
+  if (anchorId.startsWith('actor:')) {
+    const byActor = document.querySelector<HTMLElement>(`.prose .ucd-actor[data-actor="${cssEscape(anchorId.slice(6))}"]`);
+    if (byActor) return byActor;
+  }
   return null;
 }
 
