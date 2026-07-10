@@ -27,7 +27,8 @@
     "features:check": "python3 scripts/features_check.py",
     "features:seed": "python3 scripts/features_check.py --seed",
     "regen-favicon": "node scripts/gen-favicon.mjs",
-    "bench:diagram": "node --experimental-websocket scripts/diagram-bench.mjs"
+    "bench:diagram": "node --experimental-websocket scripts/diagram-bench.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@astrojs/mdx": "^4.3.14",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.75.1",
+    "@playwright/test": "^1.61.1",
     "gh-pages": "^6.2.0",
     "wrangler": "^4.84.0"
   }

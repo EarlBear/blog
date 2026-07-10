@@ -79,9 +79,14 @@
     const prose = document.querySelector('.prose');
     const slugMatch = location.pathname.match(/\/blog\/([^/]+)\/?$/);
 
+    // Test hook: expose the pure allowlist/anchoring helpers so the Playwright suite can
+    // assert them against the real rendered DOM (no backend needed). Harmless in prod.
+    (window as any).__commentLayer = { findCommentables, commentableFor, resolveAnchor };
+
     if (root.dataset.audience === 'internal' && layer && prose && slugMatch) {
       const postSlug = decodeURIComponent(slugMatch[1]);
       initCommentLayer(postSlug, layer, prose);
+      (window as any).__commentLayerReady = true;
     }
 
   // --- everything below is inside the PUBLIC_AUDIENCE==='internal' guard, so the entire
@@ -96,12 +101,27 @@
     // Comments keyed by anchor_id → array (top-level + replies flattened; parent_id threads them).
     let byAnchor = new Map<string, Comment[]>();
 
-    // Establish the signed-in identity (surfaces the email; if none, posting is disabled).
-    await ensureIdentity();
+    // Wire the interactions FIRST (synchronously) so the affordance/composer are live
+    // immediately — never blocked on the network. The async identity + comment load follow.
+    wireHoverAffordance(prose, postSlug);
+    wireComposer(postSlug);
+    wireThread(postSlug);
 
-    const comments = await loadComments(postSlug);
-    indexComments(comments);
-    renderAllMarkers();
+    // Establish the signed-in identity (surfaces the email; if none, posting is disabled).
+    ensureIdentity().catch(() => {});
+
+    // Load existing comments + render markers (best-effort; a failure leaves the UI usable).
+    loadComments(postSlug)
+      .then((comments) => {
+        indexComments(comments);
+        renderAllMarkers();
+        // Deep-link: if the URL hash names a commented anchor, open its thread.
+        if (location.hash) {
+          const id = location.hash.slice(1);
+          if (byAnchor.has(id)) openThread(id);
+        }
+      })
+      .catch(() => {});
 
     // Realtime: live inserts/updates/deletes for this post+env.
     subscribeComments(postSlug, ({ new: n, old: o }) => {
@@ -111,22 +131,10 @@
       loadComments(postSlug).then((cs) => {
         indexComments(cs);
         renderAllMarkers();
-        // If the thread dialog is open on this anchor, refresh it.
         if (threadDlg.open && openThreadAnchor && row.anchor_id === openThreadAnchor)
           renderThread(openThreadAnchor);
       });
     });
-
-    // Hover affordance: a small comment button that follows the hovered commentable element.
-    wireHoverAffordance(prose, postSlug);
-    wireComposer(postSlug);
-    wireThread(postSlug);
-
-    // Deep-link: if the URL hash names a commented anchor, open its thread.
-    if (location.hash) {
-      const id = location.hash.slice(1);
-      if (byAnchor.has(id)) openThread(id);
-    }
 
     function indexComments(cs: Comment[]) {
       byAnchor = new Map();
@@ -191,8 +199,17 @@
 
       proseEl.addEventListener('mouseover', (e) => {
         const c = commentableFor(e.target as Element);
-        if (c) showAffordance(c);
+        if (c) {
+          clearTimeout(hideT);
+          showAffordance(c);
+        } else if (e.target !== hoverBtn && !hoverBtn?.contains(e.target as Node)) {
+          // Over prose but not a commentable (and not the affordance itself) → hide it.
+          hideAffordanceSoon();
+        }
       });
+      // Keep the affordance up while the cursor is on the button itself.
+      hoverBtn.addEventListener('mouseenter', () => clearTimeout(hideT));
+      hoverBtn.addEventListener('mouseleave', () => hideAffordanceSoon());
       proseEl.addEventListener('mouseleave', () => hideAffordanceSoon());
       // Keyboard: pressing "c" with a commentable focused/hovered opens the composer.
       document.addEventListener('keydown', (e) => {

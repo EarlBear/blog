@@ -200,6 +200,33 @@ def scan_dist(root: Path, dist_dir: Path, build_audience: str):
                     "output (HTML/sitemap) — it must not leak publicly"
                 )
 
+    # 5. The comment layer is INTERNAL-ONLY (CF Access gated + RLS enforced). Its client
+    #    script is guarded by `import.meta.env.PUBLIC_AUDIENCE === 'internal'` (tree-shaken
+    #    out of the external bundle) and its styles are `<style is:inline>` (emitted only when
+    #    the component renders). This is the belt-and-suspenders dist check: the EXTERNAL build
+    #    must ship NO comment markup, NO comment JS/CSS, and NO Supabase client. A leak here
+    #    would put a DB-write path + auth surface on the public site. See docs/comments-design.md.
+    if build_audience == "external":
+        # Scan HTML + the JS/CSS asset bundles (not just HTML — the leak was a bundled chunk).
+        asset_files = list(dist_dir.glob("**/*.js")) + list(dist_dir.glob("**/*.css"))
+        asset_blob = "\n".join(
+            f.read_text(encoding="utf-8", errors="ignore") for f in asset_files
+        )
+        combined = blob + "\n" + asset_blob
+        COMMENT_MARKERS = [
+            "data-comment-layer",   # the layer's root markup
+            "cl-composer",          # a comment-UI class
+            "cl-marker",
+            "blog_comments",         # the table name (only the comment client references it)
+            "@supabase/supabase-js", # the supabase client (comments are its only blog user)
+        ]
+        for marker in COMMENT_MARKERS:
+            if marker in combined:
+                hits.append(
+                    f"the internal-only comment layer leaked into the external build "
+                    f"(found {marker!r} in dist) — it must never ship to the public site"
+                )
+
     # De-dupe while preserving order.
     seen, uniq = set(), []
     for h in hits:
