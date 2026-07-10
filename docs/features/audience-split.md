@@ -68,11 +68,41 @@ plan at `.claude/plans/quirky-dancing-pretzel.md`.
 ## Code
 <!-- Anchors seeded post-commit via feature-docs / `npm run features:seed`. -->
 
+## Dev build vs prod build — what actually differs
+
+The single most important difference: **`astro dev` shows *every* audience's posts,
+regardless of `PUBLIC_AUDIENCE`** — `getPublishedPosts()` returns early with `true`
+under `import.meta.env.DEV` ("localhost sees everything"). The audience *filter* only
+runs in a real build. So:
+
+| | `astro dev` (localhost) | `npm run build:external` (prod) |
+|---|---|---|
+| **Posts included** | every audience + drafts (a superset) | only `audience: external`, fail-closed allowlist |
+| **Chrome / theme** | reflects `PUBLIC_AUDIENCE` (badge, accent) | matches the target |
+| **Audience "teeth"** | not run | `check-audience.py --check-dist` scans `dist/` |
+| **Output** | unminified, served live | minified, hashed assets, `CNAME`/`robots` |
+
+Consequences worth knowing:
+- A **client-side preview** (the dev-only INTERNAL-badge toggle, see Code) can *hide*
+  internal cards and swap the theme, but it can **never** reproduce the real external
+  build — that build wouldn't have *built* the internal posts at all, and the
+  dist-scan teeth only exist at build time. The toggle is a convenience preview; the
+  faithful check is `npm run build:external` + `npm run audience-check`.
+- Because dev is a superset, a `dev` pass can look fine while the real external build
+  legitimately omits a post (correct) — or, for layout, `vite dev` can pass while the
+  production build breaks (the React-dedupe class of bug). Always verify the built
+  output for anything load-bearing.
+
 ## Notes
 
 - The build target is chosen by `PUBLIC_AUDIENCE` (`external` default | `internal`).
   `npm run build:internal` / `deploy:internal` set it; `astro.config.mjs` reads it
   to pick the canonical `site` origin so RSS/sitemap/canonical URLs match the host.
+- **Dev-only external preview:** on localhost the internal nav badge toggles a
+  `data-preview="external"` attribute on `<html>` (hides `audience:internal` cards,
+  re-tints the accent), persisted in `localStorage`. Guarded by `import.meta.env.DEV`
+  so it is tree-shaken from every production build (verified: no toggle button/script
+  in `dist/`). A preview, not the real external build (see the table above).
 - One-time infra (not in this repo): create the `earlbear-blog-internal` CF Pages
   project, attach `blog.internal.earlbear.com`, and provision the CF Access app via
   `earlbear-domain` (`make cf-access-app-upsert`). The `domains.yaml` record is
