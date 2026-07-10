@@ -73,6 +73,7 @@
     loadComments,
     postComment,
     setResolved,
+    setDeleted,
     subscribeComments,
     type Comment,
     type Commentable,
@@ -209,19 +210,32 @@
           orphanAnchors.push(anchorId); // thread still exists, just no inline marker
           continue;
         }
-        const topLevel = list.filter((c) => !c.parent_id);
+        // Soft-deleted comments don't count toward the gutter badge. If EVERY comment in a thread
+        // is deleted, drop the marker entirely (the thread is empty to a reader) — but it still
+        // exists in the DB, so the deep-link / thread list can surface it if reopened.
+        const live = list.filter((c) => !c.deleted);
+        if (live.length === 0) continue;
+        const topLevel = live.filter((c) => !c.parent_id);
         const marker = document.createElement('button');
         marker.type = 'button';
         marker.className = 'cl-marker';
-        const open = list.some((c) => !c.resolved);
+        const open = live.some((c) => !c.resolved);
         marker.classList.toggle('cl-marker--resolved', !open);
-        marker.textContent = String(topLevel.length || list.length);
-        marker.title = `${list.length} comment${list.length === 1 ? '' : 's'}`;
+        marker.textContent = String(topLevel.length || live.length);
+        marker.title = `${live.length} comment${live.length === 1 ? '' : 's'}`;
         marker.setAttribute('aria-label', marker.title);
         marker.addEventListener('click', (e) => {
           e.stopPropagation();
           openThread(anchorId);
         });
+        // Hovering (or focusing) the gutter marker highlights the section it's anchored to, so the
+        // reader can see WHAT a comment is about without opening it. Toggled via a data attribute
+        // the CSS keys off; cleared on leave/blur.
+        const hl = (on: boolean) => (el as HTMLElement).toggleAttribute('data-cl-anchor-hl', on);
+        marker.addEventListener('mouseenter', () => hl(true));
+        marker.addEventListener('mouseleave', () => hl(false));
+        marker.addEventListener('focus', () => hl(true));
+        marker.addEventListener('blur', () => hl(false));
         positionMarker(marker, el);
         layer.appendChild(marker);
 
@@ -242,10 +256,21 @@
 
     function positionMarker(marker: HTMLElement, el: Element) {
       const r = el.getBoundingClientRect();
+      // Place the marker in the EMPTY GUTTER to the left of the reading column, not over content.
+      // Anchor to the .article's left edge (the true margin) rather than the element's own left,
+      // so every marker lines up in a column in the whitespace beside the post — and a marker on a
+      // deeply-indented element (a nested list item, an SVG node) still lands in the margin, not on
+      // top of text. Clamp so it never falls off the left of the viewport on a narrow window.
+      const MARKER_W = 22;
+      const GUTTER_GAP = 12; // space between the marker and the article edge
+      const articleLeft = commentRoot.getBoundingClientRect().left;
+      const left = Math.max(4, articleLeft - GUTTER_GAP - MARKER_W);
       marker.style.position = 'absolute';
       marker.style.top = `${window.scrollY + r.top + 2}px`;
-      // Gutter: just left of the reading column.
-      marker.style.left = `${window.scrollX + r.left - 34}px`;
+      marker.style.left = `${window.scrollX + left}px`;
+      // Hovering the marker highlights the section it's anchored to (and vice-versa is wired in
+      // renderAllMarkers). Store the link so both directions can find each other.
+      marker.dataset.clFor = (el as HTMLElement).id || '';
     }
 
     // ---- orphan panel (#121) ----------------------------------------------
@@ -494,7 +519,22 @@
     }
     function renderComment(c: Comment, me: string | null, isReply = false): HTMLElement {
       const wrap = document.createElement('div');
-      wrap.className = 'cl-comment' + (isReply ? ' cl-comment--reply' : '') + (c.resolved ? ' cl-comment--resolved' : '');
+      wrap.className =
+        'cl-comment' +
+        (isReply ? ' cl-comment--reply' : '') +
+        (c.resolved ? ' cl-comment--resolved' : '') +
+        (c.deleted ? ' cl-comment--deleted' : '');
+
+      // A soft-deleted comment renders as a tombstone: body hidden, thread + replies kept. Only the
+      // author could have deleted it (RLS), so no author/actions are shown.
+      if (c.deleted) {
+        const tomb = document.createElement('p');
+        tomb.className = 'cl-comment-tombstone';
+        tomb.textContent = 'Comment deleted';
+        wrap.appendChild(tomb);
+        return wrap;
+      }
+
       const meta = document.createElement('div');
       meta.className = 'cl-comment-meta';
       const author = document.createElement('span');
@@ -508,16 +548,38 @@
       body.className = 'cl-comment-body';
       body.textContent = c.body; // textContent — stored-XSS guard
       wrap.append(meta, body);
-      if (!isReply && c.author_email === me) {
-        const resolveBtn = document.createElement('button');
-        resolveBtn.type = 'button';
-        resolveBtn.className = 'cl-comment-resolve';
-        resolveBtn.textContent = c.resolved ? 'Reopen' : 'Resolve';
-        resolveBtn.addEventListener('click', async () => {
-          await setResolved(c.id, !c.resolved);
-          // Realtime refreshes; the update policy is author-only (RLS).
+      // Author-only actions (resolve + delete). RLS is the real enforcer; this just hides the
+      // controls from non-authors. Delete is a SOFT-delete (setDeleted) — the row + thread survive.
+      if (c.author_email === me) {
+        const actions = document.createElement('div');
+        actions.className = 'cl-comment-actions';
+        if (!isReply) {
+          const resolveBtn = document.createElement('button');
+          resolveBtn.type = 'button';
+          resolveBtn.className = 'cl-comment-resolve';
+          resolveBtn.textContent = c.resolved ? 'Reopen' : 'Resolve';
+          resolveBtn.addEventListener('click', async () => {
+            await setResolved(c.id, !c.resolved);
+            // Realtime refreshes; the update policy is author-only (RLS).
+          });
+          actions.appendChild(resolveBtn);
+        }
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'cl-comment-delete';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', async () => {
+          // Two-step confirm inline (no window.confirm — a dialog inside a <dialog> is fiddly).
+          if (deleteBtn.dataset.confirm !== '1') {
+            deleteBtn.dataset.confirm = '1';
+            deleteBtn.textContent = 'Delete — confirm?';
+            deleteBtn.classList.add('cl-comment-delete--confirm');
+            return;
+          }
+          await setDeleted(c.id, true); // soft-delete; realtime re-renders the tombstone
         });
-        wrap.appendChild(resolveBtn);
+        actions.appendChild(deleteBtn);
+        wrap.appendChild(actions);
       }
       return wrap;
     }
@@ -702,6 +764,21 @@
     color: var(--color-text-muted);
     border: 1px solid var(--color-border);
   }
+  .cl-marker:hover,
+  .cl-marker:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  /* Hovering a gutter marker highlights the section its comment is anchored to. A soft accent wash
+     + ring so the reader can see the target without opening the thread. Works on any anchored
+     element (heading, prose block, table row, diagram node, component box). */
+  [data-cl-anchor-hl] {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+    border-radius: var(--radius-sm, 4px);
+    transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
+      box-shadow var(--dur-fast, 120ms) var(--ease-standard, ease);
+  }
 
   /* Composer + thread dialogs — the house modal recipe. */
   .cl-composer,
@@ -842,8 +919,13 @@
     line-height: var(--lh-body);
     white-space: pre-wrap;
   }
-  .cl-comment-resolve {
+  .cl-comment-actions {
+    display: flex;
+    gap: var(--space-2);
     margin-top: var(--space-2);
+  }
+  .cl-comment-resolve,
+  .cl-comment-delete {
     padding: 2px 8px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-pill);
@@ -851,6 +933,22 @@
     font-size: var(--fs-xs);
     color: var(--color-text-secondary);
     cursor: pointer;
+  }
+  .cl-comment-delete:hover,
+  .cl-comment-delete--confirm {
+    border-color: var(--color-danger, #b3261e);
+    color: var(--color-danger, #b3261e);
+  }
+  /* A soft-deleted comment: body removed, a muted tombstone in its place. The thread + replies
+     stay so nothing is orphaned. */
+  .cl-comment-tombstone {
+    margin: 0;
+    font-size: var(--fs-xs);
+    font-style: italic;
+    color: var(--color-text-muted);
+  }
+  .cl-comment--deleted {
+    opacity: 0.7;
   }
   .cl-reply {
     display: flex;

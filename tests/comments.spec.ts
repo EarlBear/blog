@@ -316,6 +316,76 @@ test.describe('internal comment layer', () => {
     expect(result.goneResolvesNull).toBe(true);
   });
 
+  test('author soft-delete: the author sees a Delete control; confirm → PATCHes deleted=true; a deleted comment renders as a tombstone with no marker', async ({ page }) => {
+    // Auth stub signs us in as dev@earlbear.com — the author of the seeded comment below.
+    await page.route('**/api/auth-token', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'fake.jwt', expires_at: Date.now() + 1_800_000, email: 'dev@earlbear.com' }) }),
+    );
+    await page.route('**/realtime/v1/**', (route) => route.abort());
+
+    // The seeded comment is anchored to a use-case oval (uc:config — a stable, resolvable anchor).
+    const base = {
+      id: 'del-1', post_slug: 'ecommerce-site-scanner-design', env: 'local',
+      anchor_id: 'uc:config', anchor_kind: 'node', quoted_text: 'Configure ICP',
+      author_email: 'dev@earlbear.com', parent_id: null, resolved: false, deleted: false,
+      created_at: new Date(0).toISOString(),
+      prefix: null, suffix: null, context_anchor: null, content_hash: null, post_commit: null,
+    };
+    let patchedDeleted: unknown = undefined;
+    await page.route('**/rest/v1/blog_comments**', (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') {
+        // Capture the update payload (the author clicking Delete → setDeleted).
+        try { patchedDeleted = (JSON.parse(req.postData() || '{}') as any).deleted; } catch {}
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...base, deleted: true }]) });
+      }
+      // GET → the one live comment.
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([base]) });
+    });
+
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayerReady)).toBe(true);
+
+    // A gutter marker exists (one live comment). Open the thread.
+    const marker = page.locator('.cl-marker').first();
+    await expect(marker).toBeVisible();
+    await marker.click();
+    await expect(page.locator('.cl-thread')).toBeVisible();
+
+    // The author sees a Delete control. First click = confirm affordance (no accidental delete),
+    // second click = PATCH deleted=true.
+    const del = page.locator('.cl-comment-delete').first();
+    await expect(del).toBeVisible();
+    await del.click();
+    await expect(del).toContainText('confirm');
+    await del.click();
+    await expect.poll(() => patchedDeleted).toBe(true); // the update sent deleted=true
+  });
+
+  test('a soft-deleted comment renders as a tombstone (body hidden) and gets NO gutter marker', async ({ page }) => {
+    await page.route('**/api/auth-token', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'fake.jwt', expires_at: Date.now() + 1_800_000, email: 'dev@earlbear.com' }) }),
+    );
+    await page.route('**/realtime/v1/**', (route) => route.abort());
+    // One comment, already deleted, on a resolvable anchor.
+    await page.route('**/rest/v1/blog_comments**', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{
+        id: 'del-2', post_slug: 'ecommerce-site-scanner-design', env: 'local',
+        anchor_id: 'uc:config', anchor_kind: 'node', quoted_text: 'Configure ICP',
+        body: 'this text must NOT be shown', author_email: 'dev@earlbear.com',
+        parent_id: null, resolved: false, deleted: true, created_at: new Date(0).toISOString(),
+        prefix: null, suffix: null, context_anchor: null, content_hash: null, post_commit: null,
+      }]) }),
+    );
+    await page.goto(POST);
+    await expect.poll(() => page.evaluate(() => !!(window as any).__commentLayerReady)).toBe(true);
+
+    // A thread that is entirely deleted shows NO gutter marker (nothing for a reader to open).
+    await expect(page.locator('.cl-marker')).toHaveCount(0);
+    // And the deleted body never reaches the DOM (stored-XSS-safe + hidden).
+    expect(await page.locator('text=this text must NOT be shown').count()).toBe(0);
+  });
+
   test('commentableFor: a heading + an id-stamped paragraph are commentable; an id-less element is not', async ({ page }) => {
     await stubBackend(page);
     await page.goto(POST);

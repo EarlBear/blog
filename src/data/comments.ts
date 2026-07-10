@@ -30,6 +30,7 @@ export interface Comment {
   author_email: string;
   parent_id: string | null;
   resolved: boolean;
+  deleted: boolean; // soft-delete: author-only; the row stays, the client hides its body (migration 020)
   created_at: string;
   // Range-anchor durability fields (kind 'range' only; NULL for element anchors). See the
   // three-layer model in docs/comments-design.md (Axis B4). Stored as TEXT + CONTEXT, never
@@ -328,6 +329,20 @@ export async function setResolved(id: string, resolved: boolean): Promise<boolea
   const { error } = await sb.from(TABLE).update({ resolved }).eq('id', id);
   if (error) {
     console.warn('[comments] resolve failed:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/** SOFT-delete a comment the caller authored (RLS enforces ownership; the row stays). The client
+ *  then hides its body and keeps the thread intact so replies are never orphaned. Not a hard
+ *  DELETE — needs the `deleted` column + author update grant from migration 020. */
+export async function setDeleted(id: string, deleted = true): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  const { error } = await sb.from(TABLE).update({ deleted }).eq('id', id);
+  if (error) {
+    console.warn('[comments] delete failed:', error.message);
     return false;
   }
   return true;
