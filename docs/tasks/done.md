@@ -7,6 +7,8 @@ Closed tasks. Format: `- [x] <task> @done(<isoTimestamp>) #git:<first8ofcommitId
 
 Tasks land here (or in [backlog.md](./backlog.md)) **before** being deleted from the live task list — a PreToolUse hook blocks `TaskUpdate status:deleted` otherwise. See [CLAUDE.md](../../CLAUDE.md).
 
+- [x] Build the import-design-post skill + 7 new zero-dep Astro components (Callout, Assumption, Mockup, interactive Walkthrough, DecisionTable, SequenceDiagram, DataModel) to import rich design posts from the sibling bytesofpurpose Docusaurus blog, preserving the whole experience (walkthroughs, mockups, decision tables, use-case/flow/sequence/ER diagrams). Added catalog rows for the 3 new diagram primitives + a docs/features why-doc. Imported both source posts as TWO authored flavors each: self-healing-storefront + ecommerce-site-scanner as external (100k-ft, audience external, secret-sauce-softened) and *-design as internal (as-is, full fidelity). All hand-authored, de-em-dashed, EarlBear voice; illustrative figures footnoted as derived. Verified: posts-check, diagrams-check, build, in-browser render of every diagram, and audience-guard (both internal posts absent from the external dist, both external present). @done(2026-07-09T09:00:00Z) #git:0ce95f1
+
 - [x] Scaffold Astro blog: config, content model, layouts, components, pages, seed post @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Vendor design-system CSS + assets into the repo (GitHub Packages downloads billing-blocked) @done(2026-07-03T00:00:00Z) #git:71331877
 - [x] Verify dev server and production build (all routes, Shiki, RSS, favicon) @done(2026-07-03T00:00:00Z) #git:71331877

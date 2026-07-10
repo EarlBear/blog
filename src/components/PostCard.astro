@@ -15,7 +15,11 @@ const { title, description, pubDate, tags, authors, draft, audience } = post.dat
 const showInternalBadge = import.meta.env.DEV && audience === 'internal';
 ---
 
-<article class="card">
+<article
+  class="card"
+  data-post-audience={import.meta.env.DEV ? audience : undefined}
+  data-post-draft={import.meta.env.DEV && draft ? 'true' : undefined}
+>
   <div class="row-meta">
     <FormattedDate date={pubDate} class="date" />
     {authors.length > 0 && (

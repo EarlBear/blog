@@ -1,0 +1,244 @@
+---
+/**
+ * DecisionTable — the catalog of a design's decisions (D1, D2, … Dn) as an
+ * anchored, status-badged table. Distinct from <ComparisonMatrix> (criteria ×
+ * OPTIONS, "which option wins"); this is the numbered list of DECISIONS with
+ * their status, so a post's constant "see D3" cross-references become deep-links.
+ *
+ * Each row gets id="d1", "d2", … so prose can write [D3](#d3); the row highlights
+ * when its anchor is the current URL hash (CSS :target, zero JS). Each decision
+ * has a status (decided | leaning | open | tbd) → a colored badge with a tooltip
+ * gloss. A decision with `detail` renders its ID cell as a button that opens a
+ * click-to-focus modal (the same progressive-enhancement pattern as FlowDiagram);
+ * zero modal JS ships unless at least one decision has a detail.
+ *
+ * `decision`, `choice`, and `detail` may contain inline HTML (rendered via
+ * set:html), so a row can carry <strong>, a link, or a short phrase.
+ *
+ * A build-time gate throws on a duplicate id or an unknown status.
+ */
+export type DecisionStatus = 'decided' | 'leaning' | 'open' | 'tbd';
+
+export interface Decision {
+  /** Stable id, e.g. "D1". Lowercased to the row anchor (#d1). Must be unique. */
+  id: string;
+  /** The decision itself, in one line (the question being resolved). HTML ok. */
+  decision: string;
+  status: DecisionStatus;
+  /** The resolution, when there is one. A Choice column appears if any row has it. */
+  choice?: string;
+  /** Why THIS decision carries THIS status. Appended to the status tooltip. */
+  statusNote?: string;
+  /** Full rationale. When present, the ID cell opens a focus modal. HTML ok. */
+  detail?: string;
+}
+
+interface Props {
+  title: string;
+  desc?: string;
+  decisions: Decision[];
+}
+
+const { title, desc, decisions } = Astro.props;
+
+// The fixed vocabulary gloss for each status value (shown in the badge tooltip).
+const STATUS_GLOSS: Record<DecisionStatus, string> = {
+  decided: 'decided: locked; the choice will not change without a new decision.',
+  leaning: 'leaning: a preferred option exists but is not locked yet.',
+  open: 'open: genuinely undecided; no leaning yet.',
+  tbd: 'tbd: not yet examined; a placeholder to be filled in.',
+};
+const KNOWN = new Set(Object.keys(STATUS_GLOSS));
+
+// ---- Build-time gate: unique ids, known statuses ---------------------------
+{
+  const seen = new Set<string>();
+  for (const d of decisions) {
+    const key = d.id.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(
+        `DecisionTable "${title}": duplicate decision id "${d.id}" — each id must be unique ` +
+          `(it becomes the row anchor #${key}).`
+      );
+    }
+    seen.add(key);
+    if (!KNOWN.has(d.status)) {
+      throw new Error(
+        `DecisionTable "${title}": decision "${d.id}" has unknown status "${d.status}". ` +
+          `Use one of: ${[...KNOWN].join(', ')}.`
+      );
+    }
+  }
+  if (!desc || !desc.trim()) {
+    console.warn(
+      `[decision-table] warning: "${title}" has no desc — add desc= so screen readers ` +
+        `get an accessible summary of what these decisions are about.`
+    );
+  }
+}
+
+const anchor = (id: string) => id.toLowerCase();
+const showChoice = decisions.some((d) => d.choice != null && d.choice !== '');
+const interactive = decisions.some((d) => d.detail != null && d.detail !== '');
+
+const salt =
+  'dt-' +
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24);
+
+const statusTip = (d: Decision) =>
+  d.statusNote ? `${STATUS_GLOSS[d.status]}\nHere: ${d.statusNote}` : STATUS_GLOSS[d.status];
+
+// Detail payload for the modal, keyed by row id (only rows that have detail).
+const detailById = Object.fromEntries(
+  decisions.filter((d) => d.detail).map((d) => [anchor(d.id), { id: d.id, decision: d.decision, detail: d.detail }])
+);
+---
+
+<figure class="decision-table" data-dt={salt}>
+  <div class="dt-scroll">
+    <table>
+      {desc && <caption class="dt-sr-caption">{desc}</caption>}
+      <thead>
+        <tr>
+          <th scope="col" class="dt-col-id">{title}</th>
+          <th scope="col">Decision</th>
+          <th scope="col" class="dt-col-status">Status</th>
+          {showChoice && <th scope="col">Choice</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {
+          decisions.map((d) => {
+            const a = anchor(d.id);
+            const hasDetail = d.detail != null && d.detail !== '';
+            return (
+              <tr id={a} class="dt-row">
+                <th scope="row" class="dt-id">
+                  <span class="dt-id-wrap">
+                    {interactive && hasDetail ? (
+                      <button
+                        type="button"
+                        class="dt-id-btn"
+                        data-decision={a}
+                        aria-haspopup="dialog"
+                      >
+                        {d.id}
+                      </button>
+                    ) : (
+                      <span>{d.id}</span>
+                    )}
+                    <a
+                      class="dt-anchor"
+                      href={`#${a}`}
+                      data-anchor={a}
+                      aria-label={`Link to decision ${d.id}`}
+                      title={`Copy link to ${d.id}`}
+                    >
+                      <svg
+                        class="dt-anchor-icon"
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                      </svg>
+                      <span class="dt-anchor-copied" aria-hidden="true">Copied</span>
+                    </a>
+                  </span>
+                </th>
+                <td class="dt-decision" set:html={d.decision} />
+                <td class="dt-status">
+                  <span class={`dt-badge dt-badge--${d.status}`} title={statusTip(d)}>
+                    {d.status}
+                  </span>
+                </td>
+                {showChoice && <td class="dt-choice" set:html={d.choice ?? '—'} />}
+              </tr>
+            );
+          })
+        }
+      </tbody>
+    </table>
+  </div>
+
+  {
+    interactive && (
+      <>
+        <script type="application/json" class="dt-data" set:html={JSON.stringify(detailById)} />
+        <dialog class="dt-modal" aria-labelledby={`${salt}-modal-title`}>
+          <form method="dialog" class="dt-modal-inner">
+            <button class="dt-modal-close" aria-label="Close" value="close">×</button>
+            <p class="dt-modal-eyebrow">{title} · decision</p>
+            <h3 id={`${salt}-modal-title`} class="dt-modal-title" />
+            <div class="dt-modal-detail" />
+          </form>
+        </dialog>
+      </>
+    )
+  }
+</figure>
+
+{
+  interactive && (
+    <script is:inline set:html={`(() => {
+      const fig = document.querySelector('.decision-table[data-dt="${salt}"]');
+      if (!fig) return;
+      const data = JSON.parse(fig.querySelector('.dt-data').textContent || '{}');
+      const dialog = fig.querySelector('.dt-modal');
+      if (!dialog || !dialog.showModal) return;
+      const titleEl = dialog.querySelector('.dt-modal-title');
+      const detailEl = dialog.querySelector('.dt-modal-detail');
+      const strip = (s) => s.replace(/<[^>]+>/g, '');
+      function open(id) {
+        const d = data[id]; if (!d) return;
+        titleEl.textContent = d.id + ' \\u00b7 ' + strip(d.decision);
+        detailEl.innerHTML = d.detail || '';
+        dialog.showModal();
+      }
+      fig.querySelectorAll('.dt-id-btn').forEach((el) => {
+        el.addEventListener('click', () => open(el.getAttribute('data-decision')));
+      });
+      dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+    })();`} />
+  )
+}
+
+{/* Anchor copy-to-clipboard — runs for EVERY decision table (not just interactive
+    ones). The plain <a href="#d1"> already deep-links with zero JS; this upgrades
+    the click to also copy the absolute fragment URL and flash a "Copied" pill. */}
+<script is:inline set:html={`(() => {
+  const fig = document.querySelector('.decision-table[data-dt="${salt}"]');
+  if (!fig) return;
+  let timer;
+  fig.querySelectorAll('.dt-anchor').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('data-anchor');
+      const url = location.origin + location.pathname + location.search + '#' + id;
+      // Let the browser do the actual navigation/highlight; we only add copy UX.
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        e.preventDefault();
+        navigator.clipboard.writeText(url).then(() => {
+          if (history.replaceState) history.replaceState(null, '', '#' + id);
+          else location.hash = id;
+          const row = document.getElementById(id);
+          if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+        }).catch(() => { location.hash = id; });
+        a.classList.add('is-copied');
+        clearTimeout(timer);
+        timer = setTimeout(() => a.classList.remove('is-copied'), 1400);
+      }
+      // else: no clipboard API — the default <a> navigation still deep-links.
+    });
+  });
+})();`} />

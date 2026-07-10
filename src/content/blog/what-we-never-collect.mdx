@@ -94,7 +94,7 @@ the same code path production uses.
   edges={[
     { from: 'raw', to: 'edge' },
     { from: 'edge', to: 'derived' },
-    { from: 'derived', to: 'db', label: 'crosses the boundary' },
+    { from: 'derived', to: 'db', label: 'travels' },
   ]}
 />
 
@@ -103,3 +103,18 @@ the edge, so there is no central raw store, so what syncs is derived records, so
 just a database — which a local container can stand in for, which is why the whole thing is
 testable on a laptop. The most important thing our telemetry pipeline collects is nothing:
 the raw data stays where it was born, and only the safe shadow of it ever travels.
+
+## Since then: "never sync raw" ≠ "never sync anything"
+
+We later added a way for several machines to pool their telemetry through a shared folder, and
+it's worth being precise about what that did and didn't change. We *never* sync raw JSONL — that
+rule is untouched. What we allowed is syncing a redacted **event log** alongside the derived
+record: an append-log of what the agent did (tool calls, subagent runs, a metrics snapshot),
+built from the *same safe-field allowlist* as the derived record. We briefly considered shipping
+a scrubbed copy of the *whole transcript* instead — richer, but it would have made a regex pass
+the load-bearing defense against arbitrary personal data, so we didn't. Neither artifact is the
+central-raw store this post rules out: both are built at the edge from named safe fields and must
+clear a gitleaks-required, fail-closed gate before they go anywhere. The negative choice at the
+center of this post held — and choosing the event log over the transcript was us holding it a
+second time. The full reasoning is in
+[consolidating agent telemetry with Google Drive](/blog/consolidating-agent-telemetry-with-google-drive/).

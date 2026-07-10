@@ -1,0 +1,88 @@
+---
+/**
+ * Requirements — a per-actor capability contract for a design: for each actor
+ * (EarlBear leadership, the operator, the agent, the customer, a partner…) what
+ * they MUST be able to do, MAY do, and must NOT do. This is the "requirements"
+ * section of a design post, framed as an actor × capability contract rather than a
+ * vague wishlist — so the reader sees exactly who is entitled to what, and where
+ * the guardrails are (which is also the shape of the RLS/permission posture).
+ *
+ * Usage in MDX:
+ *   <Requirements title="What the system must do"
+ *     groups={[
+ *       { actor: 'EarlBear leadership', must: ['see per-employee cost'], can: ['export a deck'], cannot: ['read raw transcripts'] },
+ *       { actor: 'The agent', must: ['redact before sync'], cannot: ['write to ~/.claude', 'skip the gitleaks gate'] },
+ *       { actor: 'Customer', can: ['request a review'], cannot: ['see another store'] },
+ *     ]} />
+ *
+ * Any of must/can/cannot may be omitted for an actor. Zero JavaScript, semantic
+ * tokens only. A build-time gate throws on an actor with no capabilities at all.
+ */
+export interface RequirementGroup {
+  actor: string;
+  /** Hard requirements — the actor MUST be able to do these. */
+  must?: string[];
+  /** Permitted — the actor MAY do these. */
+  can?: string[];
+  /** Prohibited — the actor must NOT be able to do these (the guardrails). */
+  cannot?: string[];
+}
+interface Props {
+  title: string;
+  desc?: string;
+  groups: RequirementGroup[];
+}
+const { title, desc, groups } = Astro.props;
+
+{
+  groups.forEach((g, i) => {
+    const n = (g.must?.length ?? 0) + (g.can?.length ?? 0) + (g.cannot?.length ?? 0);
+    if (n === 0)
+      throw new Error(
+        `Requirements "${title}": actor "${g.actor || `#${i}`}" has no must/can/cannot ` +
+          `entries — give it at least one capability or drop it.`
+      );
+    if (!g.actor || !g.actor.trim())
+      throw new Error(`Requirements "${title}": group ${i} is missing an actor name.`);
+  });
+}
+
+const KINDS: { key: 'must' | 'can' | 'cannot'; label: string; glyph: string }[] = [
+  { key: 'must', label: 'Must', glyph: '●' },
+  { key: 'can', label: 'Can', glyph: '○' },
+  { key: 'cannot', label: 'Cannot', glyph: '✕' },
+];
+---
+
+<figure class="requirements" role="group" aria-label={desc ?? title}>
+  <p class="req-title">{title}</p>
+  <div class="req-groups">
+    {
+      groups.map((g) => (
+        <div class="req-group">
+          <div class="req-actor">{g.actor}</div>
+          <div class="req-caps">
+            {KINDS.map(({ key, label, glyph }) =>
+              g[key] && g[key]!.length > 0 ? (
+                <div class={`req-cap req-cap--${key}`}>
+                  <span class="req-cap-label">
+                    <span class="req-cap-glyph" aria-hidden="true">
+                      {glyph}
+                    </span>
+                    {label}
+                  </span>
+                  <ul>
+                    {g[key]!.map((item) => (
+                      <li>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null
+            )}
+          </div>
+        </div>
+      ))
+    }
+  </div>
+  {desc && <figcaption class="req-caption">{desc}</figcaption>}
+</figure>

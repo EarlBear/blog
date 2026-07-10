@@ -1,0 +1,129 @@
+---
+title: "Who are you, to Supabase?"
+description: "Our dashboard logs you in with Cloudflare Access — but Supabase never knew who you were, so RLS could only say 'anyone with the anon key.' We taught it your identity without adding a backend: a Pages Function verifies the Access login and mints a short-lived Supabase JWT, so RLS enforces @earlbear.com on reads, writes, and the live Realtime feed."
+pubDate: 2026-07-08
+tags: [engineering, agents]
+expects: [flow]
+authors: [omar]
+draft: true
+design: supabase-identity
+audience: internal
+questions:
+  - Cloudflare Access already logs you in — so why does Supabase still not know who you are?
+  - How do you get a logged-in identity into Postgres RLS without adding a backend or a user table?
+  - Why not just use the existing service-role proxy, like the rest of our apps?
+  - Where does the JWT-signing secret live, and why is that the whole security boundary?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Every real user of our dashboards is an `@earlbear.com` Google account — Cloudflare Access sees to
+that. Hit `gtm.earlbear.com`, get bounced to Google SSO, come back with a signed `CF_Authorization`
+cookie. The page is unreachable otherwise. So we're logged in.
+
+But **Supabase never learned any of that.** The scan-fleet page reads and writes Supabase with the
+*anon key* — a public, read-only key baked into the build. Row-Level Security, the thing that's
+supposed to decide who can touch which rows, could only see "a request holding the anon key." Not
+*which* person. So the best RLS could say was `USING (true)` — anyone with that key reads
+everything. Cloudflare Access gated the *page*; nothing gated the *database*. A leaked anon key
+reads the fleet from anywhere.
+
+We wanted Postgres itself to enforce "only a logged-in `@earlbear.com` user" — without adding a
+backend, and without losing the live Realtime feed that makes the page worth watching.
+
+## The proxy we couldn't use
+
+Our other apps already solve "identity in Supabase" a clever way: a Cloudflare Pages Function
+verifies the Access JWT, then calls Supabase with the *service* key and forwards the verified email
+as a header; RLS reads it. It works. But it's a **REST proxy** — every call goes Function →
+Supabase. And Supabase Realtime doesn't work through a REST proxy: `postgres_changes` needs a
+direct WebSocket from the browser to Supabase. Route the reads through a proxy and the live fleet
+goes dark. The proxy trades away the one thing we couldn't lose.
+
+## Minting an identity
+
+So instead of proxying every call, we mint a credential the browser can use directly — one that
+carries the identity. A tiny Pages Function verifies the Access login and hands back a short-lived
+**Supabase JWT**:
+
+```
+GET /api/auth-token
+  → verify the Cloudflare Access JWT (JWKS, signature, exp, aud)
+  → assert the email ends in @earlbear.com
+  → sign a 30-minute Supabase JWT (ES256): { role: 'authenticated', email, ... }
+  → { token }
+```
+
+The browser hands that token to supabase-js through its `accessToken` option, and now **every**
+request — REST *and* Realtime — carries it. RLS can finally see who you are:
+
+```sql
+create policy scan_sites_read on public.scan_sites for select to authenticated
+  using ((auth.jwt() ->> 'email') like '%@earlbear.com');
+```
+
+Reads, the request-a-review insert (which also pins `requested_by` to your own verified email so
+you can't post as someone else), and the Realtime subscription are all authorized against that
+policy. The anon key, on its own, now reads *nothing* from the fleet — we dropped the `USING (true)`
+policies entirely. The database enforces `@earlbear.com`, not just the edge.
+
+<FlowDiagram
+  title="Identity into Supabase"
+  shape="pipeline"
+  legend
+  desc="Cloudflare Access logs the user in with Google SSO; a Pages Function verifies that login and mints a short-lived Supabase JWT carrying the email; the browser uses it directly, so Supabase RLS and Realtime both enforce the @earlbear.com identity."
+  nodes={[
+    { id: 'browser', label: 'Browser', kind: 'external', detail: 'The gtm dashboard, an @earlbear.com user behind Cloudflare Access.' },
+    { id: 'access', label: 'CF Access', kind: 'edge', detail: 'Google Workspace SSO, restricted to earlbear.com. Sets the signed CF_Authorization cookie.' },
+    { id: 'fn', label: 'auth-token', detail: 'A CF Pages Function: verifies the Access JWT, asserts @earlbear.com, mints a 30-min Supabase JWT (ES256; role=authenticated, email claim). Signs with an imported EC private key held only in the CF Pages env — Supabase verifies via its public JWKS.' },
+    { id: 'jwt', label: 'Supabase JWT', kind: 'store', detail: 'A short-lived token the browser hands to supabase-js via the accessToken option — carried on REST and Realtime alike.' },
+    { id: 'db', label: 'Supabase', kind: 'store', detail: 'RLS reads auth.jwt()->>email and enforces the @earlbear.com domain on reads, writes, and postgres_changes subscriptions.' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'access', label: 'SSO' },
+    { from: 'access', to: 'fn', label: 'verify' },
+    { from: 'fn', to: 'jwt', label: 'mint' },
+    { from: 'jwt', to: 'db', label: 'RLS + RT' },
+  ]}
+/>
+
+## Signing with a key we hold, not a secret we borrow
+
+Our first cut signed the token with Supabase's *shared* JWT secret (HS256). Then Supabase migrated
+the project to its new **JWT Signing Keys** system — and that shared secret became verify-only.
+Supabase also, deliberately, won't hand back any private key it generates for you. So "borrow the
+secret and sign with it" was off the table.
+
+There's a subtlety here worth naming. When the project migrated, Supabase *auto-created* an ES256
+signing key for us — but it holds that key's private half and won't release it, so we can't sign
+with it (by design: nobody, not even us, can extract a Supabase-generated key). To mint our own
+tokens we need a key **we** hold. So we generate one (`supabase gen signing-key --algorithm
+ES256`), import it as a *second* signing key, and rotate it to current. The Function signs each
+token with its **private** half — which lives only in the Cloudflare Pages environment and never
+leaves our control. Supabase publishes the **public** half at `/auth/v1/.well-known/jwks.json` and
+verifies our tokens against it; the token's header carries a `kid` so it knows which key to check.
+The signing is a dozen lines of Web Crypto ECDSA (P-256), so the Function stays zero-dependency,
+matching the Access-JWT verifier we copied from our other app.
+
+The whole import — generate, import as standby, wait for the public key to hit the JWKS, rotate to
+current — runs through the CLI and Supabase's Management API, no dashboard clicking; we wrote it up
+as a one-command script so the next rotation is repeatable. The upside over the old shared secret:
+nobody at Supabase can mint tokens as us, and rotating or revoking is an API call against a key we
+own, not a redeploy of a secret baked into the app.
+
+## The boundary is the secret
+
+The whole security model comes down to where three keys live:
+
+- The **publishable key** is in the browser bundle. Fine — after the migration it reads nothing on its own.
+- The **signing key** (an EC private key) is a Cloudflare Pages secret, read only by the Function.
+  The browser gets a 30-minute token, never the key. If it leaked, an attacker could mint tokens —
+  so it's the one credential that matters, and it never crosses into the frontend. Supabase only
+  ever holds its *public* half.
+- The **service key** (which bypasses RLS to write the review records) lives only on the operator's
+  laptop, in the reporting agent's environment. Never in the bundle, never in a commit.
+
+Three credentials, three homes, none of them in the browser except the one that's safe there. The
+database enforces the identity; the edge login is where it comes from; and no new backend joined the
+stack — just one small function that turns "you're logged in to Cloudflare" into "you're logged in
+to Postgres."

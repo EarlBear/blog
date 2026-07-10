@@ -1,0 +1,166 @@
+---
+/**
+ * BarChart — a horizontal bar chart rendered as one inline SVG at build time.
+ *
+ * Zero client JS, zero dependencies, theme-aware via design-system tokens — the same
+ * "custom SVG, not a chart library" posture as FlowDiagram. For a handful of static,
+ * build-time-known values a hand-rolled SVG beats pulling in D3/Recharts (which are
+ * React and/or runtime-oriented); see the "embedding charts" post for that decision.
+ *
+ * Props:
+ *   title   — chart heading (optional)
+ *   unit    — appended to each value label, e.g. "µs", "ms", "KB" (optional)
+ *   bars    — [{ label, value, note? }]; value is a number in `unit`
+ *   log     — true to use a log10 x-scale (for datasets spanning orders of magnitude,
+ *             e.g. microseconds next to milliseconds). Default false (linear).
+ *   caption — small print under the chart (optional; e.g. "measured, dev laptop")
+ *
+ * Values are NOT auto-converted between units — labels show the raw value plus the `unit`
+ * you pass (thousands grouped), so you stay in control of exactly what the reader sees.
+ */
+interface Bar {
+  label: string;
+  value: number;
+  note?: string;
+}
+interface Props {
+  title?: string;
+  unit?: string;
+  bars: Bar[];
+  log?: boolean;
+  caption?: string;
+}
+const { title, unit = "", bars, log = false, caption } = Astro.props as Props;
+
+// Geometry (viewBox units; the SVG scales responsively to its container width).
+const W = 720;
+const ROW_H = 34;
+const GAP = 10;
+const LABEL_W = 190; // left gutter for bar labels
+const VAL_W = 96; // right gutter for value labels
+const PAD_X = 8;
+const PAD_TOP = 8;
+const PAD_BOT = 8;
+const trackX = LABEL_W + PAD_X;
+const trackW = W - trackX - VAL_W - PAD_X;
+const H = PAD_TOP + PAD_BOT + bars.length * ROW_H + (bars.length - 1) * GAP;
+
+const maxVal = Math.max(...bars.map((b) => b.value), 0);
+// Log scale maps [1, max] -> [0, trackW]; guard against value <= 0 (log undefined).
+const lg = (v: number) => Math.log10(Math.max(v, 1));
+const lgMax = lg(maxVal);
+
+function barWidth(v: number): number {
+  if (v <= 0) return 0;
+  if (log) return lgMax > 0 ? (lg(v) / lgMax) * trackW : 0;
+  return maxVal > 0 ? (v / maxVal) * trackW : 0;
+}
+
+// Compact value label: keep the unit the author passed, group thousands.
+function fmt(v: number): string {
+  const n = v >= 100 ? Math.round(v) : Math.round(v * 100) / 100;
+  const s = n.toLocaleString("en-US");
+  return unit ? `${s} ${unit}` : s;
+}
+
+const palette = ["--eb-data-1", "--eb-data-2", "--eb-data-3", "--eb-data-4", "--eb-data-5", "--eb-data-6"];
+const rows = bars.map((b, i) => ({
+  ...b,
+  y: PAD_TOP + i * (ROW_H + GAP),
+  w: barWidth(b.value),
+  fill: `var(${palette[i % palette.length]})`,
+}));
+const titleId = title ? `bc-title-${Math.abs(hash(title))}` : undefined;
+function hash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+---
+
+<figure class="barchart">
+  {title && <figcaption class="barchart__title" id={titleId}>{title}{log && <span class="barchart__scale"> · log scale</span>}</figcaption>}
+  <div class="barchart__scroll">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-labelledby={titleId}
+      preserveAspectRatio="xMinYMin meet"
+      class="barchart__svg"
+    >
+      {rows.map((r) => (
+        <g>
+          <text
+            x={LABEL_W}
+            y={r.y + ROW_H / 2}
+            text-anchor="end"
+            dominant-baseline="middle"
+            class="barchart__label"
+          >
+            {r.label}
+          </text>
+          <rect x={trackX} y={r.y} width={trackW} height={ROW_H} rx="4" class="barchart__track" />
+          <rect x={trackX} y={r.y} width={Math.max(r.w, 2)} height={ROW_H} rx="4" fill={r.fill} class="barchart__bar" />
+          <text
+            x={trackX + trackW + PAD_X}
+            y={r.y + ROW_H / 2}
+            dominant-baseline="middle"
+            class="barchart__value"
+          >
+            {fmt(r.value)}
+          </text>
+        </g>
+      ))}
+    </svg>
+  </div>
+  {caption && <figcaption class="barchart__caption">{caption}</figcaption>}
+</figure>
+
+<style>
+  .barchart {
+    margin: var(--space-6, 1.5rem) 0;
+  }
+  .barchart__title {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--color-text);
+    margin-bottom: var(--space-2, 0.5rem);
+  }
+  .barchart__scale {
+    color: var(--color-text-muted);
+    font-weight: 400;
+    font-size: 0.85em;
+  }
+  .barchart__scroll {
+    overflow-x: auto;
+  }
+  .barchart__svg {
+    width: 100%;
+    height: auto;
+    min-width: 420px;
+    display: block;
+  }
+  .barchart__label {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    fill: var(--color-text-secondary);
+  }
+  .barchart__value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    fill: var(--color-text);
+  }
+  .barchart__track {
+    fill: var(--color-surface-sunken);
+  }
+  .barchart__bar {
+    /* semantic data-token fill set inline */
+  }
+  .barchart__caption {
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-top: var(--space-2, 0.5rem);
+  }
+</style>

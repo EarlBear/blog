@@ -19,3 +19,10 @@ if [ $? -ne 0 ]; then
     echo "If this is a false positive, add it to .gitleaks.toml allowlist."
     exit 1
 fi
+
+# Structural dotenvx guard: gitleaks only catches secret-SHAPED values; this fails a commit
+# if a staged .env* file has ANY plaintext value (must be `encrypted:`, blank, or the public
+# key). Catches a forgotten `make encrypt` after `make decrypt`, or a plaintext config value.
+if command -v python3 >/dev/null 2>&1; then
+    python3 .claude/hooks/check-env-encrypted.py --staged || exit 1
+fi

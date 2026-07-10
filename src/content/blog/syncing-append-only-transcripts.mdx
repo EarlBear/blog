@@ -107,6 +107,13 @@ would earn its complexity. And if a shared database ever became undesirable, the
 multi-machine story would need rethinking. We wrote those triggers down, because the point of
 a design is not to be permanent — it is to be revisitable when the world it assumed changes.
 
+Since then, the multi-machine story did get a second option. Alongside the direct database
+push, a machine can now scrub at the edge and *file-sync* the clean artifacts through a shared
+Google Drive folder — server-free consolidation with no per-machine database key. It doesn't
+touch the trigger or delta mechanics above, and it keeps the invariant: only scrubbed,
+gitleaks-verified files sync, never raw. The reasoning is in
+[consolidating agent telemetry with Google Drive](/blog/consolidating-agent-telemetry-with-google-drive/).
+
 [^append]: For append-only logs, tracking the byte offset since the last sync is the simplest
 correct approach — only the newly appended bytes need processing. "Incremental Backups with
 Rsync: A Comprehensive Guide." *WafaTech*,

@@ -1,0 +1,63 @@
+---
+/**
+ * Personas — whose life this design touches, and how. Each persona is a role
+ * (EarlBear leadership, the operator, the agent, the customer, a partner…) paired
+ * with the impact on them: what changes for that person, what they now do with the
+ * system. Answers the two questions a design post must: "whose life does this
+ * impact?" and "how / what do they do with it?" — kept concrete, not aspirational.
+ *
+ * Usage in MDX:
+ *   <Personas title="Who this is for"
+ *     personas={[
+ *       { role: 'Growth operator', impact: 'Reviews scored leads instead of hunting for them; sends the drafted outreach after a glance.' },
+ *       { role: 'EarlBear leadership', impact: 'Sees cost and throughput per employee without reading a transcript.' },
+ *       { role: 'Customer', impact: 'Gets a specific store review they can act on, not a generic pitch.' },
+ *     ]} />
+ *
+ * Zero JavaScript, semantic tokens only. Gate: every persona needs a role + impact.
+ */
+export interface Persona {
+  /** The role whose life the design touches. */
+  role: string;
+  /** How it changes their life — what they now do with it. Concrete, not vague. */
+  impact: string;
+  /** Optional one-word/short "before" to contrast against (what they did before). */
+  before?: string;
+}
+interface Props {
+  title?: string;
+  desc?: string;
+  personas: Persona[];
+}
+const { title = 'Whose life this changes', desc, personas } = Astro.props;
+
+{
+  personas.forEach((p, i) => {
+    if (!p.role || !p.role.trim())
+      throw new Error(`Personas "${title}": persona ${i} is missing a role.`);
+    if (!p.impact || !p.impact.trim())
+      throw new Error(
+        `Personas "${title}": persona "${p.role}" has no impact — say what changes ` +
+          `for them / what they do with it (not just who they are).`
+      );
+  });
+}
+---
+
+<figure class="personas" role="group" aria-label={desc ?? title}>
+  <p class="pers-title">{title}</p>
+  <ul class="pers-list">
+    {
+      personas.map((p) => (
+        <li class="pers-item">
+          <span class="pers-role">{p.role}</span>
+          <span class="pers-impact">
+            {p.before && <span class="pers-before">was: {p.before} · </span>}
+            {p.impact}
+          </span>
+        </li>
+      ))
+    }
+  </ul>
+  {desc && <figcaption class="pers-caption">{desc}</figcaption>}
+</figure>

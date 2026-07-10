@@ -1,0 +1,240 @@
+---
+/**
+ * Walkthrough — an interactive, click-through UX demo over live <Mockup> scenes.
+ *
+ * A static mockup shows what a UI looks like; a Walkthrough shows it being USED,
+ * one narrated step at a time. It stacks several scenes (the default slot is the
+ * "app" scene; named slots scene-0, scene-1, … are extra scenes) and a transport
+ * bar lets the reader step through them: each step reveals a scene, slides a
+ * highlight box over a target element, and shows a narration caption.
+ *
+ * Deliberately NOT an autoplaying animation — the reader drives it (prev / next /
+ * click a dot). This keeps the blog's progressive-enhancement stance: it renders
+ * every scene server-side, then one self-contained inline script wires the
+ * stepping. With no JS (or reduced-motion) the reader sees step 1 and can page
+ * through with the buttons; nothing is hidden behind animation.
+ *
+ * Steps reference scenes by index and target elements by CSS selector, so the
+ * mockup marks anchorable elements with ids (e.g. <div id="sf-scan-issue">).
+ *
+ * Usage in MDX (scenes are named slots; the default slot is the app scene):
+ *   <Walkthrough
+ *     title="Storefront agent"
+ *     steps={[
+ *       { scene: 'app', target: '#sf-scan-issue', say: 'The agent scans the store' },
+ *       { scene: 0, say: 'it logs the issue and ships a fix' },
+ *       { scene: 1, say: 'each win compounds the conversion curve' },
+ *       { scene: 'app', say: 'and it keeps scanning' },
+ *     ]}
+ *   >
+ *     <Mockup …>…the app scene, with #sf-scan-issue…</Mockup>
+ *     <Mockup slot="scene-0" …>…dashboard…</Mockup>
+ *     <Mockup slot="scene-1" …>…projection chart…</Mockup>
+ *   </Walkthrough>
+ */
+export interface WalkStep {
+  /** 'app' = the default slot; a number = the scene-<n> named slot. */
+  scene: 'app' | number;
+  /** CSS selector (within the active scene) to slide the highlight box over. */
+  target?: string;
+  /** Narration caption shown for this step. */
+  say?: string;
+}
+
+interface Props {
+  title: string;
+  steps: WalkStep[];
+}
+
+const { title, steps } = Astro.props;
+
+// Custom scenes are named slots scene-0 … scene-5. Astro requires <slot name> to
+// be a STATIC string, so the markup below enumerates a fixed ceiling and renders
+// only the slots that actually have content. Six is far more than any real
+// walkthrough needs (our source posts use at most two custom scenes).
+
+// A stable per-instance id so the inline script only touches its own walkthrough
+// (Astro renders the same component many times on a page). Derived from the title
+// plus a short hash of the steps, so it's deterministic — no Math.random.
+const salt =
+  'wt-' +
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24) +
+  '-' +
+  (JSON.stringify(steps).length % 997).toString(36);
+
+if (!steps.length) {
+  throw new Error(`Walkthrough "${title}": steps is empty — a walkthrough needs at least one step.`);
+}
+---
+
+<div class="eb-walkthrough" data-wt={salt} data-steps={JSON.stringify(steps)}>
+  <div class="eb-wt-transport">
+    <div class="eb-wt-controls">
+      <button type="button" class="eb-wt-btn eb-wt-prev" aria-label={`Previous step of ${title}`}>
+        ← Prev
+      </button>
+      <button type="button" class="eb-wt-btn eb-wt-next" aria-label={`Next step of ${title}`}>
+        Next →
+      </button>
+      <span class="eb-wt-caption" aria-live="polite">{steps[0].say ?? ''}</span>
+    </div>
+    <div class="eb-wt-timeline" role="tablist" aria-label={`${title} steps`}>
+      <span class="eb-wt-rail" aria-hidden="true"></span>
+      <span class="eb-wt-fill" aria-hidden="true"></span>
+      {
+        steps.map((s, i) => (
+          <button
+            type="button"
+            class="eb-wt-dot"
+            data-step={i}
+            role="tab"
+            aria-label={s.say || `Step ${i + 1}`}
+            aria-selected={i === 0 ? 'true' : 'false'}
+            title={s.say || `Step ${i + 1}`}
+            style={`left:${steps.length <= 1 ? 50 : (i / (steps.length - 1)) * 100}%`}
+          />
+        ))
+      }
+    </div>
+  </div>
+
+  <div class="eb-wt-viewport">
+    <div class="eb-wt-scene eb-wt-scene--app" data-scene="app">
+      <slot />
+      <span class="eb-wt-highlight" aria-hidden="true" hidden></span>
+    </div>
+    {/* Static named slots (Astro requires a literal name). Only the ones with
+        content render, each keeping its scene-<n> index. */}
+    {
+      Astro.slots.has('scene-0') && (
+        <div class="eb-wt-scene" data-scene="0" aria-hidden="true" hidden>
+          <slot name="scene-0" />
+          <span class="eb-wt-highlight" aria-hidden="true" hidden />
+        </div>
+      )
+    }
+    {
+      Astro.slots.has('scene-1') && (
+        <div class="eb-wt-scene" data-scene="1" aria-hidden="true" hidden>
+          <slot name="scene-1" />
+          <span class="eb-wt-highlight" aria-hidden="true" hidden />
+        </div>
+      )
+    }
+    {
+      Astro.slots.has('scene-2') && (
+        <div class="eb-wt-scene" data-scene="2" aria-hidden="true" hidden>
+          <slot name="scene-2" />
+          <span class="eb-wt-highlight" aria-hidden="true" hidden />
+        </div>
+      )
+    }
+    {
+      Astro.slots.has('scene-3') && (
+        <div class="eb-wt-scene" data-scene="3" aria-hidden="true" hidden>
+          <slot name="scene-3" />
+          <span class="eb-wt-highlight" aria-hidden="true" hidden />
+        </div>
+      )
+    }
+    {
+      Astro.slots.has('scene-4') && (
+        <div class="eb-wt-scene" data-scene="4" aria-hidden="true" hidden>
+          <slot name="scene-4" />
+          <span class="eb-wt-highlight" aria-hidden="true" hidden />
+        </div>
+      )
+    }
+    {
+      Astro.slots.has('scene-5') && (
+        <div class="eb-wt-scene" data-scene="5" aria-hidden="true" hidden>
+          <slot name="scene-5" />
+          <span class="eb-wt-highlight" aria-hidden="true" hidden />
+        </div>
+      )
+    }
+  </div>
+</div>
+
+<script is:inline define:vars={{ salt }}>
+  (() => {
+    const root = document.querySelector(`.eb-walkthrough[data-wt="${salt}"]`);
+    if (!root) return;
+    const steps = JSON.parse(root.getAttribute('data-steps') || '[]');
+    if (!steps.length) return;
+
+    const scenes = new Map();
+    root.querySelectorAll('.eb-wt-scene').forEach((el) => {
+      scenes.set(el.getAttribute('data-scene'), el);
+    });
+    const dots = [...root.querySelectorAll('.eb-wt-dot')];
+    const fill = root.querySelector('.eb-wt-fill');
+    const caption = root.querySelector('.eb-wt-caption');
+    const prevBtn = root.querySelector('.eb-wt-prev');
+    const nextBtn = root.querySelector('.eb-wt-next');
+    const n = steps.length;
+    let cur = 0;
+
+    const sceneKey = (s) => (s.scene === 'app' ? 'app' : String(s.scene));
+
+    function place(sceneEl, target) {
+      const hl = sceneEl.querySelector('.eb-wt-highlight');
+      if (!hl) return;
+      if (!target) {
+        hl.hidden = true;
+        return;
+      }
+      const el = sceneEl.querySelector(target);
+      if (!el) {
+        hl.hidden = true;
+        return;
+      }
+      const sr = sceneEl.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      hl.style.left = r.left - sr.left + 'px';
+      hl.style.top = r.top - sr.top + 'px';
+      hl.style.width = r.width + 'px';
+      hl.style.height = r.height + 'px';
+      hl.hidden = false;
+    }
+
+    function show(i) {
+      cur = Math.max(0, Math.min(n - 1, i));
+      const step = steps[cur];
+      const key = sceneKey(step);
+      scenes.forEach((el, k) => {
+        const on = k === key;
+        el.classList.toggle('eb-wt-scene--on', on);
+        el.hidden = !on && el.getAttribute('data-scene') !== 'app';
+        el.setAttribute('aria-hidden', on ? 'false' : 'true');
+        if (!on) {
+          const hl = el.querySelector('.eb-wt-highlight');
+          if (hl) hl.hidden = true;
+        }
+      });
+      const active = scenes.get(key);
+      if (active) place(active, step.target);
+      caption.textContent = step.say || '';
+      dots.forEach((d, di) => {
+        d.classList.toggle('eb-wt-dot--done', di < cur);
+        d.classList.toggle('eb-wt-dot--active', di === cur);
+        d.setAttribute('aria-selected', di === cur ? 'true' : 'false');
+      });
+      fill.style.width = (n <= 1 ? 0 : (cur / (n - 1)) * 100) + '%';
+      prevBtn.disabled = cur === 0;
+      nextBtn.disabled = cur === n - 1;
+    }
+
+    prevBtn.addEventListener('click', () => show(cur - 1));
+    nextBtn.addEventListener('click', () => show(cur + 1));
+    dots.forEach((d) =>
+      d.addEventListener('click', () => show(Number(d.getAttribute('data-step'))))
+    );
+    window.addEventListener('resize', () => show(cur));
+    show(0);
+  })();
+</script>

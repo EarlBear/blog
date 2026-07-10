@@ -675,8 +675,12 @@ a:focus:not(:focus-visible) {
 .flow-diagram .flow-legend-item + .flow-legend-item {
   margin-top: 0;
 }
+/* The legend swatch is a tiny inline SVG — it must escape the main-diagram
+   `.flow-diagram svg { width:100%; min-width:280px }` sizing, or it stretches to
+   280px, blowing the label off to the side and forcing the legend to wrap. */
 .flow-diagram .flow-legend-swatch {
   width: 28px;
+  min-width: 28px;
   height: 18px;
   flex: none;
 }
@@ -727,17 +731,19 @@ a:focus:not(:focus-visible) {
 .comparison-matrix td {
   padding: var(--space-3) var(--space-4);
   text-align: left;
+  vertical-align: middle;
   border-bottom: 1px solid var(--color-border-subtle);
 }
 .comparison-matrix tbody tr:last-child th,
 .comparison-matrix tbody tr:last-child td {
   border-bottom: none;
 }
-/* Header cells fill to the top of the rounded container (no floating gap above
-   the chosen-column highlight), and all three option headers share a baseline. */
+/* Header cells: all three option headers align to the TOP so their labels share
+   one baseline — the chosen column's CHOSEN badge then hangs below its label
+   instead of pushing the label up and out of line with the plain headers. */
 .comparison-matrix thead th {
   background: var(--color-surface-sunken);
-  vertical-align: middle;
+  vertical-align: top;
 }
 .comparison-matrix .cm-corner {
   font-size: var(--fs-eyebrow);
@@ -794,11 +800,17 @@ a:focus:not(:focus-visible) {
 .comparison-matrix .cm-criterion {
   font-weight: var(--fw-medium);
   color: var(--color-text);
-  white-space: nowrap;
 }
+/* Marks (● ○ ◐) render on the same line box as text cells so dot-rows and
+   value-rows share one vertical rhythm; the mark is centered in its own line. */
 .comparison-matrix .cm-mark {
+  display: inline-flex;
+  align-items: center;
   font-size: var(--fs-lg);
-  line-height: 1;
+  line-height: var(--lh-body);
+}
+.comparison-matrix .cm-value {
+  line-height: var(--lh-body);
 }
 .comparison-matrix .cm-mark--yes {
   color: var(--eb-success);
@@ -824,4 +836,1094 @@ a:focus:not(:focus-visible) {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================================================================
+   Callout — src/components/Callout.astro. Admonition box (note / info / tip /
+   warning). The house target for the source docs' :::type[Title] admonitions.
+   Zero JS, semantic status tokens only, single light theme.
+   ============================================================================ */
+.eb-callout {
+  margin: var(--space-6) 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--callout-accent, var(--color-border-strong));
+  border-radius: var(--radius-md);
+  background: var(--callout-bg, var(--color-surface-sunken));
+}
+.eb-callout--note {
+  --callout-accent: var(--eb-info);
+  --callout-bg: var(--color-surface-sunken);
+}
+.eb-callout--info {
+  --callout-accent: var(--eb-info);
+  --callout-bg: var(--eb-info-bg);
+}
+.eb-callout--tip {
+  --callout-accent: var(--eb-success);
+  --callout-bg: var(--eb-success-bg);
+}
+.eb-callout--warning {
+  --callout-accent: var(--eb-warning);
+  --callout-bg: var(--eb-warning-bg);
+}
+.eb-callout-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--callout-accent);
+}
+.eb-callout-body {
+  color: var(--color-text-secondary);
+}
+/* The box owns the vertical rhythm; strip the leading/trailing margins so a
+   single paragraph sits flush. */
+.eb-callout-body > :first-child {
+  margin-top: 0;
+}
+.eb-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+   Assumption — src/components/Assumption.astro. Inline amber highlight for an
+   unvalidated premise, with a small "Assumption" tag so it reads as "not yet
+   proven", not decoration. Zero JS, semantic tokens only.
+   ============================================================================ */
+.eb-assumption {
+  background: var(--eb-warning-bg);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 0.05em 0.35em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.eb-assumption-tag {
+  display: inline-block;
+  margin-right: 0.4em;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--eb-warning);
+  vertical-align: 0.05em;
+}
+/* The bare-marker form (<Assumption />) has no body; keep the tag flush. */
+.eb-assumption-tag:only-child {
+  margin-right: 0;
+}
+.eb-assumption-body {
+  color: var(--color-text);
+}
+
+/* ============================================================================
+   Mockup — src/components/Mockup.astro. A framed "what it looks like" UI
+   impression (browser / window / phone / bare chrome). The screen is live,
+   token-styled HTML in the slot. Pairs with <Walkthrough>. Zero JS.
+   ============================================================================ */
+.eb-mockup {
+  margin: var(--space-8) auto;
+  width: 100%;
+}
+.eb-mockup-frame {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.12));
+}
+/* chrome bar (browser address bar / window title bar) */
+.eb-mockup-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in oklab, var(--color-surface-sunken) 70%, var(--color-surface));
+  border-bottom: 1px solid var(--color-border);
+}
+.eb-mockup-dots {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.eb-mockup-dots i {
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+}
+/* macOS-ish traffic lights, in the design system's muted status hues */
+.eb-mockup-dots i:nth-child(1) {
+  background: var(--eb-error);
+}
+.eb-mockup-dots i:nth-child(2) {
+  background: var(--eb-warning);
+}
+.eb-mockup-dots i:nth-child(3) {
+  background: var(--eb-success);
+}
+.eb-mockup-address {
+  flex: 1 1 auto;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eb-mockup-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+/* the live "screen" */
+.eb-mockup-screen {
+  background: var(--color-canvas);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body, 1.5);
+  color: var(--color-text);
+}
+.eb-mockup-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+/* phone shell */
+.eb-mockup--phone {
+  max-width: 380px;
+}
+.eb-mockup--phone .eb-mockup-frame {
+  border-radius: 26px;
+  border-width: 8px;
+  border-color: var(--color-surface-inverse);
+  position: relative;
+}
+.eb-mockup--phone .eb-mockup-notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44%;
+  height: 18px;
+  background: var(--color-surface-inverse);
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  z-index: 2;
+}
+.eb-mockup--phone .eb-mockup-screen {
+  min-height: 360px;
+}
+
+/* ============================================================================
+   Walkthrough — src/components/Walkthrough.astro. Interactive, click-through
+   demo over stacked <Mockup> scenes. One self-contained inline script wires the
+   stepping (prev / next / dots); every scene renders server-side, so no-JS and
+   reduced-motion readers still page through with the buttons.
+   ============================================================================ */
+.eb-walkthrough {
+  margin: var(--space-8) 0;
+}
+.eb-wt-transport {
+  margin-bottom: var(--space-4);
+}
+.eb-wt-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.eb-wt-btn {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.eb-wt-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.eb-wt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.eb-wt-caption {
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+}
+/* timeline — a rail with evenly-spaced clickable step dots, a progress fill. */
+.eb-wt-timeline {
+  position: relative;
+  height: 16px;
+  margin: 0 7px;
+}
+.eb-wt-rail,
+.eb-wt-fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 2px;
+  transform: translateY(-50%);
+}
+.eb-wt-rail {
+  right: 0;
+  background: var(--color-border);
+}
+.eb-wt-fill {
+  width: 0;
+  background: var(--color-accent);
+  transition: width var(--dur-slow, 320ms) cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.eb-wt-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-surface);
+  background: var(--color-border-strong);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  z-index: 1;
+}
+/* each dot's `left: %` is set inline at build time from its step index, so the
+   rail is laid out with zero JS. */
+.eb-wt-dot--done,
+.eb-wt-dot--active {
+  background: var(--color-accent);
+}
+.eb-wt-dot--active {
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-accent) 22%, transparent);
+}
+/* viewport: grid-stack every scene in one cell so height tracks the tallest and
+   never collapses when switching. Only the active scene is shown. */
+.eb-wt-viewport {
+  display: grid;
+}
+.eb-wt-scene {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow, 320ms) ease;
+}
+.eb-wt-scene--on {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 1;
+}
+/* the app scene is never `hidden` (it anchors the highlight overlay), so hide it
+   with opacity alone when another scene is active. */
+.eb-wt-scene--app {
+  z-index: 0;
+}
+.eb-wt-highlight {
+  position: absolute;
+  background: color-mix(in oklab, var(--color-accent) 20%, transparent);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  z-index: 5;
+  transition:
+    left var(--dur-normal, 200ms) ease,
+    top var(--dur-normal, 200ms) ease,
+    width var(--dur-normal, 200ms) ease,
+    height var(--dur-normal, 200ms) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eb-wt-fill,
+  .eb-wt-scene,
+  .eb-wt-highlight {
+    transition: none;
+  }
+}
+
+/* ============================================================================
+   DecisionTable — src/components/DecisionTable.astro. The numbered catalog of a
+   design's decisions (D1…Dn) with status badges + per-row anchors + an optional
+   click-to-focus detail modal. Zero JS unless a decision carries detail.
+   ============================================================================ */
+.decision-table {
+  margin: var(--space-8) 0;
+}
+.decision-table .dt-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+}
+.decision-table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-body);
+}
+.decision-table .dt-sr-caption {
+  caption-side: bottom;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: left;
+}
+.decision-table th,
+.decision-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.decision-table tbody tr:last-child th,
+.decision-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.decision-table thead th {
+  background: var(--color-surface-sunken);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.decision-table .dt-col-id {
+  min-width: 3.5rem;
+}
+.decision-table .dt-id {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+}
+.decision-table .dt-id-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Per-row anchor: deep-link + copy-to-clipboard. Hidden until the row is
+   hovered/focused (or is the current :target) so it doesn't clutter the table.
+   Reset the global `a` styling (accent color + border-bottom underline) — this
+   is an icon affordance, not a prose link. */
+.decision-table .dt-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  border-bottom: none;
+  text-decoration: none;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.decision-table .dt-anchor:hover {
+  color: var(--color-accent);
+  border-bottom: none;
+}
+.decision-table .dt-row:hover .dt-anchor,
+.decision-table .dt-row:focus-within .dt-anchor,
+.decision-table .dt-row:target .dt-anchor,
+.decision-table .dt-anchor:focus-visible {
+  opacity: 1;
+}
+.decision-table .dt-anchor-icon {
+  display: block;
+}
+/* "Copied" pill — a floating tooltip, absolutely positioned OUT of flow so it
+   never adds a line under D#. Invisible until the JS adds .is-copied on click. */
+.decision-table .dt-anchor-copied {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%) translateY(2px);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+.decision-table .dt-anchor.is-copied .dt-anchor-copied {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-table .dt-anchor,
+  .decision-table .dt-anchor-copied {
+    transition: none;
+  }
+}
+.decision-table .dt-id-btn {
+  font: inherit;
+  color: var(--color-text-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+.decision-table .dt-id-btn:hover {
+  color: var(--color-accent);
+}
+.decision-table .dt-decision {
+  color: var(--color-text);
+}
+.decision-table .dt-choice {
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+}
+/* :target — highlight the row a #d3 deep-link points at (zero JS). The
+   scroll-margin keeps a deep-linked row clear of the viewport top when jumped to. */
+.decision-table .dt-row {
+  scroll-margin-top: var(--space-16, 4rem);
+}
+.decision-table .dt-row:target {
+  background: var(--color-accent-soft);
+}
+/* status badges */
+.decision-table .dt-badge {
+  display: inline-block;
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: help;
+}
+.decision-table .dt-badge--decided {
+  background: var(--eb-success-bg);
+  color: var(--eb-success);
+}
+.decision-table .dt-badge--leaning {
+  background: var(--eb-warning-bg);
+  color: var(--eb-warning);
+}
+.decision-table .dt-badge--open {
+  background: var(--eb-info-bg);
+  color: var(--eb-info);
+}
+.decision-table .dt-badge--tbd {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+/* detail modal — same shape as the FlowDiagram / UseCaseDiagram focus modal */
+.decision-table .dt-modal {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  max-width: min(520px, 92vw);
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-pop, 0 6px 24px rgba(32, 30, 26, 0.16));
+}
+.decision-table .dt-modal::backdrop {
+  background: rgba(32, 30, 26, 0.32);
+}
+.decision-table .dt-modal-inner {
+  position: relative;
+  padding: var(--space-6);
+}
+.decision-table .dt-modal-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  border: none;
+  background: transparent;
+  font-size: var(--fs-h4);
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.decision-table .dt-modal-close:hover {
+  color: var(--color-text);
+  background: var(--color-surface-sunken);
+}
+.decision-table .dt-modal-eyebrow {
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 var(--space-2);
+}
+.decision-table .dt-modal-title {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  margin: 0 0 var(--space-3);
+  padding-right: var(--space-6);
+}
+.decision-table .dt-modal-detail {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body, 1.6);
+}
+
+/* ============================================================================
+   SequenceDiagram — src/components/SequenceDiagram.astro. UML lifelines +
+   ordered messages, build-time SVG. Same token-driven, reduced-motion-safe
+   pattern as the other diagram primitives.
+   ============================================================================ */
+.sequence-diagram {
+  margin: var(--space-8) 0;
+}
+.sequence-diagram .seq-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.sequence-diagram svg {
+  width: 100%;
+  height: auto;
+  min-width: 320px;
+  display: block;
+}
+.sequence-diagram .seq-head {
+  fill: var(--color-surface-sunken);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+.sequence-diagram .seq-head-label {
+  fill: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.sequence-diagram .seq-lifeline {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.sequence-diagram .seq-line {
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+  fill: none;
+}
+.sequence-diagram .seq-msg--return .seq-line {
+  stroke-dasharray: 5 4;
+  stroke: var(--color-text-muted);
+}
+.sequence-diagram .seq-arrowhead {
+  fill: var(--color-border-strong);
+  stroke: none;
+}
+.sequence-diagram .seq-arrowhead-open {
+  stroke: var(--color-text-muted);
+  stroke-width: 1.5;
+}
+.sequence-diagram .seq-msg-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-anchor: middle;
+}
+.sequence-diagram .seq-msg-label--self {
+  text-anchor: start;
+}
+/* fragment (loop / alt / opt) boxes */
+.sequence-diagram .seq-frag-box {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.sequence-diagram .seq-frag-tag {
+  fill: var(--color-surface-sunken);
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.sequence-diagram .seq-frag-tag-label {
+  fill: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  dominant-baseline: central;
+}
+.sequence-diagram .seq-frag-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-style: italic;
+}
+.sequence-diagram .seq-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+/* draw-in: messages fade/slide in top to bottom on load */
+.sequence-diagram .seq-msg {
+  animation: seq-fade-in var(--dur-slow, 320ms) var(--ease-decelerate, ease-out) both;
+  animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+@keyframes seq-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sequence-diagram .seq-msg {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================================================================
+   DataModel — src/components/DataModel.astro. Entity-relationship model as
+   titled entity cards + a relationship list (crow's-foot cardinality). The
+   house target for mermaid erDiagram blocks. Zero JS, tokens only.
+   ============================================================================ */
+.data-model {
+  margin: var(--space-8) 0;
+}
+/* Scroll wrapper — the ER graph can be wide; never push the page sideways. */
+.data-model .dm-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* The entity grid: a fixed near-square packing (columns/rows from the component).
+   Generous gaps leave room for the connector edges + crow's-foot terminators. */
+.data-model .dm-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--dm-cols, 3), minmax(150px, 1fr));
+  gap: var(--space-12) var(--space-16);
+  align-items: start;
+  justify-items: stretch;
+  padding: var(--space-4);
+  min-width: min-content;
+}
+/* The SVG edge overlay sits above the grid background but below the boxes, so
+   connectors visually run behind the entity cards' edges and meet their borders. */
+.data-model .dm-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+.data-model .dm-entity {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+  align-self: start;
+}
+.data-model .dm-entity-head {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.data-model .dm-fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.data-model .dm-field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.data-model .dm-field:last-child {
+  border-bottom: none;
+}
+.data-model .dm-key {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+}
+.data-model .dm-key--pk {
+  background: var(--eb-warning-bg);
+  color: var(--eb-warning);
+}
+.data-model .dm-key--fk {
+  background: var(--eb-info-bg);
+  color: var(--eb-info);
+}
+.data-model .dm-field-name {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+.data-model .dm-field-type {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+.data-model .dm-field-note {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  margin-left: auto;
+}
+/* ER edges (SVG overlay). Connectors between entity boxes; crow's-foot feet + an
+   optional-circle encode cardinality; a chip keeps the relation label legible. */
+.data-model .dm-edge {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 1.5;
+}
+/* Crow's-foot feet encode the cardinality — the point of an ERD — so make them
+   read clearly against the light connectors. */
+.data-model .dm-foot {
+  stroke: var(--color-text-muted);
+  stroke-width: 1.75;
+  fill: none;
+}
+.data-model .dm-foot-circle {
+  fill: var(--color-surface);
+  stroke: var(--color-text-secondary);
+  stroke-width: 1.5;
+}
+.data-model .dm-edge-label-chip {
+  fill: var(--color-surface);
+  stroke: var(--color-border-subtle);
+  stroke-width: 1;
+}
+.data-model .dm-edge-label {
+  fill: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-anchor: middle;
+}
+/* Click-to-highlight a key across tables (PK ↔ its FKs). */
+.data-model .dm-field--key {
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background 0.1s ease;
+}
+.data-model .dm-field--key:hover,
+.data-model .dm-field--key:focus-visible {
+  background: var(--color-surface-sunken);
+  outline: none;
+}
+/* When a key is active: dim the rest, spotlight the matching fields + their boxes. */
+.data-model.dm-has-active .dm-entity {
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+.data-model.dm-has-active .dm-entity.dm-entity-active {
+  opacity: 1;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+.data-model .dm-field.dm-key-active {
+  background: var(--color-accent-soft);
+}
+.data-model .dm-field.dm-key-active .dm-field-name {
+  color: var(--color-text-accent);
+  font-weight: var(--fw-semibold);
+}
+.data-model.dm-has-active .dm-edge {
+  opacity: 0.35;
+}
+.data-model .dm-edge.dm-edge-active {
+  opacity: 1;
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+}
+
+/* Draw-in animation, reduced-motion gated. */
+@media (prefers-reduced-motion: no-preference) {
+  .data-model.dm-drawn .dm-edge {
+    stroke-dasharray: 200;
+    stroke-dashoffset: 200;
+    animation: dm-draw 0.5s ease forwards;
+    animation-delay: calc(var(--i, 0) * 40ms);
+  }
+}
+@keyframes dm-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* The SR/no-JS relationship list: always in the a11y tree; hidden visually only
+   once the graph has drawn (JS added .dm-drawn). Without JS it stays visible so
+   the ER information never disappears. */
+.data-model .dm-rel-sr {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+}
+.data-model .dm-rel-sr li {
+  padding: var(--space-0-5) 0;
+}
+.data-model.dm-drawn .dm-rel-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.data-model .dm-caption {
+  margin-top: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* ============================================================================
+   Design-post skeleton blocks — Requirements, Personas, UseCases. The substance
+   scaffolding a design post should carry (per the design-post-review skill):
+   whose life, what they can/can't/must do, and what it powers per actor.
+   Zero JS, semantic tokens, single light theme.
+   ============================================================================ */
+
+/* Shared eyebrow title for the skeleton blocks. */
+.requirements .req-title,
+.personas .pers-title,
+.usecases .uc-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.requirements,
+.personas,
+.usecases {
+  margin: var(--space-8) 0;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-sunken);
+}
+
+/* Requirements — one row per actor; must / can / cannot columns. */
+.requirements .req-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.requirements .req-group {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 3fr;
+  gap: var(--space-4);
+  align-items: start;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.requirements .req-group:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.requirements .req-actor {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.requirements .req-caps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+}
+.requirements .req-cap-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-eyebrow);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  margin-bottom: var(--space-1);
+}
+.requirements .req-cap--must .req-cap-label {
+  color: var(--eb-success);
+}
+.requirements .req-cap--can .req-cap-label {
+  color: var(--color-text-muted);
+}
+.requirements .req-cap--cannot .req-cap-label {
+  color: var(--eb-danger, var(--color-accent));
+}
+.requirements .req-cap ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+}
+.requirements .req-cap li + li {
+  margin-top: var(--space-1);
+}
+.requirements .req-caption,
+.personas .pers-caption,
+.usecases .uc-caption {
+  margin-top: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+/* Personas — role → impact, one per line. */
+.personas .pers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.personas .pers-item {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 3fr;
+  gap: var(--space-4);
+  align-items: baseline;
+}
+.personas .pers-role {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.personas .pers-impact {
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+}
+.personas .pers-before {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* UseCases — the three-column (EarlBear / Agent / Customer) value grid. */
+.usecases .uc-cols {
+  display: grid;
+  grid-template-columns: repeat(var(--uc-cols, 3), 1fr);
+  gap: var(--space-5);
+}
+.usecases .uc-actor {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.usecases .uc-col ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.usecases .uc-col li {
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--lh-body);
+  padding-left: var(--space-3);
+  position: relative;
+}
+.usecases .uc-col li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+.usecases .uc-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* Stack the skeleton grids on narrow screens. */
+@media (max-width: 640px) {
+  .requirements .req-group,
+  .personas .pers-item {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  .usecases .uc-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+   DEV-ONLY external-preview toggle (the internal badge in Nav). The attribute
+   data-preview="external" is set on <html> only by the dev toggle script, which
+   itself only exists in `astro dev` (import.meta.env.DEV). In any production
+   build the script is tree-shaken and the attribute never appears, so these
+   rules are inert there. Effect: hide internal-only post cards and re-tint the
+   accent to the external terra, to approximate the public site.
+   ============================================================================ */
+:root[data-preview='external'] .card[data-post-audience='internal'] {
+  display: none;
+}
+:root[data-preview='external'] {
+  --color-accent: var(--eb-terra, #b14726);
+  --color-accent-hover: #9a3d21;
+  --color-accent-press: #85351c;
+  --color-accent-soft: color-mix(in oklab, var(--eb-terra, #b14726) 12%, var(--color-surface));
+  --color-text-accent: #9a3d21;
+  --color-border-focus: var(--eb-terra, #b14726);
+}
+/* The external preview also hides DRAFT cards — the public build excludes drafts
+   (posts.ts draft gate), so previewing external should match that. */
+:root[data-preview='external'] .card[data-post-draft='true'] {
+  display: none;
+}
+
+/* ============================================================================
+   DEV-ONLY Drafts toggle (the Drafts pill in Nav, beside the audience toggle).
+   data-drafts="hide" is set on <html> only by the dev toggle script (import.meta.env.DEV),
+   so these rules are inert in any production build. Effect: hide every draft post card,
+   independently of the audience preview — so an author can see the list as it will read
+   once the drafts publish. Default (attribute absent) shows drafts, matching dev today.
+   ============================================================================ */
+:root[data-drafts='hide'] .card[data-post-draft='true'] {
+  display: none;
 }

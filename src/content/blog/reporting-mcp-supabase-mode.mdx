@@ -1,0 +1,89 @@
+---
+title: "Teaching a file-only MCP server to also write Supabase"
+description: "The reporting MCP server persisted every review to disk. To feed a shared realtime fleet page, we added a second sink — Supabase — without touching the file contract, the tool handlers, or the zero-dependency rule. Two hook points, best-effort, gated by env."
+pubDate: 2026-07-08
+tags: [engineering, agents]
+authors: [omar]
+draft: true
+design: scan-fleet
+audience: internal
+questions:
+  - How do you add a second write target to a tool server without rewriting its handlers?
+  - How does a zero-dependency Node server POST to Supabase without a client library?
+  - What keeps the file contract working when the network sink fails?
+  - Why does the write key belong on the operator's laptop and not in the config we ship?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+The reporting MCP server had one job and one sink: an agent calls `report_issue` (and its
+siblings), and the server appends the finding to a per-run JSONL file and rewrites a small
+index. Zero dependencies, all local. That's what the live `/reports` page reads.
+
+Then we wanted a *shared* fleet page — a wall of Shopify sites updating live for the whole
+team, not just the operator watching their own filesystem. That means the findings need to land
+in Supabase too. The question was how to add a second sink without disturbing the first.
+
+## Two choke points, not eight handlers
+
+The server has eight reporting tools, but every one of them funnels through the same two
+functions: `appendEvent` (writes one finding) and the run lifecycle (`start_review` /
+`end_review`). So the entire second sink is a few lines at those choke points — no handler
+touched:
+
+```
+function appendEvent(runId, partial) {
+  // ... unchanged: append the JSONL line, bump counts ...
+  emitToSupabase('scan_events', eventRow(event), { onConflict: 'run_id,seq' })
+  emitToSupabase('scan_runs',   runRow(run.meta), { onConflict: 'run_id' })
+  return event
+}
+```
+
+`start_review` additionally upserts the first-class site row and, if the review is fulfilling a
+queued request, claims it (`queued → scanning`). `end_review` closes it (`scanning → done`) and
+rolls up the **domain-level metrics** onto the site — total issues, positives, frictions, and
+the distinct session ids seen across every run of that domain.
+
+<FlowDiagram
+  title="One server, two sinks"
+  shape="branch"
+  desc="The server always writes the JSONL file contract; when the Supabase env is present it additionally mirrors each finding to Supabase. Absent env, it behaves exactly as before."
+  nodes={[
+    { id: 'call', label: 'report_* call', kind: 'external', detail: 'Any of the eight reporting tools — they all funnel through appendEvent.' },
+    { id: 'file', label: 'JSONL file', kind: 'store', detail: 'The append-only per-run file + index. Always written. This is what the live /reports page reads locally.' },
+    { id: 'gate', label: 'Env set?', kind: 'edge', detail: 'SUPABASE_URL + SUPABASE_WRITE_KEY present? Absent → file only, unchanged.' },
+    { id: 'db', label: 'Supabase', kind: 'store', detail: 'scan_runs / scan_events / scan_sites, upserted best-effort for the shared realtime fleet page.' },
+  ]}
+  edges={[
+    { from: 'call', to: 'file', label: 'always' },
+    { from: 'call', to: 'gate' },
+    { from: 'gate', to: 'db', label: 'if set' },
+  ]}
+/>
+
+## Zero dependencies, still
+
+The server has no HTTP client and we didn't want to add one. Node ships `https`, so the sink is
+a plain `https.request` to Supabase's REST endpoint (`/rest/v1/<table>`) with the key in the
+headers and `Prefer: resolution=merge-duplicates` — which makes every write an idempotent upsert
+on the table's primary key. Retry the same event and you get one row, not two. Still zero
+dependencies.
+
+## Best-effort, so the file contract never breaks
+
+The Supabase sink is additive and *best-effort*. Every request has a short timeout, and any
+failure — a network blip, a 4xx, Supabase down — is logged to stderr and swallowed. The file
+append already happened; the mirror is a bonus. A Supabase hiccup can never break the local file
+contract the `/reports` page depends on. And when the env vars aren't set at all, the sink is
+simply off: no network, byte-for-byte the original file-only behavior.
+
+## The key stays on the laptop
+
+Writing `scan_runs`/`scan_events` requires a **service-role** key — Row-Level Security blocks
+the public anon key from those tables on purpose (the whole point is that the public page can
+read and enqueue, but only the trusted agent writes the record of what it found). The server
+reads that key from `process.env`, passed through its config. It lives in the operator's shell
+environment and nowhere else: not in the frontend build, not in `public/`, not in a commit. The
+config we ship references the env var by name; the value is the operator's to supply. One
+credential, one machine, one boundary.

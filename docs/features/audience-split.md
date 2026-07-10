@@ -68,14 +68,82 @@ plan at `.claude/plans/quirky-dancing-pretzel.md`.
 ## Code
 <!-- Anchors seeded post-commit via feature-docs / `npm run features:seed`. -->
 
+## Dev build vs prod build — what actually differs
+
+The single most important difference: **`astro dev` shows *every* audience's posts,
+regardless of `PUBLIC_AUDIENCE`** — `getPublishedPosts()` returns early with `true`
+under `import.meta.env.DEV` ("localhost sees everything"). The audience *filter* only
+runs in a real build. So:
+
+| | `astro dev` (localhost) | `npm run build:external` (prod) |
+|---|---|---|
+| **Posts included** | every audience + drafts (a superset) | only `audience: external`, fail-closed allowlist |
+| **Chrome / theme** | reflects `PUBLIC_AUDIENCE` (badge, accent) | matches the target |
+| **Audience "teeth"** | not run | `check-audience.py --check-dist` scans `dist/` |
+| **Output** | unminified, served live | minified, hashed assets, `CNAME`/`robots` |
+
+Consequences worth knowing:
+- A **client-side preview** (the dev-only INTERNAL-badge toggle, see Code) can *hide*
+  internal cards and swap the theme, but it can **never** reproduce the real external
+  build — that build wouldn't have *built* the internal posts at all, and the
+  dist-scan teeth only exist at build time. The toggle is a convenience preview; the
+  faithful check is `npm run build:external` + `npm run audience-check`.
+- Because dev is a superset, a `dev` pass can look fine while the real external build
+  legitimately omits a post (correct) — or, for layout, `vite dev` can pass while the
+  production build breaks (the React-dedupe class of bug). Always verify the built
+  output for anything load-bearing.
+
 ## Notes
 
 - The build target is chosen by `PUBLIC_AUDIENCE` (`external` default | `internal`).
   `npm run build:internal` / `deploy:internal` set it; `astro.config.mjs` reads it
   to pick the canonical `site` origin so RSS/sitemap/canonical URLs match the host.
+- **Dev-only external preview:** on localhost the internal nav badge toggles a
+  `data-preview="external"` attribute on `<html>` (hides `audience:internal` cards,
+  re-tints the accent), persisted in `localStorage`. Guarded by `import.meta.env.DEV`
+  so it is tree-shaken from every production build (verified: no toggle button/script
+  in `dist/`). A preview, not the real external build (see the table above).
+- **Comments are internal-only** (a Figma-style, fragment-anchored comment layer;
+  see the gtm repo's `docs/comments-design.md`). This is the blog's first Cloudflare
+  Pages Function (`functions/api/auth-token.js`) and first Supabase integration.
+  The comment layer (`src/components/CommentLayer.astro` + `supabaseClient.ts` +
+  `comments.ts`) is guarded by `import.meta.env.PUBLIC_AUDIENCE === 'internal'` so
+  its JS + supabase-js are **tree-shaken from the external bundle**, and its styles
+  are `<style is:inline>` so they ship only when the component renders. The external
+  (GitHub Pages) build has no server, no CF Access, and RLS denies anon — so comments
+  are structurally absent there, not just filtered. `check-audience.py --check-dist`
+  fails the deploy if any comment-layer artifact (`data-comment-layer` / `cl-*` /
+  `blog_comments` / `@supabase`) leaks into the external `dist/`.
 - One-time infra (not in this repo): create the `earlbear-blog-internal` CF Pages
   project, attach `blog.internal.earlbear.com`, and provision the CF Access app via
   `earlbear-domain` (`make cf-access-app-upsert`). The `domains.yaml` record is
-  marked `awaiting_deploy` until the first internal deploy ships.
+  marked `awaiting_deploy` until the first internal deploy ships. For comments, also
+  set the CF Pages secrets `SUPABASE_SIGNING_KEY`, `CF_ACCESS_TEAM_DOMAIN`, and the
+  **blog's own** `CF_ACCESS_AUDIENCE` (distinct from gtm's) on `earlbear-blog-internal`.
 - `src/content/blog/internal-only-example.md` is a fixture proving the split; delete
   it once you have a real internal post.
+
+## Paired posts (external lead + internal `-design` companion)
+
+A recurring shape: a topic ships as **two** posts — an external *"what it does"* lead
+(`X.mdx`, `audience: external`) and a detailed internal companion (`X-design.mdx`,
+`audience: internal`). The pair is deliberate: the public lead tells the story; the internal
+`-design` post holds the mechanism, decisions, and anything that would over-share.
+`check-audience-fit.py` is pair-aware — it does **not** nudge an internal post toward external
+just for reading polished when it's part of a pair, and it applies *extra* scrutiny to the
+external lead (its detail lives hidden internally, so the moat can creep into the public half).
+When judging a lead, run the `external-post-review` skill on it specifically; if softening
+guts it, the lead itself belongs internal too. See the `audience-audit` skill for the full
+reclassification workflow.
+
+## Reclassification log
+
+Notable audience moves (dated), so the rationale is discoverable and old public URLs aren't a
+mystery. A public→internal move is the one worth recording — someone may have the old link.
+
+- **2026-07-10 — `ecommerce-site-scanner` → `internal`** (was `external`). The public lead of
+  the scanner/lead-engine pair narrated the go-to-market mechanism (how the agent discovers
+  stores, finds contacts, scores leads, drafts outreach) — EarlBear's moat, in plain prose.
+  Softening it to outcome-only would gut it, so the lead joined its `-design` companion as
+  internal. Both halves are now `internal`. This also drove the `external-post-review` skill's
+  "business mechanism in plain prose" moat category + the pair-aware audience-fit fix.

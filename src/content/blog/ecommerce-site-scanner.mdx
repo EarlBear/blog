@@ -1,0 +1,198 @@
+---
+title: Turning the open web into a lead queue
+description: How an agent discovers ecommerce sites, scans them for growth-marketing problems, finds a verified contact, scores each lead with reasons, and drafts outreach a human sends.
+pubDate: 2026-07-09
+tags: [agents, growth]
+authors: [omar]
+questions:
+  - How can a small team find qualified ecommerce leads without prospecting by hand?
+  - How does an agent find which sites to scan, size them, and find who to email?
+  - Why does a human still approve every message?
+expects: [use-case, flow]
+audience: internal
+draft: true
+---
+
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import Callout from '../../components/Callout.astro';
+import Mockup from '../../components/Mockup.astro';
+import Walkthrough from '../../components/Walkthrough.astro';
+
+Prospecting for ecommerce leads by hand tops out at a few sites an hour. You Google a
+niche, eyeball a store, hunt for an email, and write a note from scratch, and most
+leads die at the "who do I email" step. A small team simply cannot produce a steady
+flow of qualified leads that way.
+
+So we built an agent that does it. It discovers candidate ecommerce sites, scans
+their public pages for growth-marketing problems, estimates how big each store is,
+finds and verifies a contact, scores the lead with reasons you can read, and drafts a
+personalized outreach message. A human reviews and sends. The team spends its time on
+conversations, not prospecting.
+
+## What it looks like
+
+The agent scans a weak prospect store, logs each detected issue, sizes the store and
+finds a verified owner, then turns the scan into a scored lead with a drafted pitch.
+Step through it:
+
+<Walkthrough
+  title="Scanner to lead"
+  steps={[
+    { scene: 'app', target: '#sc-cta', say: 'The agent scans a prospect store' },
+    { scene: 'app', target: '#sc-cta', say: 'a low-intent call to action' },
+    { scene: 'app', target: '#sc-checkout', say: 'and a slow mobile checkout' },
+    { scene: 'app', target: '#sc-findings', say: 'it logs each detected issue' },
+    { scene: 'app', target: '#sc-enrich', say: 'then sizes the store and finds a verified owner' },
+    { scene: 0, say: 'the scan becomes a scored lead with a drafted pitch a human approves' },
+  ]}
+>
+  <Mockup chrome="browser" title="Site Scanner" url="peakgear.com" caption="The agent scans a prospect's public pages, detects growth-marketing problems, sizes the store, and finds a verified contact.">
+    <div style="display: flex; min-height: 300px; font-family: var(--font-sans);">
+      <main style="flex: 1 1 auto; padding: 0.8rem 1rem; border-right: 1px solid var(--color-border);">
+        <div style="font-weight: 800; font-size: 1.1rem;">PeakGear</div>
+        <div style="color: var(--color-text-muted); font-size: 0.72rem; margin-bottom: 0.6rem;">outdoor equipment · Shopify</div>
+        <div style="height: 74px; background: var(--color-surface-sunken); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); font-size: 0.74rem;">hero product image</div>
+        <div id="sc-cta" style="margin-top: 0.6rem; display: inline-block; padding: 0.3rem 0.7rem; border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.74rem;">shop</div>
+        <div id="sc-checkout" style="margin-top: 0.6rem; font-size: 0.72rem; color: var(--color-text-muted);">checkout · slow on mobile</div>
+      </main>
+      <aside style="flex: 0 0 230px; padding: 0.7rem; background: var(--color-surface);">
+        <div style="font-weight: 700; font-size: 0.74rem; margin-bottom: 0.4rem;">Agent findings</div>
+        <div id="sc-findings">
+          <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.45rem; font-size: 0.72rem; border-bottom: 1px solid var(--color-border);"><span style="color: var(--eb-error); font-weight: 700;">!</span><span>Weak call to action (low intent)</span></div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.45rem; font-size: 0.72rem; border-bottom: 1px solid var(--color-border);"><span style="color: var(--eb-error); font-weight: 700;">!</span><span>Slow checkout on mobile</span></div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.45rem; font-size: 0.72rem; border-bottom: 1px solid var(--color-border);"><span style="color: var(--eb-error); font-weight: 700;">!</span><span>No trust signals near buy box</span></div>
+        </div>
+        <div id="sc-enrich" style="margin-top: 0.6rem; font-size: 0.72rem; line-height: 1.6;">
+          <div><span style="color: var(--color-text-muted);">Size:</span> <strong>Mid</strong> · high confidence</div>
+          <div><span style="color: var(--color-text-muted);">Owner:</span> <strong>john@peakgear.com</strong> · verified</div>
+        </div>
+      </aside>
+    </div>
+  </Mockup>
+  <Mockup slot="scene-0" chrome="browser" title="Lead Engine" url="leadengine.app/queue" caption="The scan becomes a scored, contactable lead with a drafted pitch a human approves before sending.">
+    <div style="font-family: var(--font-sans);">
+      <div style="display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--color-border); background: var(--color-surface); font-size: 0.72rem;">
+        <strong>Ranked leads</strong>
+        <span style="color: var(--color-text-secondary);">ICP: Shopify · US · mid-market</span>
+      </div>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="text-align: left; color: var(--color-text-secondary); font-size: 0.68rem;">
+            <th style="padding: 0.4rem 0.5rem;">Site</th><th style="padding: 0.4rem 0.5rem;">Score</th><th style="padding: 0.4rem 0.5rem;">Why</th><th style="padding: 0.4rem 0.5rem;">Contact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--color-border); font-size: 0.74rem; background: var(--color-accent-soft);">
+            <td style="padding: 0.4rem 0.5rem;"><strong>peakgear.com</strong></td>
+            <td style="padding: 0.4rem 0.5rem;"><span style="display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--color-accent); color: var(--color-text-inverse); font-weight: 700; font-size: 0.68rem;">High</span></td>
+            <td style="padding: 0.4rem 0.5rem;">good fit, reachable, very fixable (weak CTA, slow checkout)</td>
+            <td style="padding: 0.4rem 0.5rem;">john@peakgear.com · verified</td>
+          </tr>
+          <tr style="font-size: 0.74rem;">
+            <td style="padding: 0.4rem 0.5rem;">trailrunsupply.com</td>
+            <td style="padding: 0.4rem 0.5rem;"><span style="display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--color-surface-sunken); color: var(--color-text); font-weight: 700; font-size: 0.68rem;">Med</span></td>
+            <td style="padding: 0.4rem 0.5rem;">fair fit, harder to reach</td>
+            <td style="padding: 0.4rem 0.5rem;">role inbox only</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="border-top: 1px solid var(--color-border); padding: 0.7rem; background: var(--color-surface);">
+        <div style="font-weight: 700; font-size: 0.74rem; margin-bottom: 0.3rem;">Drafted outreach · john@peakgear.com</div>
+        <p style="margin: 0 0 0.5rem; font-size: 0.76rem; color: var(--color-text);">Hi John, your checkout loads slowly on mobile, which quietly costs you sales. Here is a simple way to cut that time roughly in half.</p>
+        <div style="display: flex; gap: 0.4rem;">
+          <button style="padding: 0.35rem 0.8rem; border: none; border-radius: 7px; background: var(--color-accent); color: var(--color-text-inverse); font-weight: 600; cursor: pointer;">Approve and send</button>
+          <button style="padding: 0.35rem 0.8rem; border: 1px solid var(--color-border); border-radius: 7px; background: transparent; color: var(--color-text); cursor: pointer;">Edit</button>
+        </div>
+      </div>
+    </div>
+  </Mockup>
+</Walkthrough>
+
+## Who it is for
+
+The agent has two people around it. A growth operator configures what a good lead
+looks like and reviews the ranked queue. A sales partner sends the approved message
+and reports how it went. The prospect merchant is the target, but never interacts
+with the system: the agent only reads their public pages.
+
+<UseCaseDiagram
+  title="Scanner and lead engine"
+  desc="The operator configures and reviews, the partner sends and reports, and the agent runs the discover-to-draft pipeline."
+  allowOverlap
+  actors={[
+    { id: 'op', label: 'Growth operator', kind: 'internal' },
+    { id: 'ag', label: 'The agent', kind: 'internal' },
+    { id: 'bd', label: 'Sales partner', kind: 'external' },
+    { id: 'prospect', label: 'Prospect', kind: 'system' },
+  ]}
+  useCases={[
+    { id: 'config', label: 'Configure the profile', detail: 'The operator sets what a good lead looks like and how leads are scored.' },
+    { id: 'review', label: 'Review scored leads', detail: 'The operator triages the ranked queue, reading each lead score with its reasons.' },
+    { id: 'approve', label: 'Approve draft', detail: 'The operator reviews the draft, edits if needed, and approves.' },
+    { id: 'send', label: 'Send outreach', detail: 'The partner sends the approved draft.' },
+    { id: 'report', label: 'Report outcome', detail: 'The partner records how the conversation went; it feeds back to scoring.' },
+    { id: 'pipeline', label: 'Run the pipeline', detail: 'The agent discovers, scans, sizes, finds a contact, scores, and drafts.' },
+  ]}
+  links={[
+    { from: 'op', to: 'config' },
+    { from: 'op', to: 'review' },
+    { from: 'op', to: 'approve' },
+    { from: 'bd', to: 'send' },
+    { from: 'bd', to: 'report' },
+    { from: 'ag', to: 'pipeline' },
+    { from: 'prospect', to: 'pipeline' },
+  ]}
+/>
+
+## How it works, in one pipeline
+
+The agent runs a staged pipeline. It discovers candidate sites, scans each one for
+growth-marketing problems, estimates the store's size, finds and verifies a contact,
+scores the lead across how well it fits, how reachable it is, and how fixable its
+problems are, and drafts a message that leads with the specific insight. The result
+lands in a ranked queue for a human to review.
+
+<FlowDiagram
+  title="The pipeline"
+  desc="Discover, scan, size, find a contact, score, and draft, into a ranked lead queue the operator reviews and the partner sends."
+  mermaid={`flowchart LR
+    DISC(Discover) --> SCAN(Scan)
+    SCAN --> SIZE(Size)
+    SIZE --> CONTACT(Contact)
+    CONTACT --> SCORE(Score)
+    SCORE --> DRAFT(Draft)
+    DRAFT --> QUEUE[(Lead queue)]
+    QUEUE --> OP[Operator]
+    OP -->|approve| BD[Partner]`}
+/>
+
+The design idea that makes this affordable at volume is cheap-first: the agent spends
+free signals on every candidate and only pays for the expensive checks once a lead has
+earned them by clearing the fit gate. Spend tracks lead quality, so the cost per lead
+stays under control.
+
+## Why a human still sends every message
+
+The agent drafts; a human approves and sends. That is a deliberate choice, not a
+limitation. Trust, email deliverability, and the law all argue for a person on the
+send: a merchant should get relevant outreach about real problems on their site, not
+be spammed. So every message is reviewed before it goes out, the agent only ever reads
+public pages and respects a site's crawl rules, and personal contact data is kept in a
+governed store with a lawful basis recorded and a working opt-out on every message.
+
+<Callout kind="note" title="Detect, not change">
+In this phase the agent only finds what is wrong on a prospect's site. It never
+changes their site. Detecting a fixable problem is the point; fixing it is a separate
+service the agent's scanning intelligence is the foundation for.
+</Callout>
+
+## The bigger picture
+
+Finding what is wrong on a store is the same skill as fixing it. This engine is the
+front door to a larger idea: a service that will eventually auto-remediate the very
+problems this agent detects. Building lead generation first is deliberate. It earns
+the right to auto-heal sites by first proving we can reliably find what is wrong, at
+scale, cheaply, and accurately enough to put in front of a prospect. Every scan
+teaches the engine a little more about what a real growth-marketing problem looks
+like, which is exactly what a self-healing agent will need to know.

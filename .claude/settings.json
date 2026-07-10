@@ -1,5 +1,15 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .githooks/repo-setup-guard.sh"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -64,6 +74,10 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-secret-sauce.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/check-env-encrypted.py"
           }
         ]
       }

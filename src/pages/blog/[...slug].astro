@@ -2,6 +2,7 @@
 import { render } from 'astro:content';
 import PostLayout from '../../layouts/PostLayout.astro';
 import { getPublishedPosts, readingTime } from '../../lib/posts';
+import { postCommit } from '../../lib/post-commit';
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
@@ -13,8 +14,11 @@ export async function getStaticPaths() {
 
 const { post } = Astro.props;
 const { Content } = await render(post);
+// The git SHA that last touched THIS post's source — the range-anchor version pin (Axis B4).
+// Changes only when the post file changes, not on every repo commit, so it isn't a noisy signal.
+const commit = postCommit(post.id, post.filePath);
 ---
 
-<PostLayout {...post.data} readingTime={readingTime(post.body)}>
+<PostLayout {...post.data} readingTime={readingTime(post.body)} postCommit={commit}>
   <Content />
 </PostLayout>

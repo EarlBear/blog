@@ -1,0 +1,426 @@
+---
+/**
+ * DataModel — a TRUE entity-relationship diagram: entity boxes (their fields with
+ * PK/FK markers) CONNECTED by crow's-foot cardinality edges, not a disconnected
+ * relationship list. The house target for the source design docs' mermaid
+ * `erDiagram` blocks, which the blog cannot render at runtime.
+ *
+ * How it stays deterministic + zero-runtime-JS (the house diagram criteria):
+ *  - Entities are placed on a fixed grid (row-major, a near-square column count),
+ *    so the same spec always yields the same layout — no measuring, no random.
+ *  - Boxes are accessible HTML (the existing dm- field styling), positioned on the
+ *    grid; the EDGES are a single SVG overlay drawn between deterministic box
+ *    anchor points (orthogonal connectors), with crow's-foot terminators encoding
+ *    each relation's cardinality (one · zero-or-one · many · zero-or-many).
+ *  - A build-time gate throws on a relation naming an unknown entity, and warns on
+ *    a disconnected entity (in the ER graph) so a dangling box is caught early.
+ *  - The whole figure scrolls inside its own wrapper (mobile-safe) and the edge
+ *    draw-in animation is reduced-motion gated.
+ *
+ * Cardinality is given source→target, e.g. 'one-to-zero-or-many' means the source
+ * end is "one" and the target end is "zero or many".
+ *
+ * Props are UNCHANGED from the prior list-form DataModel, so existing posts keep
+ * working — only the rendering became a real ER graph.
+ *
+ * Authoring: supply the native `entities`/`relations` spec, OR a Mermaid `erDiagram`
+ * string via `mermaid=` — the shared engine's parseMermaidER converts it (our own
+ * extended Mermaid, ER edition; no Mermaid runtime).
+ */
+import { parseMermaidER } from '@earlbear/ui/diagram';
+
+export type FieldKey = 'pk' | 'fk';
+export interface EntityField {
+  name: string;
+  type?: string;
+  key?: FieldKey;
+  note?: string;
+  /** For an FK: the "ENTITY.field" it references, so clicking either end lights up
+   *  the whole key chain. Optional — without it, fields are linked by matching name. */
+  ref?: string;
+}
+export interface Entity {
+  id: string;
+  label: string;
+  fields?: EntityField[];
+}
+export type Cardinality =
+  'one-to-one' | 'one-to-many' | 'one-to-zero-or-one' | 'one-to-zero-or-many' | 'many-to-many';
+export interface Relation {
+  from: string;
+  to: string;
+  label?: string;
+  card?: Cardinality;
+}
+interface Props {
+  title: string;
+  desc?: string;
+  /** Native spec — supply these, OR supply `mermaid` and the engine parses it. */
+  entities?: Entity[];
+  relations?: Relation[];
+  /** A Mermaid `erDiagram` string (the extended-Mermaid path). Parsed into
+   *  entities/relations via @earlbear/ui/diagram's parseMermaidER. */
+  mermaid?: string;
+  /** Fixed number of grid columns. Default: a near-square packing of the count. */
+  columns?: number;
+}
+
+const { title, desc, mermaid, columns } = Astro.props;
+
+// Either a native spec (entities/relations) or a Mermaid erDiagram string. The parser
+// output already matches the Entity/Relation shape.
+const { entities, relations } =
+  mermaid != null
+    ? (parseMermaidER(mermaid) as { entities: Entity[]; relations: Relation[] })
+    : { entities: Astro.props.entities ?? [], relations: Astro.props.relations ?? [] };
+
+if (!mermaid && (Astro.props.entities == null || Astro.props.relations == null)) {
+  throw new Error(`DataModel "${title}": supply either \`mermaid\` or both \`entities\` and \`relations\`.`);
+}
+
+// ---- Build-time gates ------------------------------------------------------
+{
+  const ids = new Set(entities.map((e) => e.id));
+  relations.forEach((r, i) => {
+    if (!ids.has(r.from))
+      throw new Error(`DataModel "${title}": relation ${i} from "${r.from}" is not an entity id.`);
+    if (!ids.has(r.to))
+      throw new Error(`DataModel "${title}": relation ${i} to "${r.to}" is not an entity id.`);
+  });
+  // Legibility/quality gate: an entity with no relationship is a dangling box —
+  // usually a modeling omission. Warn (don't throw: a lone lookup table is valid).
+  const connected = new Set<string>();
+  relations.forEach((r) => {
+    connected.add(r.from);
+    connected.add(r.to);
+  });
+  for (const e of entities) {
+    if (!connected.has(e.id))
+      console.warn(
+        `[data-model] warning: "${title}" entity "${e.id}" has no relationship — ` +
+          `it renders as a disconnected box. Add a relation or drop it.`
+      );
+  }
+  if (!desc || !desc.trim())
+    console.warn(`[data-model] warning: "${title}" has no desc — add desc= for screen readers.`);
+}
+
+// Crow's-foot terminator per cardinality end (source `a`, target `b`) + a gloss.
+// The glyph names map to the SVG marker drawn at each edge end.
+type EndMark = 'one' | 'zero-or-one' | 'many' | 'zero-or-many';
+const CARD: Record<Cardinality, { a: EndMark; b: EndMark; gloss: string }> = {
+  'one-to-one': { a: 'one', b: 'one', gloss: 'one to one' },
+  'one-to-many': { a: 'one', b: 'many', gloss: 'one to many' },
+  'one-to-zero-or-one': { a: 'one', b: 'zero-or-one', gloss: 'one to zero-or-one' },
+  'one-to-zero-or-many': { a: 'one', b: 'zero-or-many', gloss: 'one to zero-or-many' },
+  'many-to-many': { a: 'many', b: 'many', gloss: 'many to many' },
+};
+
+const labelOf = (id: string) => entities.find((e) => e.id === id)?.label ?? id;
+
+// ---- Deterministic grid placement ------------------------------------------
+// Row-major on a near-square column count (or the caller's `columns`). Each cell
+// is one entity; the SVG overlay connects cells by their border anchor points.
+const N = entities.length;
+const cols = Math.max(1, columns ?? Math.ceil(Math.sqrt(N)));
+const rows = Math.ceil(N / cols);
+const cellOf = new Map<string, { col: number; row: number }>();
+entities.forEach((e, i) => {
+  cellOf.set(e.id, { col: i % cols, row: Math.floor(i / cols) });
+});
+
+// A stable salt for scoping the SVG marker ids to this instance.
+const salt =
+  'dm-' +
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24);
+
+// ---- Key groups (for click-to-highlight-across-tables) ---------------------
+// A "key group" ties a PK to the FKs that reference it, so clicking any of them
+// lights up the whole chain. Membership is decided by an explicit `ref`
+// ("ENTITY.field") when present, else by matching field NAME among key fields.
+// The group id is the canonical "owner.field" (the PK's, when we can find it).
+const keyGroupOf = new Map<string, string>(); // `${entityId}.${fieldName}` -> group id
+{
+  // Canonical owner for a name = the entity whose field of that name is the PK.
+  const pkOwner = new Map<string, string>(); // fieldName -> `${entityId}.${name}`
+  for (const e of entities)
+    for (const f of e.fields ?? [])
+      if (f.key === 'pk') pkOwner.set(f.name, `${e.id}.${f.name}`);
+  for (const e of entities)
+    for (const f of e.fields ?? []) {
+      if (!f.key) continue;
+      const self = `${e.id}.${f.name}`;
+      const group = f.ref ?? pkOwner.get(f.name) ?? self;
+      keyGroupOf.set(self, group);
+    }
+}
+const fieldGroup = (entityId: string, name: string) =>
+  keyGroupOf.get(`${entityId}.${name}`);
+
+// Edge list with resolved cardinality ends, for the overlay script + SR list.
+const edges = relations.map((r, i) => {
+  const c = r.card ? CARD[r.card] : undefined;
+  return {
+    i,
+    from: r.from,
+    to: r.to,
+    label: r.label ?? '',
+    a: c?.a ?? 'one',
+    b: c?.b ?? 'one',
+    gloss: c?.gloss ?? '',
+  };
+});
+---
+
+<figure class="data-model" data-dm={salt} style={`--dm-cols:${cols}; --dm-rows:${rows}`}>
+  <div class="dm-scroll">
+    <div class="dm-grid">
+      {/* Edge overlay: an SVG sized to the grid, drawn by the inline script once
+          the boxes have laid out (their anchor points are read from the DOM, so
+          the connectors always meet the real box borders regardless of box height). */}
+      <svg class="dm-edges" aria-hidden="true" data-dm-edges></svg>
+
+      {
+        entities.map((e) => {
+          const cell = cellOf.get(e.id)!;
+          return (
+            <div
+              class="dm-entity"
+              id={`${salt}-${e.id}`}
+              data-entity={e.id}
+              style={`grid-column:${cell.col + 1}; grid-row:${cell.row + 1}`}
+            >
+              <div class="dm-entity-head">{e.label}</div>
+              {e.fields && e.fields.length > 0 && (
+                <ul class="dm-fields">
+                  {e.fields.map((f) => {
+                    const grp = f.key ? fieldGroup(e.id, f.name) : undefined;
+                    return (
+                      <li
+                        class={`dm-field${grp ? ' dm-field--key' : ''}`}
+                        data-keygroup={grp}
+                        tabindex={grp ? 0 : undefined}
+                        role={grp ? 'button' : undefined}
+                        aria-label={
+                          grp ? `${f.name} — highlight this key across tables` : undefined
+                        }
+                      >
+                        {f.key && (
+                          <span
+                            class={`dm-key dm-key--${f.key}`}
+                            title={f.key === 'pk' ? 'primary key' : 'foreign key'}
+                          >
+                            {f.key.toUpperCase()}
+                          </span>
+                        )}
+                        <span class="dm-field-name">{f.name}</span>
+                        {f.type && <span class="dm-field-type">{f.type}</span>}
+                        {f.note && <span class="dm-field-note">{f.note}</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })
+      }
+    </div>
+  </div>
+
+  {/* Screen-reader + no-JS fallback: the relationships as a plain list, so the ER
+      information survives even when the drawn edges don't (a11y + progressive
+      enhancement). Visually hidden once the overlay draws; always read by SR. */}
+  <ul class="dm-rel-sr" aria-label="Entity relationships">
+    {
+      edges.map((ed) => (
+        <li>
+          {labelOf(ed.from)} {ed.gloss} {labelOf(ed.to)}
+          {ed.label ? ` (${ed.label})` : ''}
+        </li>
+      ))
+    }
+  </ul>
+
+  {desc && <figcaption class="dm-caption">{desc}</figcaption>}
+</figure>
+
+<script
+  type="application/json"
+  data-dm-spec={salt}
+  set:html={JSON.stringify(edges)}
+/>
+
+<script is:inline define:vars={{ salt }}>
+  (() => {
+    const fig = document.querySelector(`.data-model[data-dm="${salt}"]`);
+    if (!fig) return;
+    const svg = fig.querySelector('[data-dm-edges]');
+    const grid = fig.querySelector('.dm-grid');
+    const specEl = document.querySelector(`[data-dm-spec="${salt}"]`);
+    if (!svg || !grid || !specEl) return;
+    const edges = JSON.parse(specEl.textContent || '[]');
+    const SVGNS = 'http://www.w3.org/2000/svg';
+
+    // Crow's-foot terminator, drawn at the END of a segment pointing INTO the box.
+    // (x,y) is the point on the box border; (nx,ny) is the unit vector pointing
+    // away from the box (back along the edge). Returns SVG path/line elements.
+    function terminator(mark, x, y, nx, ny) {
+      const els = [];
+      // perpendicular unit
+      const px = -ny, py = nx;
+      const line = (x1, y1, x2, y2) => {
+        const l = document.createElementNS(SVGNS, 'line');
+        l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+        l.setAttribute('class', 'dm-foot');
+        return l;
+      };
+      const circle = (cx, cy) => {
+        const c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('cx', cx); c.setAttribute('cy', cy);
+        c.setAttribute('r', 4); c.setAttribute('class', 'dm-foot dm-foot-circle');
+        return c;
+      };
+      const D = 14; // distance back from the box for the crow's-foot fan
+      const W = 6;  // half-width of the foot / bar
+      const bx = x + nx * D, by = y + ny * D; // base point back along the edge
+      const many = mark === 'many' || mark === 'zero-or-many';
+      const optional = mark === 'zero-or-one' || mark === 'zero-or-many';
+      if (many) {
+        // three lines fanning from (bx,by) to the box border spread
+        els.push(line(bx, by, x + px * W, y + py * W));
+        els.push(line(bx, by, x, y));
+        els.push(line(bx, by, x - px * W, y - py * W));
+      } else {
+        // "one": a single bar across the edge near the box
+        els.push(line(x + nx * 8 + px * W, y + ny * 8 + py * W,
+                      x + nx * 8 - px * W, y + ny * 8 - py * W));
+      }
+      if (optional) {
+        // a small circle further back means "zero or …"
+        els.push(circle(x + nx * (D + 6), y + ny * (D + 6)));
+      }
+      return els;
+    }
+
+    // Where does the segment between two box centres cross box A's border?
+    function borderPoint(rect, gx, gy, tx, ty) {
+      const cx = gx, cy = gy;
+      const dx = tx - cx, dy = ty - cy;
+      const hw = rect.width / 2, hh = rect.height / 2;
+      if (dx === 0 && dy === 0) return { x: cx, y: cy, nx: 0, ny: -1 };
+      // scale to the nearest border along the direction (dx,dy)
+      const sx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+      const sy = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+      const s = Math.min(sx, sy);
+      const x = cx + dx * s, y = cy + dy * s;
+      // outward normal (unit) pointing away from the box along the edge
+      const len = Math.hypot(dx, dy);
+      return { x, y, nx: -dx / len, ny: -dy / len };
+    }
+
+    function draw() {
+      const gridRect = grid.getBoundingClientRect();
+      svg.setAttribute('width', gridRect.width);
+      svg.setAttribute('height', gridRect.height);
+      svg.setAttribute('viewBox', `0 0 ${gridRect.width} ${gridRect.height}`);
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      edges.forEach((ed, idx) => {
+        const aEl = fig.querySelector(`[data-entity="${ed.from}"]`);
+        const bEl = fig.querySelector(`[data-entity="${ed.to}"]`);
+        if (!aEl || !bEl) return;
+        const ar = aEl.getBoundingClientRect(), br = bEl.getBoundingClientRect();
+        const acx = ar.left - gridRect.left + ar.width / 2;
+        const acy = ar.top - gridRect.top + ar.height / 2;
+        const bcx = br.left - gridRect.left + br.width / 2;
+        const bcy = br.top - gridRect.top + br.height / 2;
+        const pa = borderPoint(ar, acx, acy, bcx, bcy);
+        const pb = borderPoint(br, bcx, bcy, acx, acy);
+
+        const path = document.createElementNS(SVGNS, 'path');
+        path.setAttribute('d', `M ${pa.x} ${pa.y} L ${pb.x} ${pb.y}`);
+        path.setAttribute('class', 'dm-edge');
+        path.setAttribute('data-from', ed.from);
+        path.setAttribute('data-to', ed.to);
+        path.style.setProperty('--i', idx);
+        svg.appendChild(path);
+
+        terminator(ed.a, pa.x, pa.y, pa.nx, pa.ny).forEach((e) => svg.appendChild(e));
+        terminator(ed.b, pb.x, pb.y, pb.nx, pb.ny).forEach((e) => svg.appendChild(e));
+
+        if (ed.label) {
+          const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
+          const chip = document.createElementNS(SVGNS, 'rect');
+          const w = ed.label.length * 6.6 + 10;
+          chip.setAttribute('x', mx - w / 2); chip.setAttribute('y', my - 13);
+          chip.setAttribute('width', w); chip.setAttribute('height', 16);
+          chip.setAttribute('rx', 4); chip.setAttribute('class', 'dm-edge-label-chip');
+          svg.appendChild(chip);
+          const t = document.createElementNS(SVGNS, 'text');
+          t.setAttribute('x', mx); t.setAttribute('y', my - 1);
+          t.setAttribute('class', 'dm-edge-label');
+          t.textContent = ed.label;
+          svg.appendChild(t);
+        }
+      });
+      fig.classList.add('dm-drawn'); // hides the SR list visually, reveals the graph
+    }
+
+    draw();
+    // Redraw on resize (box heights/positions shift with the reflow).
+    let raf;
+    window.addEventListener('resize', () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(draw);
+    });
+
+    // Click a key field → highlight that key everywhere it appears (PK ↔ its FKs),
+    // the entities that hold it, and the edges between them. Click again / click
+    // elsewhere / Escape clears. Keyboard-operable (fields are role=button).
+    const keyFields = fig.querySelectorAll('.dm-field--key');
+    let activeGroup = null;
+    function clearHighlight() {
+      activeGroup = null;
+      fig.classList.remove('dm-has-active');
+      fig.querySelectorAll('.dm-key-active').forEach((el) => el.classList.remove('dm-key-active'));
+      fig.querySelectorAll('.dm-entity-active').forEach((el) => el.classList.remove('dm-entity-active'));
+      svg.querySelectorAll('.dm-edge-active').forEach((el) => el.classList.remove('dm-edge-active'));
+    }
+    function highlight(group) {
+      if (!group) return;
+      if (activeGroup === group) { clearHighlight(); return; }
+      clearHighlight();
+      activeGroup = group;
+      fig.classList.add('dm-has-active');
+      const entitiesInGroup = new Set();
+      fig.querySelectorAll(`.dm-field--key[data-keygroup="${group}"]`).forEach((li) => {
+        li.classList.add('dm-key-active');
+        const box = li.closest('.dm-entity');
+        if (box) { box.classList.add('dm-entity-active'); entitiesInGroup.add(box.getAttribute('data-entity')); }
+      });
+      // Emphasize edges whose BOTH ends are in the highlighted entity set.
+      svg.querySelectorAll('.dm-edge').forEach((p) => {
+        const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+        if (entitiesInGroup.has(f) && entitiesInGroup.has(t)) p.classList.add('dm-edge-active');
+      });
+    }
+    keyFields.forEach((li) => {
+      const act = () => highlight(li.getAttribute('data-keygroup'));
+      li.addEventListener('click', act);
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); }
+      });
+    });
+    // Click outside a key field, or Escape, clears.
+    fig.addEventListener('click', (e) => {
+      if (!e.target.closest('.dm-field--key')) clearHighlight();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') clearHighlight(); });
+  })();
+</script>
