@@ -16,12 +16,12 @@
 //     NOT weaken RLS; it self-issues the identity CF Access would have vouched for.
 //
 // Mirrors gtm's vite-plugins/dev-auth-token.ts, re-expressed as an Astro integration and using
-// the shared @earlbear/cf-supabase-auth mint. Identity defaults to EB_DEV_LOGIN_EMAIL (or
+// the shared @earlbear/auth-server mint. Identity defaults to EB_DEV_LOGIN_EMAIL (or
 // dev@earlbear.com).
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { AstroIntegration } from 'astro';
-import { parseSigningJWK, signSupabaseJWT } from '@earlbear/cf-supabase-auth';
+import { parseSigningJWK, signSupabaseJWT } from '@earlbear/auth-server';
 
 const PATH = '/api/auth-token';
 

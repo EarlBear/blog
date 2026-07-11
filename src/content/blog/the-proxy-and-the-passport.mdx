@@ -229,6 +229,35 @@ So: **B by default; reach for A only when you have a specific reason** — a sur
 want kept keyless-in-browser and behind a single auditable choke point, or one you expect to outlive
 Supabase. Absent that reason, mint the token.
 
+## How we implement B — two reusable packages
+
+A default only sticks if it's *easy* to take. So B lives in two small, reusable packages that any
+gated site installs — nobody re-derives the token exchange per app. The split into **two** packages is
+deliberate, and it mirrors the exchange's own two halves:
+
+- **`@earlbear/auth-server`** — the Function side: verify the CF Access JWT, assert `@earlbear.com`,
+  mint the short-lived Supabase JWT. It's **dependency-free** (Web Crypto only) so it runs inside a
+  Cloudflare Pages Function with nothing to bundle. A site's whole auth endpoint is three lines:
+  ```js
+  import { handleAuthTokenRequest } from '@earlbear/auth-server';
+  export const onRequestGet = ({ request, env }) => handleAuthTokenRequest(request, env);
+  ```
+- **`@earlbear/auth-client`** — the browser side: a singleton `supabase-js` client whose `accessToken`
+  callback fetches that token, caches it, and refetches before expiry (carried on REST *and* Realtime).
+  A site's whole client is one call:
+  ```js
+  import { createEbSupabaseClient } from '@earlbear/auth-client';
+  const eb = createEbSupabaseClient({ url, publishableKey });
+  ```
+
+They're **two** packages, not one with two entry points, so the boundaries can't leak: the server half
+depends on `supabase-js`, the browser SDK — installing the dependency-free server half in a Function
+can never transitively pull that in. It's the same discipline as the architecture the post is about —
+keep the runtimes' dependencies from cross-contaminating — applied to our own package layout. The blog
+(comments) and the gtm dashboard both consume these two packages; the only per-app code left is *where
+the URL and key come from* and the RLS policy itself. There's a companion `wire-supabase-auth` skill
+that walks a new site through installing them, so the default is a checklist, not a re-derivation.
+
 ## The honest cost of having both
 
 Standardizing on B doesn't erase A — the `earlbear-sites` proxy is shipped and working, and there's

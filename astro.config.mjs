@@ -44,6 +44,13 @@ export default defineConfig({
         AUDIENCE === 'internal' || !/\/repo-map\/?$/.test(page),
     }),
   ],
+  // @earlbear/auth-client is a file:-linked package (symlinked outside this tree) that imports
+  // @supabase/supabase-js. Node/Rollup would resolve that import from the LINK TARGET's parents,
+  // not this app's node_modules, and fail. `dedupe` forces a single supabase-js instance resolved
+  // from here — fixing the resolution AND guaranteeing one client instance (no split Realtime/auth).
+  vite: {
+    resolve: { dedupe: ['@supabase/supabase-js'] },
+  },
   markdown: {
     shikiConfig: {
       // Warm light theme; the code-block container is re-skinned to
