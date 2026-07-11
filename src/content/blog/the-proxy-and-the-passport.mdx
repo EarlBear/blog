@@ -1,0 +1,209 @@
+---
+title: "The proxy and the passport: two ways to put a real identity into RLS"
+description: "We solved the same problem twice — get a Cloudflare-Access-verified identity into Supabase Row-Level Security from a static site with no backend — and shipped two different architectures. One relays every call through a service-key proxy; the other mints a short-lived token the browser carries itself. Here's how they compare, and when each is the right one."
+pubDate: 2026-07-10
+tags: [engineering, security]
+expects: [comparison, flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - We have two different auth architectures for the same problem — why, and how do they actually differ?
+  - When should a new feature relay through a service-key proxy, and when should it mint a token the browser carries?
+  - Which approach can do Realtime, and why does that one fact decide so much?
+  - What's the real security boundary in each, and which is simpler to operate?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
+
+Every one of our browser apps has the same problem. It's a static site — HTML and JavaScript
+on a CDN, no backend of its own. It talks to Supabase directly. And Row-Level Security, the thing
+that decides who can read and write what, needs to know *who the caller is*. Cloudflare Access
+already logged them in with Google SSO, so we know it's an `@earlbear.com` person — but Supabase
+never saw that login. RLS, left alone, can only say "anyone holding the public anon key," which is
+everyone.
+
+We solved this twice, in two different parts of the org, and ended up with two genuinely different
+architectures. Not by accident, and not because one is wrong. This post is the compare-and-contrast:
+what each does, where they're the same, where they diverge, and — the useful part — when you'd
+reach for one over the other. (The token-exchange side has its own deep-dive in
+[Who are you, to Supabase?](/blog/who-are-you-to-supabase/); this post is the *comparison* that
+post's "why not just use a proxy?" question was pointing at.)
+
+## The same starting point, the same first move
+
+Both approaches begin identically, and it's worth naming the shared part because it's most of the
+security:
+
+- The app is behind **Cloudflare Access**. You can't load the page without a valid Google SSO
+  session, and Access sets a signed `CF_Authorization` cookie.
+- A **Cloudflare Pages Function** — server-side code that runs at the edge, the one piece of
+  "backend" a static site is allowed — **verifies** that Access token against Cloudflare's public
+  keys and extracts the verified email. This is the trust anchor in both designs. The email is
+  never taken from anything the browser could forge; it comes out of a cryptographically verified
+  Access JWT.
+
+From here the two diverge on one question: **once the Function knows who you are, how does that
+identity reach Postgres?**
+
+## Approach A — the proxy: relay every call with the service key
+
+The first approach (our `earlbear-sites` apps) keeps the browser *away* from Supabase entirely. The
+Pages Function isn't just a verifier — it's a **proxy**. The browser sends its database request to
+`/api/proxy`; the Function verifies the Access identity, then makes the real Supabase call itself
+using the **service key** (which bypasses RLS), forwarding the verified email as an `x-user-email`
+header. A small RLS helper function reads that header to know the caller.
+
+<FlowDiagram
+  title="Approach A — verified-identity proxy"
+  shape="pipeline"
+  legend
+  desc="The browser sends its database request to a Cloudflare Pages Function, which verifies the Cloudflare Access login, then relays the request to Supabase using the service key and forwards the verified email as a header. Row-Level Security reads that header. The browser never talks to Supabase directly and never holds a database key."
+  nodes={[
+    { id: 'browser', label: 'Browser', kind: 'external', detail: 'A static app behind Cloudflare Access. Sends DB requests to its own /api/proxy, not to Supabase.' },
+    { id: 'access', label: 'CF Access', kind: 'edge', detail: 'Google SSO, restricted to earlbear.com. Sets the signed CF_Authorization cookie.' },
+    { id: 'proxy', label: '/api/proxy', detail: 'A CF Pages Function: verifies the Access JWT, extracts the verified email, then makes the Supabase REST call itself with the service key. Forwards the email as an x-user-email header.' },
+    { id: 'db', label: 'Supabase', kind: 'store', detail: 'RLS calls current_user_email(), which reads the forwarded x-user-email header. The service key would bypass RLS, but the policy still scopes writes by the forwarded identity.' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'access', label: 'SSO' },
+    { from: 'access', to: 'proxy', label: 'verify' },
+    { from: 'proxy', to: 'db', label: 'service key + email' },
+  ]}
+/>
+
+The defining trait: **the browser never holds a Supabase key and never talks to Supabase.** Every
+call is a round-trip through our own Function. The service key — the powerful one — lives only in
+the Function's environment. RLS reads identity from a header, which is only trustworthy *because*
+the proxy is the sole writer of that header and the browser can't reach Supabase to set it itself.
+
+## Approach B — the passport: mint a token the browser carries
+
+The second approach (our `gtm` dashboard and this blog) does the opposite. The Pages Function
+doesn't relay anything — it **mints a short-lived Supabase JWT** (a signed token, ~30 minutes,
+carrying the email) and hands it *back to the browser*. The browser then talks to Supabase
+**directly**, presenting that token on every call like a passport at a border. RLS reads the email
+straight out of the verified token (`auth.jwt()->>'email'`).
+
+<FlowDiagram
+  title="Approach B — minted-token exchange"
+  shape="pipeline"
+  legend
+  desc="A Cloudflare Pages Function verifies the Cloudflare Access login and mints a short-lived Supabase JWT carrying the email, signed with our own key. The browser holds that token and talks to Supabase directly, presenting it on every REST and Realtime call. RLS reads the email from the verified token."
+  nodes={[
+    { id: 'browser', label: 'Browser', kind: 'external', detail: 'A static app behind Cloudflare Access. After fetching a token once, it talks to Supabase directly.' },
+    { id: 'access', label: 'CF Access', kind: 'edge', detail: 'Google SSO, restricted to earlbear.com. Sets the signed CF_Authorization cookie.' },
+    { id: 'mint', label: 'auth-token', detail: 'A CF Pages Function: verifies the Access JWT, asserts @earlbear.com, mints a 30-min Supabase JWT (ES256, email claim) signed with our own imported key. Returns it to the browser.' },
+    { id: 'token', label: 'Supabase JWT', kind: 'store', detail: 'A short-lived passport the browser carries. supabase-js sends it on every REST and Realtime call via the accessToken option.' },
+    { id: 'db', label: 'Supabase', kind: 'store', detail: 'RLS reads auth.jwt()->>email from the verified token. The publishable key alone reads nothing; the token is what admits the request.' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'access', label: 'SSO' },
+    { from: 'access', to: 'mint', label: 'verify' },
+    { from: 'mint', to: 'token', label: 'sign' },
+    { from: 'token', to: 'db', label: 'direct call' },
+  ]}
+/>
+
+The defining trait: **the browser holds a verifiable identity and talks to Supabase directly.**
+There's no relay. The Function runs once per session to mint the token, then gets out of the way.
+The security boundary is the **signing key** (an EC private key held only in the Function's
+environment) — Supabase verifies the token against the matching public key it serves. The browser
+never sees the signing key, only the finished 30-minute token.
+
+## Where they're the same
+
+It's easy to overstate the difference, so first the shared ground:
+
+- **Same trust anchor.** Both verify a Cloudflare Access JWT server-side and take the email only
+  from that verified payload. Neither trusts a value the browser could set. (A) forwards it as a
+  header *after* verifying; (B) signs it into a token *after* verifying.
+- **Same "no backend server."** Both live inside a single Cloudflare Pages Function — no
+  always-on server, no user table, no session store.
+- **Same enforcement point.** RLS in Postgres is the actual gate in both. The Function establishes
+  *who you are*; RLS decides *what you can do*. Neither pushes authorization into app code.
+- **Same failure mode when unauthenticated.** No Access session → the Function refuses → RLS sees
+  no valid identity → the app reads nothing. Both fail closed.
+
+The disagreement is narrow and specific: **does the browser hold a credential and call Supabase
+directly, or does it stay keyless and call through a relay?** Everything else follows from that.
+
+## Where they diverge — and the one fact that decides it
+
+<ComparisonMatrix
+  title="Proxy vs. minted token"
+  desc="The two approaches against the forces that actually separate them. The Realtime row is the one that most often decides it: only the direct-client approach can carry a live subscription."
+  options={[
+    { id: 'proxy', label: 'A — service-key proxy' },
+    { id: 'token', label: 'B — minted token' },
+  ]}
+  criteria={[
+    { label: 'Supports Realtime (live subscriptions)', cells: { proxy: 'no', token: 'yes' } },
+    { label: 'No database key in the browser', cells: { proxy: 'yes', token: 'partial' } },
+    { label: 'Nothing to sign / no key to manage', cells: { proxy: 'yes', token: 'no' } },
+    { label: 'No per-call relay hop', cells: { proxy: 'no', token: 'yes' } },
+    { label: 'Central choke point to audit/rate-limit', cells: { proxy: 'yes', token: 'no' } },
+  ]}
+/>
+
+**Realtime is the fact that decides most of it.** Supabase Realtime is a WebSocket — a persistent,
+direct connection that streams row changes. A REST proxy can relay a request and a response, but it
+can't be a live subscription; there's nothing to relay, because the whole point is a socket the
+client holds open. So **the proxy cannot do Realtime.** If a feature needs live updates — our fleet
+page updating as an agent scans, comments appearing without a refresh — it needs the browser to hold
+a direct client, which means it needs a token to authenticate that client. That's approach B, and
+it's *why* gtm and the blog chose it.
+
+The proof is in our own code. Even in the proxy-based repo, the one feature that wanted live updates
+— a gallery annotations subscription — **bypasses the proxy and opens a direct Realtime channel with
+the anon key**, because it has no other option. The proxy handles its reads and writes; Realtime had
+to go around it. That seam is the whole trade-off in one file: the moment you want a live socket, the
+relay can't carry you.
+
+The other rows are real but softer:
+
+- **Key in the browser.** The proxy ships *zero* database key to the browser — the service key never
+  leaves the Function. The token approach ships a *publishable* key plus the minted token; the
+  publishable key is public-by-design and reads nothing on its own (RLS denies it without a token),
+  so this is "partial," not a real leak — but it's still one more thing in the bundle.
+- **Nothing to sign.** The proxy has no signing key to import, rotate, or protect. The token
+  approach's entire security rests on an EC private key living in the Function env — powerful, and a
+  real operational responsibility. Fewer moving parts is a genuine point for the proxy.
+- **Relay hop.** Every proxied call is an extra network hop through our Function; a direct token call
+  goes straight to Supabase. Latency and Function invocation cost favor the token.
+- **Central choke point.** Because every proxied call passes through one Function, it's a natural
+  place to audit, rate-limit, or shape traffic. The direct-token model has no such single point —
+  the browser talks to Supabase without us in the middle.
+
+## When each is the right one
+
+- **Reach for the proxy (A)** when the feature is request/response only — forms, reads, writes, an
+  admin panel — and you value operational simplicity: no key to manage, no database key in the
+  browser, a single point to audit. It's the lower-burden default for a CRUD surface.
+- **Reach for the minted token (B)** when the feature needs **Realtime**, or when the per-call relay
+  hop is a cost you don't want (latency-sensitive reads, high call volume), or when you specifically
+  want the browser talking to Supabase directly. You pay for it by taking on a signing key as a
+  first-class secret.
+
+Said in one line: **if it needs a live socket, mint a token; if it's request/response and you'd
+rather not hold a signing key, proxy it.** Almost everything else is a wash, and either will work.
+
+## The honest cost of having both
+
+Two architectures for one problem is a real tax. It means two mental models, two places a new
+engineer has to learn "how auth works here," and two failure modes to debug. We didn't set out to
+have both — they grew in different parts of the org against different immediate needs (the sites
+wanted a dead-simple CRUD relay; gtm needed a live dashboard). The lesson isn't "pick one and
+convert everything," because the conversion cost is real and the two are genuinely suited to
+different jobs. It's to be *deliberate*: a new feature should choose its approach by the Realtime
+question first, and the team should know both exist so nobody rebuilds a third.
+
+## When this comparison would change
+
+The Realtime constraint is the load-bearing one, and it's a property of Supabase's proxy story
+*today*: a REST proxy can't carry a WebSocket. If Supabase (or a gateway in front of it) offered a
+way to proxy an authenticated Realtime connection — verifying identity at the socket layer the way
+the proxy verifies it at the REST layer — the biggest reason to prefer the token would fall away,
+and the proxy's operational simplicity would win almost everywhere. Until then, the split stands:
+the passport for live features, the proxy for the rest.
