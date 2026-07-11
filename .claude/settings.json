@@ -78,6 +78,10 @@
           },
           {
             "type": "command",
+            "command": "python3 .claude/hooks/check-post-spacing.py"
+          },
+          {
+            "type": "command",
             "command": "python3 .claude/hooks/check-audience-fit.py"
           },
           {

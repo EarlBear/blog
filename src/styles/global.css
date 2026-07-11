@@ -749,12 +749,25 @@ a:focus:not(:focus-visible) {
 .comparison-matrix tbody tr:last-child td {
   border-bottom: none;
 }
-/* Header cells: all three option headers align to the TOP so their labels share
-   one baseline — the chosen column's CHOSEN badge then hangs below its label
-   instead of pushing the label up and out of line with the plain headers. */
+/* Header cells: all option headers reserve the SAME height (label + badge row)
+   so the chosen column's CHOSEN badge sits inside that reserved space instead of
+   pushing thead taller than the data rows. min-height keeps the header band's
+   vertical rhythm equal to a data row whether or not a badge is present. */
 .comparison-matrix thead th {
   background: var(--color-surface-sunken);
-  vertical-align: top;
+  vertical-align: middle;
+}
+.comparison-matrix thead th.cm-option {
+  /* Reserve room for the optional badge row so a chosen header is the same height
+     as a plain one — the badge never inflates the header band. */
+  height: calc(var(--fs-body) * var(--lh-tight) + var(--fs-xs) + var(--space-1) + 2 * var(--space-3));
+}
+/* Option header columns + their data cells center their content (labels and the
+   ●/○/◐ marks) under the column; only the left-hand criterion column stays
+   left-aligned. This is what actually centers the dots in their columns. */
+.comparison-matrix thead th.cm-option,
+.comparison-matrix td.cm-cell {
+  text-align: center;
 }
 .comparison-matrix .cm-corner {
   font-size: var(--fs-eyebrow);
@@ -782,13 +795,13 @@ a:focus:not(:focus-visible) {
 .comparison-matrix tbody tr:last-child .cm-cell--chosen {
   border-bottom: 1px solid var(--color-accent);
 }
-/* Option label + optional badge stack, but the row of headers stays aligned:
-   the label is the baseline and the badge sits under it without pushing the
-   single-label headers out of line. */
+/* Option label + optional badge stack, centered under the column header. The
+   header's reserved height (above) keeps every option header the same height, so
+   the badge sits within that space rather than pushing the header band taller. */
 .comparison-matrix .cm-option-inner {
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-1);
 }
 .comparison-matrix .cm-option--chosen {
