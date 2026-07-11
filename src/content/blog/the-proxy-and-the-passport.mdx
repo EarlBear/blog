@@ -1,6 +1,6 @@
 ---
 title: "The proxy and the passport: two ways to put a real identity into RLS"
-description: "We solved the same problem twice — get a Cloudflare-Access-verified identity into Supabase Row-Level Security from a static site with no backend — and shipped two different architectures. One relays every call through a service-key proxy; the other mints a short-lived token the browser carries itself. Here's how they compare, and when each is the right one."
+description: "We solved the same problem twice — get a Cloudflare-Access-verified identity into Supabase Row-Level Security from a static site with no backend — and shipped two different architectures. One relays every call through a service-key proxy; the other mints a short-lived token the browser carries itself. Here's how they compare, why we now default to the minted token, and the one reason you'd still reach for the proxy."
 pubDate: 2026-07-10
 tags: [engineering, security]
 expects: [comparison, flow]
@@ -9,7 +9,7 @@ draft: true
 audience: internal
 questions:
   - We have two different auth architectures for the same problem — why, and how do they actually differ?
-  - When should a new feature relay through a service-key proxy, and when should it mint a token the browser carries?
+  - Which do we default to, and what's the one reason to still reach for the other?
   - Which approach can do Realtime, and why does that one fact decide so much?
   - What's the real security boundary in each, and which is simpler to operate?
 ---
@@ -26,8 +26,9 @@ everyone.
 
 We solved this twice, in two different parts of the org, and ended up with two genuinely different
 architectures. Not by accident, and not because one is wrong. This post is the compare-and-contrast:
-what each does, where they're the same, where they diverge, and — the useful part — when you'd
-reach for one over the other. (The token-exchange side has its own deep-dive in
+what each does, where they're the same, where they diverge, and — the useful part — which one we
+now reach for **by default** (the minted token) and the one specific reason you'd still pick the
+other. (The token-exchange side has its own deep-dive in
 [Who are you, to Supabase?](/blog/who-are-you-to-supabase/); this post is the *comparison* that
 post's "why not just use a proxy?" question was pointing at.)
 
@@ -133,17 +134,19 @@ directly, or does it stay keyless and call through a relay?** Everything else fo
 
 <ComparisonMatrix
   title="Proxy vs. minted token"
-  desc="The two approaches against the forces that actually separate them. The Realtime row is the one that most often decides it: only the direct-client approach can carry a live subscription."
+  desc="The two approaches against the forces that actually separate them. B wins on the two that matter most for our workload — it keeps the full Supabase surface and adds no per-call Function hop — so we default to it. A's one strategic edge is portability: the proxy is a swappable seam if we ever leave Supabase."
   options={[
     { id: 'proxy', label: 'A — service-key proxy' },
-    { id: 'token', label: 'B — minted token' },
+    { id: 'token', label: 'B — minted token', chosen: true },
   ]}
   criteria={[
     { label: 'Supports Realtime (live subscriptions)', cells: { proxy: 'no', token: 'yes' } },
+    { label: 'Full Supabase surface (RPC, storage, embeddings)', cells: { proxy: 'no', token: 'yes' } },
+    { label: 'No per-call Function hop (latency / rate ceiling)', cells: { proxy: 'no', token: 'yes' } },
     { label: 'No database key in the browser', cells: { proxy: 'yes', token: 'partial' } },
     { label: 'Nothing to sign / no key to manage', cells: { proxy: 'yes', token: 'no' } },
-    { label: 'No per-call relay hop', cells: { proxy: 'no', token: 'yes' } },
     { label: 'Central choke point to audit/rate-limit', cells: { proxy: 'yes', token: 'no' } },
+    { label: 'Swappable off Supabase (portability seam)', cells: { proxy: 'yes', token: 'no' } },
   ]}
 />
 
@@ -161,8 +164,24 @@ the anon key**, because it has no other option. The proxy handles its reads and 
 to go around it. That seam is the whole trade-off in one file: the moment you want a live socket, the
 relay can't carry you.
 
-The other rows are real but softer:
+Realtime is the sharpest edge, but it generalizes into a second point that matters just as much for
+us:
 
+- **The whole Supabase surface, not just what the proxy relays.** Realtime is one case of a broader
+  truth: the token approach lets the browser use *everything* Supabase offers — REST, Realtime,
+  Storage, RPC (`supabase.rpc(...)`), edge functions, embeddings — because it holds a real client.
+  The proxy can only expose what we've taught it to relay. Ours forwards REST; the day we want
+  Storage uploads or an RPC call, that's *more proxy code to write and maintain*, per capability. B
+  gets those for free; A caps you at the relay's feature set. For a stack that reaches for more of
+  Supabase over time, that ceiling is the point that compounds.
+
+The remaining rows are real but softer:
+
+- **Per-call Function hop = a latency and rate ceiling.** Every proxied call is an extra network
+  hop through *our* Function — added latency, and a Function invocation for every single database
+  call. A direct token call goes straight to Supabase with no middle hop and no Function-tier limit
+  in the path. At any real call volume, routing *everything* through Functions is a throughput
+  ceiling B simply doesn't have.
 - **Key in the browser.** The proxy ships *zero* database key to the browser — the service key never
   leaves the Function. The token approach ships a *publishable* key plus the minted token; the
   publishable key is public-by-design and reads nothing on its own (RLS denies it without a token),
@@ -170,40 +189,62 @@ The other rows are real but softer:
 - **Nothing to sign.** The proxy has no signing key to import, rotate, or protect. The token
   approach's entire security rests on an EC private key living in the Function env — powerful, and a
   real operational responsibility. Fewer moving parts is a genuine point for the proxy.
-- **Relay hop.** Every proxied call is an extra network hop through our Function; a direct token call
-  goes straight to Supabase. Latency and Function invocation cost favor the token.
 - **Central choke point.** Because every proxied call passes through one Function, it's a natural
   place to audit, rate-limit, or shape traffic. The direct-token model has no such single point —
-  the browser talks to Supabase without us in the middle.
+  the browser talks to Supabase without us in the middle. (This is the flip side of the hop cost:
+  the same relay that adds latency is also the one place you could throttle abuse.)
+- **Portability — A's one strategic edge.** Because the proxy is the only thing that talks to
+  Supabase, it's a *swappable seam*. If we ever moved off Supabase to another Postgres host or a
+  different backend, only the proxy's internals would change — the apps calling `/api/proxy` wouldn't
+  notice. The token approach binds the browser to Supabase's client and its JWT/JWKS model, so a
+  migration touches every app. This is the one axis where A genuinely wins, and it's a real
+  consideration — just not one that outweighs the rest for how we actually build.
 
-## When each is the right one
+## Our default: mint the token (B)
 
-- **Reach for the proxy (A)** when the feature is request/response only — forms, reads, writes, an
-  admin panel — and you value operational simplicity: no key to manage, no database key in the
-  browser, a single point to audit. It's the lower-burden default for a CRUD surface.
-- **Reach for the minted token (B)** when the feature needs **Realtime**, or when the per-call relay
-  hop is a cost you don't want (latency-sensitive reads, high call volume), or when you specifically
-  want the browser talking to Supabase directly. You pay for it by taking on a signing key as a
-  first-class secret.
+Weighing those rows against how we actually build, **B is our default.** Two forces decide it, and
+neither is Realtime specifically:
 
-Said in one line: **if it needs a live socket, mint a token; if it's request/response and you'd
-rather not hold a signing key, proxy it.** Almost everything else is a wash, and either will work.
+1. **We don't want to cap ourselves at what the proxy relays.** We reach for more of Supabase over
+   time — Realtime for live pages, RPC for server-side logic, Storage, embeddings. A keeps us at
+   whatever we've hand-relayed; B gives us the whole surface with no per-capability proxy code. We'd
+   rather not build and maintain a relay that always trails Supabase's feature set.
+2. **We don't want a Function invocation on the path of every database call.** Routing all reads and
+   writes through our own Functions adds a hop and a rate ceiling to *everything*. The token model
+   goes straight to Supabase; the only Function call is the once-a-session mint. At volume, that
+   difference is real.
+
+The price is honest and we accept it: a signing key to hold as a first-class secret, and a
+publishable key in the bundle (inert without a token). Those are bounded, one-time operational costs
+— not a tax on every call.
+
+**The one reason to still reach for A** is portability. The proxy is a swappable seam: if we ever
+left Supabase, only the proxy changes and the apps don't notice, whereas B binds each app to
+Supabase's client and JWT model. That's a genuine strategic hedge — but it's a bet against a
+migration we're not planning, paid for with a feature ceiling and a per-call hop we'd feel every
+day. We'd rather build directly against Supabase now and treat "move off Supabase" as the thing we
+solve *if* it happens, not a cost we pre-pay forever.
+
+So: **B by default; reach for A only when you have a specific reason** — a surface you deliberately
+want kept keyless-in-browser and behind a single auditable choke point, or one you expect to outlive
+Supabase. Absent that reason, mint the token.
 
 ## The honest cost of having both
 
-Two architectures for one problem is a real tax. It means two mental models, two places a new
-engineer has to learn "how auth works here," and two failure modes to debug. We didn't set out to
-have both — they grew in different parts of the org against different immediate needs (the sites
-wanted a dead-simple CRUD relay; gtm needed a live dashboard). The lesson isn't "pick one and
-convert everything," because the conversion cost is real and the two are genuinely suited to
-different jobs. It's to be *deliberate*: a new feature should choose its approach by the Realtime
-question first, and the team should know both exist so nobody rebuilds a third.
+Standardizing on B doesn't erase A — the `earlbear-sites` proxy is shipped and working, and there's
+no urgency to convert it. But two architectures for one problem is a real tax: two mental models, two
+places a new engineer learns "how auth works here," two failure modes to debug. The resolution isn't
+a rewrite; it's a **default**. New surfaces take B unless they have the specific reason above, so the
+split stops growing and A becomes the documented exception rather than a coin-flip. (The next step
+after this post is to make that default *executable* — a skill that stands up B's auth on a new site
+so nobody re-derives it, and A stays a deliberate opt-out.)
 
-## When this comparison would change
+## When this decision would change
 
-The Realtime constraint is the load-bearing one, and it's a property of Supabase's proxy story
-*today*: a REST proxy can't carry a WebSocket. If Supabase (or a gateway in front of it) offered a
-way to proxy an authenticated Realtime connection — verifying identity at the socket layer the way
-the proxy verifies it at the REST layer — the biggest reason to prefer the token would fall away,
-and the proxy's operational simplicity would win almost everywhere. Until then, the split stands:
-the passport for live features, the proxy for the rest.
+The token wins today partly because a REST proxy can't carry a WebSocket and can't reach past the
+capabilities we relay. If Supabase (or a gateway in front of it) offered a way to proxy an
+authenticated Realtime connection *and* transparently pass through RPC/Storage/etc. — verifying
+identity at each layer the way the proxy verifies REST — then A's feature ceiling would fall away and
+its portability edge would tip the balance back. The other reversal is scale of a different kind: if
+we committed to staying backend-agnostic (a real chance we leave Supabase), the swappable-seam
+argument for A gets much stronger. Neither is true today, so the default stands: **mint the token.**
