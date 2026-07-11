@@ -18,7 +18,7 @@ CF Access (Google SSO, @earlbear.com)  ── gates the page
         │  the browser fetches:
         ▼
   GET /api/auth-token  (functions/api/auth-token.js — a thin wrapper over
-        │               @earlbear/cf-supabase-auth's handleAuthTokenRequest)
+        │               @earlbear/auth-server's handleAuthTokenRequest)
         │  verifies the CF Access JWT → asserts @earlbear.com → mints a 30-min
         │  ES256 Supabase JWT (role:authenticated, email claim)
         ▼
@@ -32,9 +32,10 @@ CF Access (Google SSO, @earlbear.com)  ── gates the page
 ## Steps
 
 1. **Auth — reuse, don't rebuild.** `/api/auth-token` already exists
-   (`functions/api/auth-token.js`, the shared `@earlbear/cf-supabase-auth` package). If
-   your feature is on the internal blog, the token path is done. The client singleton is
-   `src/data/supabaseClient.ts` (`getSupabase()` + the cached `accessToken` callback) —
+   (`functions/api/auth-token.js`, the shared `@earlbear/auth-server` package; the browser
+   client wiring is `@earlbear/auth-client`). If your feature is on the internal blog, the
+   token path is done. The client singleton is `src/data/supabaseClient.ts` (`getSupabase()`
+   + the cached `accessToken` callback, now a thin binding over `@earlbear/auth-client`) —
    import it; don't make a second client.
 
 2. **Schema — portable table + `_prod` RLS** (the repo's dual-mode convention; migrations
