@@ -92,8 +92,9 @@ This blog builds **two sites from one repo**. The **external** site
 (`blog.earlbear.com`) is public — customer-facing storytelling. The **internal** site
 (`blog.internal.earlbear.com`, behind Cloudflare Access) is engineering dispatches like
 this one. Every post declares `audience: external` or `audience: internal`, and the
-build ships only the matching set. [The internal-only example](/blog/internal-only-example)
-is the fixture that proves the split. A related idea — the **two-build split** — shows up
+build ships only the matching set. [How the audience split
+works](/blog/internal-only-example) walks through it — and, being internal itself,
+proves it. A related idea — the **two-build split** — shows up
 in the data posts: a *static* build reads the database at build time and ships pure
 keyless JSON (public-safe), while a *live* build reads Supabase in the browser with a
 real token. Same source, two artifacts.
