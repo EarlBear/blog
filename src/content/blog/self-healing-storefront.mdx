@@ -27,16 +27,17 @@ almost never pulls. The tools assume a marketing expert who knows what to test, 
 build the variants, can read the statistics, and is willing to risk live sales. So
 most owners do nothing, or guess and ship with no control group.
 
-A self-healing storefront closes that gap. It is an agent that finds a store's
-conversion problems, turns them into a ranked list of experiments, runs them safely
-on live traffic, ships the winners, and reports the result in dollars, in plain
-language. The owner sets the rules and watches; the agent does the work.
+A self-healing storefront closes that gap. It is an agent — the one EarlBear runs for
+store owners — that finds a store's conversion problems, turns them into a ranked list
+of experiments, runs them safely on live traffic, ships the winners, and reports the
+result in dollars, in plain language. The owner sets the rules and watches; the agent
+does the work.
 
 ## Who it is for
 
 Three people act on this agent. A store owner who wants more revenue without hiring a
-marketing expert or risking the store. An operator (us) who runs the agent as a
-managed service across many stores. And a shopper, who never sees the agent, but
+marketing expert or risking the store. An operator — EarlBear — who runs the agent as
+a managed service across many stores. And a shopper, who never sees the agent, but
 whose behavior is the signal every experiment reads.
 
 <UseCaseDiagram
@@ -106,7 +107,7 @@ traffic, and reports the lift. Step through it:
       </div>
     </div>
   </Mockup>
-  <Mockup slot="scene-0" chrome="browser" title="Storefront Agent" url="storefront-agent.app/wins" caption="The agent watches the store, ships fixes within the owner's rules, and reports the dollar lift.">
+  <Mockup slot="scene-0" chrome="browser" title="EarlBear" url="earlbear.com/wins" caption="The agent watches the store, ships fixes within the owner's rules, and reports the dollar lift.">
     <div style="font-family: var(--font-sans);">
       <div style="display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--color-border); background: var(--color-surface);">
         <div>
@@ -195,10 +196,11 @@ human approving it first.
 
 ## From finding problems to fixing them
 
-This agent is the second half of a pair. The first half is a scanner that finds what
-is wrong on a store; this agent fixes it. The scanner earns trust by reliably finding
-problems; this agent turns that trust into results the owner can see, provably, with
-their revenue protected.
+Fixing is the second half of a pair. The first half is finding: EarlBear continuously
+scans a store for what is wrong — a slow checkout, a dead link, a weak product page —
+and this agent turns those findings into experiments and ships the ones that pay off.
+Finding earns trust by reliably surfacing real problems; fixing turns that trust into
+results the owner can see, provably, with their revenue protected.
 
 Conversion is the wedge because every win is a dollar the owner can point to on their
 own dashboard. But an agent that can safely observe a live store, form a hypothesis,
