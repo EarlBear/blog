@@ -210,6 +210,15 @@ Guided workflows live in `.claude/skills/` (invoke with `/<name>`):
   clone-us handbook? Recommends *softer rewrites* that keep the marketing value,
   rather than moving the post. Run `secret-sauce-check` for the tells; use
   `audience-audit` when the fix is a move, not a softening.
+- **`reader-review`** — read a post as a *first-time reader* and find where the
+  story breaks: the cold open that drops you mid-system, EarlBear-local terms used
+  before they're introduced, unexplained leaps, the missing on-ramp (a post that
+  assumes a system the reader was never shown), whether it answers its declared
+  `questions`, and whether the narrative has a spine. A comprehension pass, distinct
+  from `design-post-review` (visuals/quality) and `external-post-review`
+  (over-sharing). Run `reader-check` for the mechanical tells (undefined terms,
+  unanswered questions). Running it across the whole blog is how we find the
+  on-ramp gaps that a foundational "start here" post should close.
 
 ## Feature docs (the "why")
 

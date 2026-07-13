@@ -1,0 +1,138 @@
+---
+title: "Start here: what EarlBear is, and the stack this blog is written from"
+description: "The one post to read first. What EarlBear is, what this site runs on, and the whole stack at a glance — static Astro sites with no backend, behind Cloudflare Access, talking directly to one Supabase Postgres with RLS as the only authorization layer. It defines the terms the other posts assume (mart, the scan fleet, the two-build split) and lays out the reading order through the arc: database, then the door, then the backend, then identity, then locking down writes."
+pubDate: 2026-07-13
+tags: [engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What is EarlBear?
+  - What is this blog, and what does it run on?
+  - Why does a zero-JS static site need a database, Cloudflare, and RLS?
+  - Which posts should I read, and in what order?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Most posts on this blog are dispatches from inside a running system — they open in the
+middle of it, naming a *mart*, the *scan fleet*, or the *two-build split* as if you
+already had them. This post is the one that hands you those first. Read it, then the
+rest have somewhere to stand.
+
+## What EarlBear is
+
+EarlBear runs online storefronts the way a senior web team would — building, testing,
+and fixing them around the clock — except it never clocks out. It's a **loop of AI
+agents**: one scans ecommerce sites for growth problems and turns them into leads,
+another onboards a store, another runs A/B experiments and ships the conversion wins
+that hold up, and rolls back the ones that don't. The [agentic workflow that runs
+EarlBear](/blog/agentic-workflow-that-runs-earlbear) walks that loop stage by stage;
+[the EarlBear use cases](/blog/earlbear-use-cases) draw who touches it; [life without
+EarlBear](/blog/life-without-earlbear) prices the human team you'd otherwise hire.
+
+The one fact that most of the engineering posts lean on: **those agents run as Claude
+Code sessions, and their session transcripts are the raw telemetry behind every number
+on our internal dashboards.** That's why so much of this blog is about moving,
+sanitizing, and storing transcripts — they *are* the data.
+
+## What this blog is
+
+This blog is a **static [Astro](https://astro.build) site** that ships *zero*
+client-side JavaScript — the pages are HTML built ahead of time. [Hello from the
+den](/blog/hello-world) covers how the blog itself is built. The same static-site
+approach runs our other surfaces too: the internal metrics dashboard, the live scan
+fleet, the pitch deck. They're all HTML and a little JavaScript on a CDN, with **no
+backend of their own.**
+
+Which raises the obvious question the rest of the blog answers: if there's no backend,
+where do the live numbers come from?
+
+## The stack at a glance
+
+They come straight from the database. A static page in the browser talks **directly to
+one Supabase Postgres** — no API tier in between. Two things make that safe rather than
+reckless: **Cloudflare Access** gates who can load the page at all, and **Row-Level
+Security (RLS)** inside Postgres decides what any given request is allowed to read or
+write. There is no middle tier to trust, because there is no middle tier — the database
+*is* the API, and RLS is the contract.
+
+<FlowDiagram
+  title="The whole stack, one request"
+  shape="pipeline"
+  legend
+  desc="A static site with no backend: the browser is gated at the door by Cloudflare Access, then talks directly to one Supabase Postgres, where Row-Level Security is the only thing deciding what each request may read or write. Each layer is the subject of its own post."
+  nodes={[
+    { id: 'browser', label: 'static site', kind: 'external', detail: 'Zero-JS Astro pages (dashboard, scan fleet, deck, this blog) — HTML + a little JS on a CDN. No backend of its own. See hello-world and from-one-laptop-to-the-cloud.' },
+    { id: 'access', label: 'Cloudflare Access', kind: 'edge', detail: 'The door. Google SSO restricted to @earlbear.com; an unauthenticated request never reaches the page. Gates the page load, NOT the API calls that follow. See the-login-page-we-didnt-build.' },
+    { id: 'supabase', label: 'Supabase Postgres', kind: 'store', detail: 'The backend. The browser reads and writes it directly — the tables are the API. See supabase-as-an-api.' },
+    { id: 'rls', label: 'RLS', kind: 'store', detail: 'The contract. Row-Level Security in Postgres decides what each request may read/write, based on a minted @earlbear.com identity. See who-are-you-to-supabase and the-proxy-and-the-passport.' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'access', label: 'load page' },
+    { from: 'access', to: 'supabase', label: 'direct call' },
+    { from: 'supabase', to: 'rls', label: 'enforced by' },
+  ]}
+/>
+
+That division of labor — **Access is a door, RLS is the room** — is the thesis the auth
+posts keep returning to. Access proves *you're an EarlBear employee at the front door*;
+it does nothing about the API calls the page makes afterward. So the database needs its
+own gate, and that gate is identity carried into RLS. The bridge between them is a
+**mint step**: a tiny function turns your Cloudflare login into a short-lived token
+carrying your `@earlbear.com` identity, and the browser sends that token on every
+Supabase call so RLS can see who you are. [Who are you, to
+Supabase](/blog/who-are-you-to-supabase) and [the proxy and the
+passport](/blog/the-proxy-and-the-passport) are the whole story of that step.
+
+## Two audiences, one repo
+
+This blog builds **two sites from one repo**. The **external** site
+(`blog.earlbear.com`) is public — customer-facing storytelling. The **internal** site
+(`blog.internal.earlbear.com`, behind Cloudflare Access) is engineering dispatches like
+this one. Every post declares `audience: external` or `audience: internal`, and the
+build ships only the matching set. [How the audience split
+works](/blog/internal-only-example) walks through it — and, being internal itself,
+proves it. A related idea — the **two-build split** — shows up
+in the data posts: a *static* build reads the database at build time and ships pure
+keyless JSON (public-safe), while a *live* build reads Supabase in the browser with a
+real token. Same source, two artifacts.
+
+## The words the other posts assume
+
+Keep these four in your pocket and the rest of the blog reads straight:
+
+- **mart** — a pre-aggregated rollup table (metrics per stage per day), built from the
+  agent-session transcripts, that feeds a panel on the internal dashboard. The dashboard
+  reads marts, not raw data.
+- **the scan fleet** — the live wall of Shopify sites EarlBear is scanning: which are
+  queued, which is scanning right now, what each one found. It's both a product surface
+  and a recurring example in the infra posts.
+- **the two-build split** — the static (build-time, keyless JSON) vs live (in-browser,
+  token-carrying) build described just above.
+- **the snapshot builder** — the build-time process behind the static build: it reads
+  the database with a privileged key and writes the keyless JSON the public artifact
+  ships.
+
+## Where to go next
+
+The blog tells one arc if you read it in this order — each stage is a layer of the
+stack diagram above:
+
+1. **The database.** Why the metrics live in Postgres, and how the same pipeline runs on
+   a laptop and in the cloud — [one database, two modes](/blog/one-database-two-modes)
+   and [from one laptop to the cloud](/blog/from-one-laptop-to-the-cloud).
+2. **The door.** Cloudflare Access as the front gate —
+   [the login page we didn't build](/blog/the-login-page-we-didnt-build).
+3. **The backend.** Supabase reached directly, tables as the API —
+   [Supabase as our API](/blog/supabase-as-an-api).
+4. **Identity into the database.** Turning "logged in at Cloudflare" into "logged in to
+   Postgres" — [who are you, to Supabase](/blog/who-are-you-to-supabase) and
+   [the proxy and the passport](/blog/the-proxy-and-the-passport).
+5. **Locking down writes.** Who's allowed to write, and gating every read behind an
+   identity — [why every mart is identity-gated](/blog/the-two-marts-that-werent-there)
+   and [every key in the system](/blog/every-key-in-the-system).
+
+Start anywhere, but start knowing the shape: static sites, no backend, one database
+behind one door, with RLS as the only thing that says yes or no.
