@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal audience-check sync-assets \
+.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check anchor-ids-check check \
         bench-diagram reconcile-comments clean
 
@@ -202,6 +202,31 @@ deploy-internal: node_modules ## Build + guard + deploy to Cloudflare Pages — 
 	@#  2. CLOUDFLARE_ACCOUNT_ID — see the note above (scoped token can't read /memberships).
 	@test -n "$(CF_ACCOUNT_ID)" || (echo "FAIL: no CLOUDFLARE_ACCOUNT_ID (is ../earlbear-domain present?)" && exit 1)
 	PUBLIC_AUDIENCE=internal CLOUDFLARE_ACCOUNT_ID=$(CF_ACCOUNT_ID) npm run deploy:internal
+
+# The comment-layer token-exchange Function needs three CF Pages secrets on earlbear-blog-internal.
+# These live in the Pages secret store (NOT dotenvx .env — they're the Function's server-side runtime
+# env), mirroring gtm's pattern (../earlbear-agentic-workflow .env.example + import-signing-key.sh).
+# Every value is piped via stdin from a file / the domain repo — NEVER passed on argv or printed.
+#   SUPABASE_SIGNING_KEY  — the EC P-256 private JWK (from the gitignored .signing-key.jwk.json symlink)
+#   CF_ACCESS_TEAM_DOMAIN — earlbear.cloudflareaccess.com (the org constant)
+#   CF_ACCESS_AUDIENCE    — the internal-blog Access app's OWN aud tag, read live from earlbear-domain
+CF_INTERNAL_PROJECT := earlbear-blog-internal
+CF_ACCESS_TEAM_DOMAIN := earlbear.cloudflareaccess.com
+wire-comment-secrets: node_modules ## Set the 3 CF Pages secrets the comment Function needs (values piped via stdin, never printed)
+	@test -n "$(CF_ACCOUNT_ID)" || { echo "FAIL: no CLOUDFLARE_ACCOUNT_ID (is ../earlbear-domain present?)"; exit 1; }
+	@test -r .signing-key.jwk.json || { echo "FAIL: .signing-key.jwk.json not readable (symlink to the shared gtm key — see make signing-key-status)"; exit 1; }
+	@echo "→ SUPABASE_SIGNING_KEY (piping the private JWK from .signing-key.jwk.json)"
+	@CLOUDFLARE_ACCOUNT_ID=$(CF_ACCOUNT_ID) ./node_modules/.bin/dotenvx run --quiet -- \
+	  ./node_modules/.bin/wrangler pages secret put SUPABASE_SIGNING_KEY --project-name $(CF_INTERNAL_PROJECT) < .signing-key.jwk.json
+	@echo "→ CF_ACCESS_TEAM_DOMAIN ($(CF_ACCESS_TEAM_DOMAIN))"
+	@printf '%s' "$(CF_ACCESS_TEAM_DOMAIN)" | CLOUDFLARE_ACCOUNT_ID=$(CF_ACCOUNT_ID) ./node_modules/.bin/dotenvx run --quiet -- \
+	  ./node_modules/.bin/wrangler pages secret put CF_ACCESS_TEAM_DOMAIN --project-name $(CF_INTERNAL_PROJECT)
+	@echo "→ CF_ACCESS_AUDIENCE (reading the internal-blog Access app aud from ../earlbear-domain, piped via stdin)"
+	@aud=$$(make -C ../earlbear-domain -s blog-internal-aud 2>/dev/null); \
+	  test -n "$$aud" || { echo "FAIL: could not read the blog Access app aud from ../earlbear-domain (need: make -C ../earlbear-domain blog-internal-aud)"; exit 1; }; \
+	  printf '%s' "$$aud" | CLOUDFLARE_ACCOUNT_ID=$(CF_ACCOUNT_ID) ./node_modules/.bin/dotenvx run --quiet -- \
+	    ./node_modules/.bin/wrangler pages secret put CF_ACCESS_AUDIENCE --project-name $(CF_INTERNAL_PROJECT)
+	@echo "✓ all 3 comment-layer secrets set on $(CF_INTERNAL_PROJECT). Now: make deploy-internal"
 
 ## --- housekeeping --------------------------------------------------------
 
