@@ -55,11 +55,11 @@
     "label": "Walkthrough: interactive scene stepper (default slot = app scene, `scene-0\u20265` named slots, `steps` reference scenes by index + targets by selector).",
     "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/components/Walkthrough.astro#L1-L69"
   },
-  "src/styles/global.css#L841-L1153": {
+  "src/styles/global.css#L865-L1177": {
     "context": "sha256:498dbb5d86c7a0e111d957e4261d4ffe858dc77ad1fddda9d40c399f0310bd79",
     "feature": "import-design-components",
     "hash": "sha256:7feaf15339d57ef1ee97bc1620a22c0a962b84a0f7cecb44ff4d75d7e82da2b2",
     "label": "component styling (Callout, Assumption, Mockup, Walkthrough) in the shared global stylesheet, token-driven and reduced-motion-safe.",
-    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/styles/global.css#L829-L1141"
+    "url": "https://github.com/EarlBear/blog/blob/0ce95f1/src/styles/global.css#L841-L1153"
   }
 }
