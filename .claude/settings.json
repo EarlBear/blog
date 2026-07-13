@@ -27,10 +27,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/check-feature-docs.py"
-          },
-          {
-            "type": "command",
             "command": "python3 .claude/hooks/check-posts.py"
           },
           {
@@ -81,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "MARKER=/tmp/earlbear-plugins-checked-${PPID}; [ -f \"$MARKER\" ] && exit 0; touch \"$MARKER\"; bash /Users/omareid/Workspace/git-earlbear/earlbear-claude-plugin-marketplace/scripts/check-plugins.sh task-management-manager"
+            "command": "MARKER=/tmp/earlbear-plugins-checked-${PPID}; [ -f \"$MARKER\" ] && exit 0; touch \"$MARKER\"; bash /Users/omareid/Workspace/git-earlbear/earlbear-claude-plugin-marketplace/scripts/check-plugins.sh task-management-manager decision-tracking-manager"
           }
         ]
       }

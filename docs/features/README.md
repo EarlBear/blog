@@ -47,13 +47,19 @@ review.
 
 ## Tools
 
+The anchor **engine** lives in the `decision-tracking-manager` marketplace plugin (one source of
+truth across EarlBear repos). This repo opts in via `.claude/hooks/decision-tracking.conf` and keeps
+a thin launcher shim at `scripts/features_check.py` that discovers + runs the plugin CLI, so the
+commands below are unchanged.
+
 - `npm run features:check` — full sweep: auto-heal moves, report drift (exit 1 if
-  any unreviewed drift/missing remains). Good for pre-commit / CI.
+  any unreviewed drift/missing remains). Good for pre-commit / CI. (Shim → plugin `reconcile-anchors.py --check`.)
 - `npm run features:seed` — same sweep but writes current hashes for any
-  uncached anchors (use right after authoring a doc).
-- **PostToolUse hook** (`.claude/hooks/check-feature-docs.py`) — after an edit,
+  uncached anchors (use right after authoring a doc). (Shim → plugin `--seed`.)
+- **PostToolUse hook** (plugin `check-decision-anchors.py`, shipped by
+  `decision-tracking-manager`, config-gated by `decision-tracking.conf`) — after an edit,
   silently re-keys moved blocks and warns (never blocks) when a documented block
-  drifts.
+  drifts, naming the decision to revisit.
 - **`feature-docs` skill** — author a new doc, or reconcile a stale one. Reconcile
   is the *only* path that re-blesses changed content: it makes you re-read the
   why, then re-pins the anchor's commit id to HEAD and updates the cache.

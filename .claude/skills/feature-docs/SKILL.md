@@ -7,7 +7,9 @@ description: Author or reconcile a docs/features/ "why" doc for this blog. Use w
 
 Feature docs live in `docs/features/<id>.md` and explain **why** a feature exists,
 linking the exact code blocks that implement it. Drift detection is content-hash
-based (see `docs/features/README.md` and `scripts/features_lib.py`). This skill is
+based; the engine now ships in the `decision-tracking-manager` marketplace plugin
+(see `docs/features/README.md` — this repo runs it via the `scripts/features_check.py`
+shim + `.claude/hooks/decision-tracking.conf`). This skill is
 the human-in-the-loop path for the two operations a hook must never do on its
 own: **authoring** a rationale, and **reconciling** real drift.
 
@@ -69,7 +71,7 @@ for a feature.
 ## Notes
 
 - The engine ignores `node_modules`, `dist`, `.astro`, `.git` when relocating
-  blocks (`scripts/features_lib.py` → `SCAN_IGNORE_DIRS`).
+  blocks (plugin `anchor_lib.py` → `SCAN_IGNORE_DIRS`, in `decision-tracking-manager`).
 - Formatting-only edits (whitespace, blank-line runs) are normalized out and do
   NOT cause drift.
 - Two byte-identical blocks are disambiguated by surrounding context lines; if a
