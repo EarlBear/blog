@@ -67,6 +67,10 @@
           },
           {
             "type": "command",
+            "command": "python3 .claude/hooks/check-reader-flow.py"
+          },
+          {
+            "type": "command",
             "command": "python3 .claude/hooks/check-env-encrypted.py"
           }
         ]

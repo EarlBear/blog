@@ -1,6 +1,6 @@
 ---
-title: "The two marts that weren't there"
-description: "Two dashboard panels quietly read empty because their tables were never applied to production — a missing-migration bug that looked like an RLS gap. Here's the whole situation in plain terms, three ways to fix it drawn out with diagrams, and what each one means for how we can test it."
+title: "Why every mart is identity-gated"
+description: "Every dashboard mart is gated to a logged-in @earlbear.com identity — a leaked publishable key reads nothing. Here's the trust boundary that makes that matter (Cloudflare Access gates the page, not the data), why using(true) was replayable, the two-build split that let us gate with no cost, and the missing-migration bug that revealed the gap in the first place — plus the traps to watch for if you ever touch the marts."
 pubDate: 2026-07-09
 tags: [engineering, agents]
 expects: [flow, comparison]
@@ -9,176 +9,131 @@ draft: true
 audience: internal
 design: mart-identity
 questions:
-  - Why are the cost and agent-reporting panels reading empty on production?
-  - Is this a security (RLS) problem or something else?
-  - What are our three options to fix it, and what does each cost?
-  - Which option makes these panels easiest to actually test — and which breaks other tests?
-  - How did the security-posture review miss this, and what test would have caught it?
+  - Why is every mart gated to an @earlbear.com identity instead of anon-readable?
+  - Cloudflare Access already gates the page — so why does the database need its own gate?
+  - What did identity-gating cost us, and why was that cost avoidable?
+  - What should I watch out for if I add or touch a mart?
 ---
 
 import FlowDiagram from '../../components/FlowDiagram.astro';
 import ComparisonMatrix from '../../components/ComparisonMatrix.astro';
 
-## The situation, in one breath
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on.*
 
-Two dashboard panels — **cost over the session timeline** and **agent reporting** — read from two
-Postgres rollup tables, `mart_event_cost` and `mart_agent_reporting`. Those tables were built by
-migrations 006 and 007, applied to our **local** database… but **never applied to production
-Supabase**. So on prod, asking for those tables returns *"table not found"* (HTTP 404). The panels
-don't crash — the site falls back to a committed JSON snapshot — so the cost panel shows old baked-in
-data and the agent-reporting panel just shows nothing. It's been quietly wrong, not loudly broken.
+## The rule
 
-The prod migration history makes it undeniable: it jumps straight from `cc_marts_model` (004) to
-`scan_fleet` (008), with **no 006, no 007** in between.
+**Every dashboard mart is gated to a logged-in `@earlbear.com` identity.** All five rollup tables —
+`mart_workflow_metrics`, `mart_funnel_daily`, `mart_recent_sessions`, `mart_event_cost`,
+`mart_agent_reporting` — carry the same RLS policy: `to authenticated using (auth.jwt()->>'email'
+like '%@earlbear.com')`, with anon revoked. The publishable key on its own reads **nothing** from
+any mart. Proven live: publishable key alone → 401; an `@earlbear.com` token → 200; a non-earlbear
+token → filtered to `[]`.
 
-## Why this looked like a security bug (but isn't)
+This page is the *why* behind that rule — so nobody later "simplifies" a mart back to anon-read
+without knowing what it costs.
 
-At first glance it reads like a Row-Level-Security gap: migration 007 has no `enable row level
-security`, no policy, and no `*_prod.sql` companion — so "anon can't read it," same as
-`mart_event_cost`. That's all *true about the files*. But it's the wrong diagnosis. The tables
-return **404 (doesn't exist)**, not **403 (exists, but you're not allowed)**. You can't have an RLS
-gap on a table that isn't there. The real bug is **missing migrations**, and the fix has to *create
-the tables first*, then decide their access rule.
+## Why the database needs its own gate
 
-Here's the layer that's out of sync — code and local DB are ahead of prod:
+The instinct is: the whole internal site is behind Cloudflare Access — Google SSO, `@earlbear.com`
+only, the page is unreachable otherwise — so isn't the data already protected? No. **Cloudflare
+Access gates the *page load*, not the API calls the page makes afterward.**
+
+The publishable key is baked into the browser bundle. Any logged-in user can open devtools, copy it,
+and replay it with `curl` from anywhere — outside CF Access entirely. So the real question RLS has to
+answer isn't "did this person load the page," it's "does this specific request carry a valid
+`@earlbear.com` identity." A `using(true)` policy can't tell the difference: it hands the rows to
+anyone holding the key. An identity-gated policy rejects the copied key, because a bare key carries
+no token.
 
 <FlowDiagram
-  title="Where the drift is"
+  title="The page gate is not the data gate"
   shape="pipeline"
   legend
-  desc="Migrations 006/007 reached local Postgres and the frontend read paths, but never reached production Supabase — so the two marts exist everywhere except where the live dashboard reads them."
+  desc="Cloudflare Access gates the page load, not the API calls that follow. A logged-in user can extract the publishable key from the bundle and replay it via curl from outside CF Access. A using(true) mart hands over the rows; an identity-gated mart rejects the copied key because it carries no @earlbear.com token."
   nodes={[
-    { id: 'mig', label: 'migrations 006/007', detail: 'cc_events → mart_event_cost; agent_reporting → mart_agent_reporting. Written and committed.' },
-    { id: 'local', label: 'local Postgres', kind: 'store', detail: 'Applied here (make db-up). Tables exist; panels work locally.' },
-    { id: 'prod', label: 'prod Supabase', kind: 'store', detail: 'NEVER applied here. The two mart tables do not exist → REST returns 404 PGRST205.' },
-    { id: 'fe', label: 'dashboard', kind: 'external', detail: 'snapshot-data.mjs + useSnapshot.ts both read the two marts, expecting them to be present.' },
+    { id: 'key', label: 'publishable key', kind: 'edge', detail: 'Baked into the browser bundle. Any @earlbear.com user can read it from devtools and replay it anywhere — CF Access does not see these calls.' },
+    { id: 'open', label: 'using(true) mart', kind: 'store', detail: 'READS — any holder of the key gets the rows. The copied key is enough.' },
+    { id: 'gated', label: 'identity-gated mart', kind: 'store', detail: 'REJECTS — the request carries no minted @earlbear.com JWT, so RLS returns nothing. This is all five marts today.' },
   ]}
   edges={[
-    { from: 'mig', to: 'local', label: 'applied' },
-    { from: 'mig', to: 'prod', label: 'skipped' },
-    { from: 'fe', to: 'prod', label: 'reads (404)' },
+    { from: 'key', to: 'open', label: 'replay → rows' },
+    { from: 'key', to: 'gated', label: 'replay → nothing' },
   ]}
 />
 
-## Is anything actually broken for users?
+The gating mechanism itself — a Pages Function verifies the CF Access login and mints a short-lived
+`@earlbear.com` Supabase JWT the browser carries on every request — is the same one the scan fleet
+uses. It's built and explained in [who are you, to Supabase](/blog/who-are-you-to-supabase); this
+page is just about extending it to cover the marts.
 
-Barely — and this matters for how urgent the fix is. The deployed dashboard reads the **committed
-snapshot** (`public/data/*.json`) by default, and only hits Supabase live when you add `?live=1`.
-So today:
+## Why we could afford to gate them (the two-build split)
 
-- Cost panel → shows the 9 rows baked into `event_cost.json` (stale, but present).
-- Agent-reporting panel → shows nothing (`agent_reporting.json` is `[]`).
-- Only `?live=1` surfaces the 404s.
+Identity-gating *looks* expensive for a read-only rollup, and for a while that's why the marts were
+left anon-readable. The cost was one specific thing: **the snapshot builder can't mint a token.** It
+runs at build time, with no logged-in user, so if the marts require an `@earlbear.com` JWT the
+builder gets a 403 and the offline/demo snapshot goes empty.
 
-Nothing is *insecure* and nothing errors for a normal viewer. This is a **correctness + testability**
-problem, not an incident.
+The two-build split dissolves that cost by giving the two readers different keys:
 
-## The testability baseline (why this blocks tests)
+- The **static** build reads the marts at build time with an **RLS-exempt secret key** and ships
+  pure keyless JSON — the demo/offline/public-safe artifact. It never needs anon-read.
+- The **live** build always reads Supabase in the browser with a **minted `@earlbear.com` token**.
 
-You cannot write a meaningful *live* test for these two panels while the tables 404. The three
-original marts return 200 and are fully testable; the two new ones can only be "asserted absent."
-Fixing that is the precondition for testing the panels at all.
+<FlowDiagram
+  title="Two builds, two keys — neither needs anon-read"
+  shape="pipeline"
+  legend
+  desc="The static build reads marts at build time with an RLS-exempt secret key and ships keyless JSON; the live build reads them in the browser with a minted @earlbear.com token. Because the two readers use different keys, the marts never need an anon-read policy — so every mart can be identity-gated with no compromise."
+  nodes={[
+    { id: 'static', label: 'static build', kind: 'edge', detail: 'Build-time. Reads marts with the RLS-exempt secret key, ships pure keyless JSON. The demo/offline/public-safe artifact.' },
+    { id: 'live', label: 'live build', kind: 'external', detail: 'Runtime. Reads Supabase in the browser with a minted @earlbear.com token.' },
+    { id: 'gated', label: 'identity-gated marts', kind: 'store', detail: 'to authenticated using(email like %@earlbear.com); anon revoked. Neither reader needs anon-read.' },
+  ]}
+  edges={[
+    { from: 'static', to: 'gated', label: 'secret key' },
+    { from: 'live', to: 'gated', label: 'minted token' },
+  ]}
+/>
 
-| Mart | Live status today | What a test can assert |
-| --- | --- | --- |
-| `mart_workflow_metrics` | 200 | rows + shape ✅ |
-| `mart_funnel_daily` | 200 | rows + shape ✅ |
-| `mart_recent_sessions` | 200 | rows + shape ✅ |
-| `mart_event_cost` | **404** | only "table missing" ❌ |
-| `mart_agent_reporting` | **404** | only "table missing" ❌ |
+With the split, neither reader relies on an anon-read policy — so gating every mart costs nothing.
+Migration `011_marts_identity_prod.sql` drops the `using(true)` policies on all five marts, adds the
+`@earlbear.com` `to authenticated` policy, and revokes anon.
 
-## The three options
-
-Each option first **applies 006/007 to prod** (that's non-negotiable — it creates the tables). They
-differ only in the **access rule** they then attach, and that difference is what drives the testing
-story.
+For the record, this reversed an earlier call. The original recommendation was to keep `using(true)`
+(matching the marts' pre-split state and keeping the snapshot builder working); the split is what
+made identity-gating the free, strictly-better option.
 
 <ComparisonMatrix
-  title="The three fixes, scored"
-  desc="All three create the tables. They differ on the RLS rule and what that costs. Option 1 keeps the marts as testable as the existing three and breaks nothing; Option 2 is more secure but couples mart tests to the token machinery and breaks the snapshot/deck paths; Option 3 is the safety net that prevents recurrence and pairs with either."
+  title="Anon-read vs identity-gated, after the split"
+  desc="Before the two-build split, anon-read was the pragmatic choice because the snapshot builder needed it. After the split, the builder uses the secret key and the live app carries a token — so identity-gating is strictly better: it closes the leaked-key replay with no reader left behind."
   options={[
-    { id: 'anon', label: '1 · anon using(true)' },
-    { id: 'auth', label: '2 · @earlbear.com', chosen: true },
-    { id: 'guard', label: '3 · audit + drift guard', chosen: true },
+    { id: 'anon', label: 'anon using(true)' },
+    { id: 'gated', label: 'identity-gated', chosen: true },
   ]}
   criteria={[
-    { label: 'Fixes the 404 panels', cells: { anon: 'yes', auth: 'yes', guard: 'partial' } },
-    { label: 'Panels testable live', cells: { anon: 'yes', auth: 'partial', guard: 'partial' } },
-    { label: 'No new test setup (reads need no token)', cells: { anon: 'yes', auth: 'no', guard: 'yes' } },
-    { label: "Doesn't break snapshot/deck tests", cells: { anon: 'yes', auth: 'no', guard: 'yes' } },
-    { label: 'Prevents the whole class of bug', cells: { anon: 'no', auth: 'no', guard: 'yes' } },
-    { label: 'Consistent with the other 3 marts', cells: { anon: 'yes', auth: 'no', guard: 'partial' } },
+    { label: 'Leaked publishable key reads nothing', cells: { anon: 'no', gated: 'yes' } },
+    { label: 'Snapshot builder still works', cells: { anon: 'yes', gated: 'yes' } },
+    { label: 'Live app still works', cells: { anon: 'yes', gated: 'yes' } },
+    { label: 'Consistent with the scan fleet', cells: { anon: 'no', gated: 'yes' } },
   ]}
 />
 
-### Option 1 — anon `using(true)`, like every other mart
+## How we found the gap
 
-Apply 006/007, then an `011_marts_rls_prod.sql` that does `enable RLS` + `create policy … for
-select to anon using(true)` — exactly what migration 003 did for the first three marts. The marts
-are read-only, non-sensitive rollups (cost curves, tool-call counts) sitting behind Cloudflare
-Access. A leaked publishable key could read them, but the *page* is still gated.
+The gating work started as a bug. Two panels — cost over the session timeline, and agent reporting —
+were reading empty on production. They read from `mart_event_cost` and `mart_agent_reporting`, built
+by migrations 006/007 — which had been applied to our local database but **never to production
+Supabase**. On prod the tables simply didn't exist; the REST API returned 404 (`PGRST205`). The
+panels didn't crash — the site falls back to a committed JSON snapshot — so the cost panel showed
+stale baked-in data and the agent-reporting panel showed nothing. Quietly wrong, not loudly broken.
 
-<FlowDiagram
-  title="Option 1 — anon-read marts"
-  shape="pipeline"
-  legend
-  desc="Any request holding the publishable key reads the marts directly; RLS is using(true). The snapshot builder and the pitch deck use the same plain anon key, so they keep working with no changes."
-  nodes={[
-    { id: 'anon', label: 'publishable key', kind: 'edge', detail: 'In the browser bundle + the snapshot builder + the deck. No identity needed.' },
-    { id: 'rls', label: 'RLS using(true)', detail: 'to anon using(true) — same policy the 3 existing marts have (migration 003).' },
-    { id: 'mart', label: 'the 2 marts', kind: 'store', detail: 'mart_event_cost + mart_agent_reporting, once 006/007 are applied to prod.' },
-  ]}
-  edges={[
-    { from: 'anon', to: 'rls', label: 'apikey' },
-    { from: 'rls', to: 'mart', label: 'select' },
-  ]}
-/>
-
-**Testing implications:** the *easiest* to test. A live test hits the mart with the anon key we
-already have and asserts **200 + shape** — no token, no setup — mirroring the three working marts.
-The snapshot builder and pitch-deck tests keep passing unchanged. Downside: it extends
-`using(true)`, the pattern we deliberately moved *away from* for the scan fleet.
-
-### Option 2 — `@earlbear.com`, like the scan fleet
-
-Apply 006/007, but give the marts the token-exchange RLS: `to authenticated using (auth.jwt()->>
-'email' like '%@earlbear.com')`. Now a leaked publishable key reads nothing — only a logged-in
-EarlBear user does.
+Chasing it is what surfaced the whole marts-access question — and produced the drift guard below, so
+the *class* of bug can't recur: it reads the frontend's mart list (from `snapshot-data.mjs` /
+`useSnapshot.ts`) and asserts each mart exists on prod with a policy. A mart wired into the frontend
+but missing from prod now fails a red check instead of silently reading empty.
 
 <FlowDiagram
-  title="Option 2 — identity-gated marts"
-  shape="pipeline"
-  legend
-  desc="Reads require a minted @earlbear.com token, so the browser works — but the snapshot builder and the pitch deck, which use the plain anon key with no token exchange, would be denied (403) until they are reworked to mint tokens."
-  nodes={[
-    { id: 'tok', label: 'minted JWT', kind: 'edge', detail: 'From /api/auth-token — carries the @earlbear.com email. The browser has one; the snapshot builder and deck do NOT.' },
-    { id: 'rls', label: 'RLS @earlbear.com', detail: 'to authenticated using(email like %@earlbear.com). A plain anon key is denied.' },
-    { id: 'mart', label: 'the 2 marts', kind: 'store', detail: 'Readable only with a valid token.' },
-    { id: 'broken', label: 'snapshot + deck', kind: 'external', detail: 'Read marts with the plain anon key today → would 403 until reworked to mint tokens.' },
-  ]}
-  edges={[
-    { from: 'tok', to: 'rls', label: 'Bearer' },
-    { from: 'rls', to: 'mart', label: 'select' },
-    { from: 'broken', to: 'rls', label: 'anon → 403' },
-  ]}
-/>
-
-**Testing implications:** *more capable but more expensive.* Every mart test must first
-`mintTestToken()` (so tests need the signing key → they **skip in keyless CI**, like our identity
-tests). You gain a real security assertion ("leaked key reads nothing") — but the **snapshot builder
-and pitch-deck tests break** until those paths are reworked to mint tokens. Bigger blast radius for
-a read-only rollup.
-
-### Option 3 — the audit + drift guard (the missing test)
-
-This one is *about* testing. Before/alongside the fix, add a **drift guard**: a check that asserts,
-for every mart the frontend reads (grepped from `snapshot-data.mjs` / `useSnapshot.ts`), a
-corresponding table with a policy actually exists on prod. That is precisely the check that would
-have caught this bug — and it protects the *class*: any future mart wired into the frontend but not
-applied to prod fails the guard instead of silently reading empty.
-
-<FlowDiagram
-  title="Option 3 — the drift guard"
+  title="The drift guard"
   shape="pipeline"
   legend
   desc="A committed check reads the frontend's mart list and asserts each one exists on prod with a policy; a mart present in the code but missing on prod fails the check instead of silently 404-ing."
@@ -193,43 +148,30 @@ applied to prod fails the guard instead of silently reading empty.
   ]}
 />
 
-**Testing implications:** this *is* the test coverage. It's additive — it pairs with Option 1 or 2,
-doesn't break anything, and turns "we forgot to apply a migration" from a silent empty panel into a
-red check. Small to write; the only cost is doing the audit before the fix rather than after.
+## Things to watch out for
 
-## How the security review missed it
+If you add a mart, touch RLS on one, or debug an empty panel, these are the traps that bit us:
 
-Worth naming honestly. The security-posture pass leaned on Supabase's advisor (`get_advisors`),
-which **only lints tables that exist** — it structurally *cannot* flag a table that was never
-created. And the review's attention was on the scan-fleet tables (the anon-*write* surface, which is
-genuinely sensitive), not on cross-checking that every mart the *frontend reads* is present on prod
-with a policy. That cross-check didn't exist — which is exactly the gap Option 3's drift guard
-closes.
+- **404 is not 403.** An empty panel that's a *missing table* (404 / `PGRST205`) looks identical to
+  one that's an *RLS denial* (403) until you check the status code. They have opposite fixes —
+  create the table vs. fix the policy. Read the code before touching the policy.
+- **Empty panels fail silently.** The dashboard falls back to the committed JSON snapshot, so a
+  broken live read shows *stale* or *blank* data, never an error. "The panel looks fine" is not
+  evidence the live path works — check it under `?live=1`.
+- **The Supabase advisor can't see absent tables.** `get_advisors` only lints tables that *exist*,
+  so it structurally cannot flag a mart that was never created on prod. A clean advisor report is
+  not "every mart is present and policed." The drift guard is what checks presence; the advisor
+  checks posture.
+- **A new mart must reach prod, not just local + code.** `make db-up` applies migrations locally;
+  production is a separate `supabase db push`. Code + local passing tells you nothing about prod.
+  The drift guard is there precisely to catch the gap — run it.
+- **Don't reintroduce `using(true)`.** It's tempting when a build-time or test reader hits a 403.
+  The fix is to give that reader the right key (secret key for build-time, minted token for the
+  live app), *not* to open the mart. Reopening it silently restores the leaked-key replay this whole
+  page exists to prevent.
+- **The static build needs the secret key, the live app needs a token.** If the snapshot goes empty,
+  the build-time reader is missing the RLS-exempt secret key; if the live panel 403s, the browser
+  isn't carrying a minted `@earlbear.com` token. Same symptom, different key.
 
-## The recommendation (at the time) — and what we actually shipped
-
-The original call here was **Option 1** (keep `using(true)`, matching the other marts) plus Option
-3's drift guard. The reasoning was "marts are read-only, non-sensitive rollups behind CF Access, so
-anon-read is fine, and it keeps the snapshot builder + deck working."
-
-**We ended up doing Option 2 instead — every mart is now `@earlbear.com`-gated.** What changed the
-decision: once you follow the "just read the table live" thread all the way (see
-[the two-builds design](/blog/who-are-you-to-supabase) and the mart-identity work), the thing that
-made Option 2 "expensive" — *the snapshot builder can't mint a token* — dissolves. We split the
-build into two explicit targets:
-
-- a **static** build that reads the marts *at build time with an RLS-exempt secret key* and ships
-  pure keyless JSON (the demo/offline/public-safe artifact), and
-- a **live** build that always reads Supabase in the browser with a minted `@earlbear.com` token.
-
-With that split, the snapshot builder never needs anon-read on the marts (it uses the secret key),
-and the live app always carries a token — so **every mart can be identity-gated with no
-compromise**. Migration `011_marts_identity_prod.sql` drops the `using(true)` policies on all five
-marts, adds the `@earlbear.com` `to authenticated` policy, and revokes anon. A leaked publishable
-key now reads **nothing** from any mart (proven live: publishable-key-alone → 401; an
-`@earlbear.com` token → 200; a non-earlbear token → filtered to `[]`).
-
-**Option 3's drift guard still stands** — the missing test that would have caught the original bug —
-and pairs with the gating. So the final shape is **Option 2 (gate) + Option 3 (guard)**, not Option
-1. The full rationale, the two-build design, and the arch diagrams live in the mart-identity design
-doc and [the key catalog](/blog/every-key-in-the-system) (whose marts row is now "identity-gated").
+The full trust model and the per-key blast radius live in [the key catalog](/blog/every-key-in-the-system)
+(whose marts row now reads "identity-gated").

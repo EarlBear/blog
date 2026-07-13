@@ -17,6 +17,8 @@ questions:
 
 import FlowDiagram from '../../components/FlowDiagram.astro';
 
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on.*
+
 Our agents run as Claude Code sessions. Every session writes an append-only JSONL
 transcript to `~/.claude/projects/` — one JSON object per line, recording each user
 turn, each assistant turn, every tool call, and the token usage. That transcript

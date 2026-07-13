@@ -16,6 +16,8 @@ questions:
 
 import FlowDiagram from '../../components/FlowDiagram.astro';
 
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on.*
+
 The reporting MCP server had one job and one sink: an agent calls `report_issue` (and its
 siblings), and the server appends the finding to a per-run JSONL file and rewrites a small
 index. Zero dependencies, all local. That's what the live `/reports` page reads.

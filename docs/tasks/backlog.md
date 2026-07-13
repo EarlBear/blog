@@ -31,3 +31,9 @@ Candidates that surfaced while building the diagram catalog (`enrich-post` /
 ## Deferred infra
 
 - [ ] Astro/dependency security advisories: `npm audit` reports pre-existing Astro-5 XSS/SSR classes (don't apply to this prerendered static site; fixing means an Astro 7 major upgrade). Revisit as a scoped upgrade, not a routine fix. Surfaced by the `frontend-audit` skill.
+- [ ] Decide the fate of the `design:` frontmatter field (repo-wide): it's on 17 posts but is NOT in the zod schema (`src/content.config.ts`), the referenced design docs don't exist under `docs/`, and it's never rendered. Already drifting — `ecommerce-site-scanner-design.mdx` has a full sentence as its value instead of a slug. Options: (a) build a `docs/design/` collection + wire the field into the schema and render a link, (b) keep but validate it (schema enum / lint), or (c) drop it from all 17 posts. Needs a human call on direction; not a silent edit. Surfaced while tightening the two-marts post.
+
+## Blog on-ramp follow-ups (from the reader-review audit — docs/blog-arc-audit.md)
+
+- [ ] Fix the PUBLIC self-healing-storefront.mdx on-ramp: name EarlBear as the operator (currently anonymous "us"/"we") and resolve the dangling "the scanner" reference (self-contain in one sentence or a public CTA — do NOT link the internal scanner posts). External post → must pass external-post-review / secret-sauce-check + the audience gate.
+- [ ] Delete (or keep) the internal-only-example.md fixture now the audience split is verified. NOTE: the new start-here post links it as the audience-split example — repoint or drop that link first, then remove the file + re-run posts-check and both builds.
