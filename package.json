@@ -27,6 +27,8 @@
     "audience-fit-check": "python3 .claude/hooks/check-audience-fit.py --check",
     "secret-sauce-check": "python3 .claude/hooks/check-secret-sauce.py --check",
     "reader-check": "python3 .claude/hooks/check-reader-flow.py --check",
+    "design-check": "python3 .claude/hooks/check-design-traceability.py --check",
+    "design-docs-check": "python3 .claude/hooks/check-design-traceability.py --check-docs",
     "features:check": "python3 scripts/features_check.py",
     "features:seed": "python3 scripts/features_check.py --seed",
     "regen-favicon": "node scripts/gen-favicon.mjs",

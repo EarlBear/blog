@@ -230,6 +230,30 @@ hash (rename- and format-proof) against a cache at `docs/features/.anchors.json`
 stale docs via the `feature-docs` skill — the only path allowed to re-bless
 changed content. See `docs/features/README.md` for the full spec.
 
+### Design back-references (`design:` — plan→design→blog traceability)
+
+A post may declare `design: <slug>` in frontmatter to point at the **design doc it
+"powers"** — the blog end of the `plan → design → blog` traceability chain. The design
+docs live in the **sibling `../earlbear-agentic-workflow/docs/` repo**, so the committed
+**`docs/design-registry.json`** is the contract (slug → doc path) the checks validate
+against — it works even when that repo isn't checked out. Three layers, like the audience
+split:
+
+1. **Schema** (`src/content.config.ts`) — `design` must be a lowercase-kebab **slug**, so
+   a sentence or a typo **fails the build**.
+2. **Registry membership — BLOCKING.** `check-design-traceability.py` (a `PostToolUse`
+   hook + `npm run design-check`) rejects a post whose `design:` slug is **not a key** in
+   the registry — a broken back-reference. Add the slug to the registry (with its doc
+   path) or fix the value.
+3. **Doc existence — ADVISORY.** `npm run design-docs-check` (`--check-docs`) verifies each
+   registry entry resolves to a real doc under the sibling repo; it **skips** when the
+   sibling repo is absent, so it never blocks the common path. Run it where the sibling
+   repo is checked out to catch a doc that was renamed/removed there.
+
+The field is **optional** — a post with no design doc simply omits it (don't invent a
+slug). To add a new design, register its slug in `docs/design-registry.json` first, then
+reference it.
+
 ## Track your work
 
 Track **each feature you implement and each question you investigate** as a live
