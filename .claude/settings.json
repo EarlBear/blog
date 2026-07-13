@@ -10,26 +10,7 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 .claude/hooks/remind-track-tasks.py"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
-      {
-        "matcher": "TaskUpdate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 .claude/hooks/guard-task-deletion.py"
-          }
-        ]
-      },
       {
         "matcher": "Bash",
         "hooks": [
@@ -44,10 +25,6 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          {
-            "type": "command",
-            "command": "python3 .claude/hooks/check-task-files.py"
-          },
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-feature-docs.py"
@@ -91,6 +68,16 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/check-env-encrypted.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MARKER=/tmp/earlbear-plugins-checked-${PPID}; [ -f \"$MARKER\" ] && exit 0; touch \"$MARKER\"; bash /Users/omareid/Workspace/git-earlbear/earlbear-claude-plugin-marketplace/scripts/check-plugins.sh task-management-manager"
           }
         ]
       }
