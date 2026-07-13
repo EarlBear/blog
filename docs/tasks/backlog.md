@@ -3,6 +3,7 @@
 Open tasks. Format: `- [ ] <task>`. When closed, move to [done.md](./done.md) as `- [x] … @done(<isoTimestamp>) #git:<first8ofcommitId>`.
 Tasks must exist here (or in done.md) **before** being deleted from the live task list — see [CLAUDE.md](../../CLAUDE.md).
 
+- [ ] [OWNER/EDITORIAL] Publish the flagship post — flip `draft: false` on `src/content/blog/self-healing-storefront.mdx` (external, currently held draft per the 2026-07-12 keep-as-draft decision), then `npm run deploy` to push it to the public `blog.earlbear.com`. All content/gates already green; this is purely the editorial go/no-go on the flagship. (Split out of #10, which shipped the rest of the external site live on 2026-07-13.)
 - [ ] [MANUAL] Repo Settings → Pages: Source = Deploy from a branch → `gh-pages` / `(root)`
 - [ ] [MANUAL] Repo Settings → Pages: set custom domain `blog.earlbear.com`, then enable Enforce HTTPS once the cert issues
 - [ ] [MANUAL] Org Settings → Pages → verified domains: verify `earlbear.com` (prevents subdomain takeover)
@@ -30,4 +31,3 @@ Candidates that surfaced while building the diagram catalog (`enrich-post` /
 ## Deferred infra
 
 - [ ] Astro/dependency security advisories: `npm audit` reports pre-existing Astro-5 XSS/SSR classes (don't apply to this prerendered static site; fixing means an Astro 7 major upgrade). Revisit as a scoped upgrade, not a routine fix. Surfaced by the `frontend-audit` skill.
-- [ ] Internal blog one-time infra: create the `earlbear-blog-internal` Cloudflare Pages project, attach `blog.internal.earlbear.com`, and provision the CF Access app (`make -C ../earlbear-domain cf-access-app-upsert DOMAINS="blog.internal.earlbear.com,earlbear-blog-internal.pages.dev" APP='EarlBear Blog (internal)' EMAIL_DOMAIN=earlbear.com`); then run `make deploy-internal`, verify CF Access gates it, and drop `awaiting_deploy` on the domains.yaml record.
