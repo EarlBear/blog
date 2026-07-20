@@ -1,0 +1,94 @@
+---
+title: "Watson: the overnight Jira loop"
+description: "Watson is the fleet's overnight worker on the EARL Jira board. It picks up issues assigned to it, routes each one by the column it sits in, drafts the artifact that column calls for, and leaves it for a human — it never marks its own work done. How the loop runs, and where the output lands in the morning."
+pubDate: 2026-07-20
+tags: [fleet, agents, engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What work does Watson pick up, and where does it come from?
+  - How does Watson know what to do with an issue in each Jira column?
+  - Why can't Watson mark its own work as done?
+  - What does a human find in the morning after a Watson run?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on. This post is one profile in [the agent fleet](/blog/the-agent-fleet).*
+
+Watson is the default agent in the fleet — the one that runs when no other `AGENT`
+is named. Its job is narrow and it runs overnight: work the EARL Jira board, draft
+what each issue needs, and leave every draft for a human to accept in the morning.
+It is the fleet's detective — it does the casework and writes it up, but it does not
+close the case.
+
+## What Watson picks up
+
+Watson does not scan the whole board. Every run it pulls a scoped queue: issues
+**assigned to `watson@earlbear.com`**, plus issues **labeled `ai-eligible`**. That
+label is the opt-in — a human decides an issue is safe for an agent to touch, and
+Watson only ever works the set it was handed. Anything unlabeled and unassigned is
+invisible to it.
+
+The board itself is a company-managed Kanban with a fixed set of columns, and the
+column an issue sits in is the whole instruction. Watson is **column-aware**: it does
+not guess what an issue needs from the text, it reads the column and routes to the
+skill that column calls for.
+
+## The loop, column by column
+
+EARL runs the standard progression — Prioritized, Planning, In Progress, Review,
+Done — and each column maps to a runtime skill. Watson walks its queue, and for each
+issue does the one thing the column asks for.
+
+<FlowDiagram
+  title="Watson's nightly loop"
+  shape="loop"
+  legend
+  desc="Watson wakes, pulls its scoped queue of assigned or ai-eligible issues, then routes each by the column it sits in — planning an issue in Planning, drafting an artifact in In Progress, reviewing in Review — and posts the draft back to Jira. It advances issues forward but stops at the human-review boundary: it never moves anything to Done."
+  nodes={[
+    { id: 'wake', label: 'Check in', detail: 'The run starts. Watson records the run in Supabase (agent_runs) and pulls its scoped work: issues assigned to watson@earlbear.com or labeled ai-eligible.' },
+    { id: 'plan', label: 'Plan', detail: 'For an issue in Planning: break the issue into a shaped plan — the design or approach — and attach it. Moves the issue toward In Progress, never past Review.' },
+    { id: 'draft', label: 'Draft artifact', detail: 'For an issue in In Progress: produce the actual deliverable the issue calls for — a doc, a design, a change proposal — and attach it as a draft for review.' },
+    { id: 'review', label: 'Review', detail: 'For an issue in Review: read what is there and leave structured feedback. Watson can review, but a human makes the accept/reject call.' },
+    { id: 'report', label: 'Check out', kind: 'store', detail: 'Post the drafts and comments back to Jira, write results to Drive, and close out the run row in agent_runs. The issue is advanced, not finished.' },
+  ]}
+  edges={[
+    { from: 'wake', to: 'plan', label: 'Planning' },
+    { from: 'plan', to: 'draft', label: 'In Progress' },
+    { from: 'draft', to: 'review', label: 'Review' },
+    { from: 'review', to: 'report', label: 'drafts ready' },
+    { from: 'report', to: 'wake', label: 'next issue' },
+  ]}
+/>
+
+The skills behind each column are small and named for what they do — `pull-work`
+to fetch the queue, `plan-issue`, `draft-artifact`, `review-work`, and `check-out`
+to close the run. The routing is the point: an issue's column is a contract that
+says which of those runs.
+
+## Why it never marks work done
+
+The one rule that shapes everything else: **Watson never self-approves and never
+moves an issue to Done.** It advances issues forward through the board, but the last
+column is a wall it does not cross. Done is a human decision, every time.
+
+That is not a limitation to be lifted later — it is the design. Watson works
+overnight precisely so that a person can arrive in the morning to a board of drafts,
+not a board of changes that already shipped. The agent does the labor; the human
+keeps the judgment. Everything Watson produces is a proposal waiting for a yes.
+
+## What you find in the morning
+
+After a run, the work shows up in three places. On the **Jira board**, the issues
+Watson touched have moved forward a column and carry its drafts as attachments and
+its notes as comments. In **Google Drive**, the longer artifacts it produced sit as
+files. And in **Supabase**, an `agent_runs` row (and per-issue `agent_issue_runs`
+rows) records that the run happened and what it touched — the telemetry that lets us
+see, later, what the fleet did overnight without reading every transcript.
+
+So the morning ritual is review, not archaeology: open the board, read the drafts,
+accept the ones that hold up, and move those to Done yourself. Watson did the night
+shift; the sign-off is still yours.

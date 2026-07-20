@@ -1,0 +1,111 @@
+---
+title: "Envoy: the outreach drafter that never hits send"
+description: "Envoy turns Scout's public audit findings into qualified sales leads — it reads the findings read-only, discovers the business contact, drafts a value-first teardown pitch, and files it as a lead in Watson's Jira pipeline. The one rule that shapes everything: it drafts and queues, it never sends. A human sends every message. What Envoy is designed to do, why the never-send rule is first-class, and what is still open."
+pubDate: 2026-07-20
+tags: [fleet, agents, engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What does Envoy turn Scout's findings into?
+  - Why does Envoy draft and queue outreach but never send it?
+  - How does a lead move from Scout's finding to Watson's board?
+  - What part of Envoy is built today, and what is still open?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on. This post is one profile in [the agent fleet](/blog/the-agent-fleet).*
+
+Envoy is the fleet's outreach drafter. It sits at the end of the public pipeline:
+[Scout](/blog/scout-the-storefront-auditor) audits a public storefront and records
+what got in the way of a sale, and Envoy turns that evidence into a *lead* — a
+drafted, value-first pitch, filed into [Watson](/blog/watson-the-overnight-jira-loop)'s
+Jira board for a human to review and send. Scout finds; Envoy pitches; Watson
+carries. One direction, no loops back.
+
+Envoy is a **scaffold** today, not an operational agent. The shape — read findings,
+find a contact, draft a pitch, file a lead — is designed; the providers that would
+let it discover a real contact and the compliance identity it would send under are
+still open. This post is the design and the one rule it is built around.
+
+## The one rule: drafts and queues, never sends
+
+Everything about Envoy is shaped by a single guardrail, stated first-class in its
+brief: **it drafts and queues, it never sends.** Envoy produces a pitch and files it
+as a lead. A human reviews that lead and is the one who actually sends the message.
+
+This is not caution for its own sake — it is the compliance boundary. Cold outreach
+lives under CAN-SPAM, GDPR, and CASL, and the safe design is to keep an automated
+agent on the *drafting* side of the line and a person on the *sending* side. Envoy
+never touches a send path; the worst case for a bad draft is that a reviewer deletes
+it, not that it reaches an inbox. Keeping "generate" and "send" as two different
+actors, split by a human, is the rule the rest of the design serves.
+
+## From finding to lead
+
+Envoy's loop is a one-directional handoff. It reads Scout's findings **read-only** —
+it never writes back to the scan tables — discovers the business contact behind the
+store, drafts a pitch built around the specific friction Scout found, and files that
+as a lead in Watson's pipeline.
+
+<FlowDiagram
+  title="How Envoy turns a finding into a lead"
+  shape="pipeline"
+  legend
+  desc="Envoy pulls a qualified finding from Scout's scan tables read-only, discovers the business contact behind the store, drafts a value-first audit-teardown pitch grounded in that specific finding, and files it as an email or pitch-deck lead in Watson's Jira pipeline. A human reviews and sends — Envoy never sends. The handoff is one-directional: Scout to Envoy to Watson."
+  nodes={[
+    { id: 'findings', label: 'scan_* tables', kind: 'store', detail: "Scout's findings, read read-only. Envoy qualifies a lead from them — it never writes back to the scan tables." },
+    { id: 'contact', label: 'Find contact', detail: 'Discover the business contact behind the storefront — who to reach, through a contact-discovery provider (still open).' },
+    { id: 'draft', label: 'Draft pitch', detail: 'Write a value-first "audit teardown" pitch grounded in the specific friction Scout found — lead with what is wrong and worth fixing, not a generic template.' },
+    { id: 'file', label: 'File lead', kind: 'edge', detail: 'File the pitch as an EARL Jira lead (kind:email or kind:pitch-deck) in Watson’s pipeline. This is where Envoy stops.' },
+    { id: 'human', label: 'Human sends', kind: 'external', detail: 'A person reviews the queued lead and sends it. Envoy never sends — the compliance boundary (CAN-SPAM / GDPR / CASL) is a human on the send side.' },
+  ]}
+  edges={[
+    { from: 'findings', to: 'contact', label: 'qualified finding' },
+    { from: 'contact', to: 'draft', label: 'who to reach' },
+    { from: 'draft', to: 'file', label: 'pitch' },
+    { from: 'file', to: 'human', label: 'queued lead' },
+  ]}
+/>
+
+The pitch is deliberately **value-first** — an "audit teardown" that leads with the
+specific problem Scout found on that store, not a generic template blast. The lead
+Envoy files carries that evidence, so the human reviewing it sees exactly why this
+store, and exactly what to say.
+
+## Where it plugs into the fleet
+
+Envoy is the connective tissue between the two halves of the public pipeline. Scout's
+whole job is to *see clearly and report* — it has no write access to Jira and cannot
+turn a finding into an action. Watson works the Jira board but doesn't go looking for
+new business. Envoy is the step in between: it reads what Scout saw and files
+something Watson can carry, as an EARL Jira lead (`kind:email` or `kind:pitch-deck`)
+that lands in the same pipeline Watson works overnight. Findings become leads become
+board work — each agent doing only its own stage.
+
+## What's built, and what's still open
+
+The **shape** exists: the skills that define the loop — pull a qualified lead from the
+findings, find the contact, draft the pitch, file the lead — are scaffolded, and the
+Scout-to-Envoy-to-Watson handoff is designed one-directional and read-only against the
+scan tables.
+
+The pieces that would make Envoy *operational* are open, and they are exactly the ones
+that carry real-world risk:
+
+- **A contact-discovery provider** — the email/contact finder Envoy would use to learn
+  who to reach. Not yet chosen or wired.
+- **A compliance identity** — the sender identity and physical mailing address that
+  lawful outreach requires (`ENVOY_FROM_*`, `ENVOY_PHYSICAL_ADDRESS`). Envoy can't
+  draft under a real identity until these exist.
+- **A funnel and suppression store** — an `outreach_leads` table to track a lead's
+  state and honor do-not-contact, so the same business isn't pitched twice and opt-outs
+  are respected.
+
+No secrets are provisioned for Envoy yet. Until the contact-discovery and compliance
+pieces land, it stays a scaffold — and even when they do, the never-send rule doesn't
+move: a human stays on the send side. When Envoy comes online, this post gets the
+operational detail and it graduates to a live entry in
+[the fleet](/blog/the-agent-fleet).

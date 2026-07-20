@@ -1,0 +1,119 @@
+---
+title: "Medic: the store healer, and why it heals through experiments"
+description: "Medic is Scout's internal twin — it audits owned storefronts and then remediates them, the one agent in the fleet allowed to change a live store. It does that only through A/B experiments: a fix ships as a variant, real traffic decides, and losers roll back. The experiment is the guardrail. What Medic is designed to do, the safety rails that make write access survivable, and what is still open."
+pubDate: 2026-07-20
+tags: [fleet, agents, engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What does Medic do that Scout doesn't?
+  - Why does Medic change stores through A/B experiments instead of just editing them?
+  - What keeps the highest-privilege agent in the fleet from breaking a live store?
+  - What part of Medic is built today, and what is still open?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on. This post is one profile in [the agent fleet](/blog/the-agent-fleet).*
+
+Medic is [Scout](/blog/scout-the-storefront-auditor)'s internal twin. Scout audits
+*public* storefronts and reports; Medic audits *owned* ones and then does the thing
+Scout never does — it changes them. Medic is the fleet's healing agent, and the only
+agent allowed to write to a live store. That privilege is exactly why its guardrails
+are the most load-bearing part of its design.
+
+Medic is a **scaffold** today, not an operational agent. The audit-and-propose half
+is built; the half that actually mutates a live store is still open. This post is
+the design — what Medic is meant to do and why it's shaped this way — with the parts
+that don't run yet called out.
+
+## The line between Scout and Medic
+
+Both agents pull from the same `scan_requests` queue. One column decides which agent
+gets a row: `is_internal`. Scout takes the public rows (`is_internal = false`); Medic
+takes the owned ones (`is_internal = true`). Same queue, same audit engine, opposite
+halves of the work.
+
+| | Scout | Medic |
+|---|---|---|
+| Pulls | public rows (`is_internal = false`) | owned rows (`is_internal = true`) |
+| Posture | polite visitor, read-only | stealth + proxy, read-write |
+| Does | audit, then report | audit, then prioritize, experiment, promote or roll back, verify |
+| Authorization | none needed — public | must be an owned or authorized host |
+
+That `is_internal` flag is **fail-closed**, and it is Medic's Rule 1: re-assert the
+flag on every row it claims, and refuse any row where `is_internal` isn't `true`. A
+public row that somehow got mis-routed into Medic's lane can never receive a write —
+the check is defense-in-depth, not a formality, precisely because the cost of getting
+it wrong is a change to a store that isn't ours to change.
+
+## Healing through experiments
+
+The idea that shapes everything else: **Medic never just edits a store.** Every fix
+ships as an **A/B experiment.** A proposed change becomes a *variant* running against
+the current *control*, real traffic is split between them, and only a variant that
+statistically wins gets promoted. A variant that loses rolls back. Nothing becomes
+permanent on the strength of Medic's judgment alone — the traffic decides.
+
+<FlowDiagram
+  title="How Medic heals a store"
+  shape="loop"
+  legend
+  desc="Medic pulls an owned storefront from the internal slice of the queue, audits it with the same engine Scout uses, prioritizes the findings by the owner's history and guidance, then proposes a fix as an A/B variant. Real traffic decides: a winning variant is promoted, a losing one rolls back. Either way the outcome is verified and recorded — and the loop returns for the next finding. Every change is reversible by construction."
+  nodes={[
+    { id: 'pull', label: 'Pull owned site', kind: 'store', detail: 'Take an is_internal = true row from the shared scan_requests queue and re-assert the flag (Rule 1) before doing anything else.' },
+    { id: 'audit', label: 'Audit + prioritize', detail: 'Run the same store-auditor engine Scout uses, then re-prioritize the findings by the owner’s history and stated guidance — what matters for this store, not a context-free checklist.' },
+    { id: 'propose', label: 'Propose variant', detail: 'Turn a prioritized finding into a proposed change — a variant against the current control. Recorded in medic_experiments before anything ships.' },
+    { id: 'experiment', label: 'Run A/B', detail: 'Split real traffic between control and variant and collect outcomes. This is the guardrail: the change is measured, not asserted.' },
+    { id: 'decide', label: 'Promote or roll back', detail: 'A statistically-won variant is promoted; a loser rolls back to the known-good control. Reversible by construction.' },
+    { id: 'verify', label: 'Verify + record', kind: 'store', detail: 'Confirm the outcome, write the change to the medic_changes audit log, and report. Then the loop returns for the next finding.' },
+  ]}
+  edges={[
+    { from: 'pull', to: 'audit', label: 'owned' },
+    { from: 'audit', to: 'propose', label: 'top finding' },
+    { from: 'propose', to: 'experiment', label: 'variant' },
+    { from: 'experiment', to: 'decide', label: 'traffic decides' },
+    { from: 'decide', to: 'verify', label: 'settle' },
+    { from: 'verify', to: 'pull', label: 'next finding' },
+  ]}
+/>
+
+The phrase in Medic's own brief is worth keeping: *the experiment is the guardrail —
+every change is measured and reversible by construction.* That is what makes it
+acceptable to give one agent write access to a live store at all. It never bets the
+store on being right; it bets a slice of traffic on a variant, and lets the numbers
+overrule it.
+
+## The guardrails that make write access survivable
+
+Medic is the highest-privilege agent in the fleet, so its safety rails are not
+optional add-ons — they are the reason it can exist:
+
+- **The `is_internal` re-check (Rule 1).** Owned hosts only, re-verified per row,
+  fail-closed.
+- **The A/B harness.** No change is permanent until traffic votes for it; every
+  change has a rollback path built in.
+- **The apply-gate.** Medic runs in dry-run by default. It takes an explicit signal
+  (`MEDIC_APPLY`) to leave dry-run and touch a live store — so "audit and propose"
+  and "actually change" are two different, deliberately-separated modes.
+- **Scoped credentials and a change audit log.** Writes go through scoped store
+  credentials, and every change Medic makes is recorded (the `medic_changes` table),
+  so there is always an answer to "what did it touch, and can we undo it."
+
+## What's built, and what's still open
+
+The **audit, prioritize, and propose** half exists: the `store-healer` plugin (the
+experiment-recording MCP and the prioritize/experiment/decide skills) ships, and the
+`medic_experiments`, `medic_experiment_metrics`, and `medic_changes` tables are
+applied. Medic can audit an owned site, prioritize its findings, and record a
+*proposed* experiment.
+
+The **deploy** half — the part that lets a variant actually mutate a live store — is
+open, pending sign-off: the A/B mechanism itself, the apply-gate wiring, the stealth
+browser and residential-proxy egress, and the write providers (CAPTCHA solving,
+Shopify admin writes). Until those land, Medic proposes and records; it does not
+apply. When the deploy half is signed off and provisioned, this post gets the
+operational detail — and Medic graduates from scaffold to a live entry in
+[the fleet](/blog/the-agent-fleet).

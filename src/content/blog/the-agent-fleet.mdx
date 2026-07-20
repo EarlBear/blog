@@ -1,0 +1,153 @@
+---
+title: "The agent fleet: who runs overnight and what each one does"
+description: "EarlBear runs a fleet of codenamed autonomous agents on one shared codebase — Watson works the Jira board, Scout audits storefronts, Medic heals owned stores, Envoy drafts outreach. This is the roster: what each agent does, how they hand work to each other, how one codebase runs all of them, and how a new agent gets added. The hub for the per-agent posts."
+pubDate: 2026-07-20
+tags: [fleet, agents, engineering]
+expects: [flow, use-case]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What agents do we run, and what does each one do?
+  - How do the agents hand work to each other?
+  - How does one codebase run four different agents?
+  - Which agents are live, and which are still scaffolds?
+  - How does a new agent get added to the fleet?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
+
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on.*
+
+EarlBear's overnight work is done by a **fleet of agents** — codenamed, each with
+one job, all running from a single codebase. Two are live and working tonight; two
+are freshly scaffolded and coming online. This post is the roster: who they are,
+what each one does, and how they hand work to each other. Each agent has its own
+post; this is the map that ties them together.
+
+## One codebase, many agents
+
+The fleet is not four repositories. It is **one codebase that runs a different
+agent depending on the `AGENT` it is told to be.** Each agent is a self-contained
+vertical under `agents/<name>/` — its instructions, its secrets, its tools — sitting
+on a shared spine that every agent uses unchanged.
+
+An agent's identity is a **markdown character brief** (`agents/<name>/CLAUDE.md`,
+written in the second person: "You are Scout…") plus a small JSON manifest
+(`agent.json`) that declares which plugins and CLIs it installs. Secrets ride along
+**dotenvx-encrypted** in the repo and are decrypted at boot; capabilities come from
+a **shared plugin marketplace** every agent draws from. Adding an agent adds a
+vertical — the spine does not change.
+
+## The fleet as a pipeline
+
+The four agents are not four silos. They form a connected pipeline around one shared
+`scan_requests` queue, routed by an `is_internal` flag: Scout takes the public
+storefronts, Medic takes the owned ones.
+
+<FlowDiagram
+  title="How work moves through the fleet"
+  legend
+  desc="Scout audits public storefronts and writes findings to the scan tables. Envoy reads those findings and drafts a sales lead, filing it into Watson's Jira pipeline. Watson works that board overnight. Medic is Scout's internal twin: it audits and heals owned stores. One scan_requests queue routes public work to Scout and internal work to Medic by an is_internal flag."
+  nodes={[
+    { id: 'scout', label: 'Scout', detail: 'Audits public storefronts pulled from the scan_requests queue and streams findings to the scan_* tables. The recon stage the rest of the fleet builds on. Live.' },
+    { id: 'envoy', label: 'Envoy', detail: 'Reads Scout’s public findings and drafts a value-first outreach pitch, filing it as a lead in Watson’s Jira pipeline. Drafts and queues only — never sends. Scaffold.' },
+    { id: 'watson', label: 'Watson', detail: 'Works the EARL Jira board overnight — including the leads Envoy files — drafting artifacts and leaving them for human review. Never marks its own work done. Live.' },
+    { id: 'findings', label: 'scan_* tables', kind: 'store', detail: 'The shared findings store. Scout writes it, Envoy reads it. Also feeds the live scan-fleet dashboard.' },
+  ]}
+  edges={[
+    { from: 'scout', to: 'findings', label: 'writes findings' },
+    { from: 'findings', to: 'envoy', label: 'reads findings' },
+    { from: 'envoy', to: 'watson', label: 'files lead' },
+  ]}
+/>
+
+Medic sits off to the side of that public pipeline: it is **Scout's internal twin**,
+running the same audit engine against *owned* stores (`is_internal = true`) and then
+remediating them — the one agent allowed to change a live store, and only through
+reversible A/B experiments.
+
+## Who touches what
+
+Each agent reaches for a different set of systems — the Jira board, the Supabase
+queue and findings tables, live storefronts, Drive — and a human reviewer sits over
+all of it. Click any use case to see who does it.
+
+<UseCaseDiagram
+  title="EarlBear agent fleet"
+  desc="Watson, Scout, Medic, and Envoy each interact with a different slice of the systems, with a human reviewer approving the work. Scout and Medic audit storefronts; Medic also heals them; Envoy drafts leads; Watson works the board. The reviewer signs off."
+  actors={[
+    { id: 'watson', label: 'Watson', kind: 'system' },
+    { id: 'scout', label: 'Scout', kind: 'system' },
+    { id: 'medic', label: 'Medic', kind: 'system' },
+    { id: 'envoy', label: 'Envoy', kind: 'system' },
+    { id: 'human', label: 'Human reviewer', kind: 'internal' },
+  ]}
+  useCases={[
+    { id: 'board', label: 'Work the Jira board', detail: 'Pick up assigned or ai-eligible EARL issues, route each by column, and draft what it needs.' },
+    { id: 'audit', label: 'Audit a storefront', detail: 'Walk a live store as a first-time buyer and record the friction and performance findings.' },
+    { id: 'heal', label: 'Heal an owned store', detail: 'Remediate an owned storefront through reversible A/B experiments — propose, experiment, promote or roll back, verify.' },
+    { id: 'draftlead', label: 'Draft a lead', detail: 'Turn Scout’s public findings into a compliant outreach pitch and file it as a Jira lead. Never sends.' },
+    { id: 'approve', label: 'Approve the work', detail: 'A human reviews every draft, lead, and experiment. Nothing ships, sends, or moves to Done without a person.' },
+  ]}
+  links={[
+    { from: 'watson', to: 'board' },
+    { from: 'scout', to: 'audit' },
+    { from: 'medic', to: 'audit' },
+    { from: 'medic', to: 'heal' },
+    { from: 'envoy', to: 'draftlead' },
+    { from: 'human', to: 'approve' },
+    { from: 'draftlead', to: 'board', type: 'extend' },
+    { from: 'heal', to: 'approve', type: 'include' },
+  ]}
+/>
+
+The through-line: every agent produces work a human signs off on. Watson never moves
+an issue to Done, Envoy never sends, Medic's every change is reversible by
+construction. The fleet does the labor; a person keeps the judgment.
+
+## The roster
+
+{/* EXTENSION POINT — adding an agent to the fleet:
+     1. write its per-agent post as an .mdx tagged [fleet, agents, engineering]
+     2. add one entry to this roster (codename, charter, status, link)
+     3. if it changes the pipeline, update the FlowDiagram above
+     The shared `fleet` tag gives a free auto-updating listing at /tags/fleet/. */}
+
+Four agents today — two live, two scaffolded. Each entry links to its own post as
+that post lands.
+
+**[Watson](/blog/watson-the-overnight-jira-loop)** — the overnight Jira loop.
+*Live.* Works the EARL board: picks up assigned or `ai-eligible` issues, routes each
+by its column, drafts what it needs, and leaves it for a human. Never marks its own
+work done.
+
+**[Scout](/blog/scout-the-storefront-auditor)** — the storefront auditor. *Live.*
+Queue-driven: pulls targets from `scan_requests`, walks each live storefront as a
+first-time buyer, streams findings to the dashboard tables, and ships a sanitized
+transcript to Drive. Audits only — no Jira or Shopify writes.
+
+**[Medic](/blog/medic-the-store-healer)** — the store healer. *Scaffold.* Scout's
+internal, higher-privilege twin: audits owned stores (`is_internal = true`) and
+remediates them through reversible A/B experiments — propose, experiment, promote the
+winner or roll back, verify. The only agent that can change a live store. Post is the
+design; the deploy half is pending sign-off.
+
+**[Envoy](/blog/envoy-the-outreach-drafter)** — the outreach drafter. *Scaffold.*
+Turns Scout's public findings into qualified leads: discovers the business contact,
+drafts a compliant value-first pitch, and files a lead in Watson's Jira pipeline.
+Drafts and queues; never sends — a human reviews and sends every message. Post is the
+design; contact-discovery and compliance identity are still open.
+
+## How a new agent joins
+
+Adding an agent is a repeatable move, not a rebuild. The `add-agent` skill scaffolds
+the folder, the encrypted-secret pair, and the manifest; two more skills wire its
+plugins and secrets. Because every agent is just a vertical over the shared spine,
+the fleet grew from one agent to four in about a week without the spine changing.
+
+When a new agent lands, it shows up here two ways: it gets its own post in this
+series, and — because every fleet post shares the `fleet` tag — it appears
+automatically on the [fleet tag page](/tags/fleet/). That page is the always-current
+list; this post is the curated tour.
