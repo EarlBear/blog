@@ -1,0 +1,99 @@
+---
+title: "Scout: the storefront auditor"
+description: "Scout is the fleet's storefront auditor. It is queue-driven, not URL-driven: it pulls review targets from a Supabase queue, walks each live storefront as a first-time customer with intent to buy, streams its findings to the dashboard tables, and ships a sanitized transcript to Drive. The raw session log never leaves the VM. How the audit runs, and where the findings go."
+pubDate: 2026-07-20
+tags: [fleet, agents, engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+design: scan-fleet
+questions:
+  - Where does Scout get the stores it audits?
+  - What does Scout actually do on a storefront?
+  - Where do Scout's findings go, and who reads them?
+  - Why does the raw transcript never leave the VM?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on. This post is one profile in [the agent fleet](/blog/the-agent-fleet).*
+
+Scout is the fleet's storefront auditor. It runs overnight and walks live
+e-commerce storefronts the way a first-time customer with intent to buy would —
+then writes up what got in the way. Where [Watson](/blog/watson-the-overnight-jira-loop)
+works a Jira board, Scout works the open web, and it does not touch Jira or a
+Shopify admin at all.
+
+## Where the work comes from
+
+The defining fact about Scout: it is **queue-driven, not URL-driven**. It has no
+fixed site and no hard-coded list. Its work is a Supabase table — the
+`scan_requests` queue — and each run it pulls the **three oldest `pending_review`
+rows**. Someone (or something) asks for a review by adding a row; Scout services
+the queue in order.
+
+If the queue is empty, Scout does not sit idle: it **self-seeds**, picking a
+popular Shopify storefront that hasn't been reviewed yet and queuing that. So every
+run produces a review, whether or not a human lined one up.
+
+## What it does on a storefront
+
+For each target, Scout drives a real audit through the `store-auditor` engine — a
+headless-Chromium walk of the buy-intent journey via Playwright. It is not reading
+HTML from the outside; it is loading the page, moving through the path a shopper
+would take, and reading the real performance numbers as it goes: **LCP, CLS, TTFB**
+and the friction a buyer hits along the way. The persona is fixed — first-time
+customer, intent to buy — because that is the lens that surfaces the issues that
+cost a sale.
+
+## Where the findings go
+
+As Scout audits, it does not wait until the end to report. It **streams** findings
+into the dashboard's sink tables as it finds them, so the live scan fleet can show
+a review happening in real time. When the run finishes, the full record and a
+transcript ship to Drive.
+
+<FlowDiagram
+  title="Scout, from queue to dashboard"
+  shape="pipeline"
+  legend
+  desc="Scout pulls the oldest pending rows from the scan_requests queue, audits each storefront with a headless-Chromium buy-intent walk, and streams findings into the scan_runs / scan_events / scan_sites sink tables that feed the live dashboard. A sanitized transcript ships to Drive; the raw session JSONL never leaves the VM."
+  nodes={[
+    { id: 'queue', label: 'scan_requests', kind: 'store', detail: 'The Supabase queue. Scout pulls the three oldest pending_review rows; if there are none, it self-seeds a popular unreviewed Shopify storefront so every run still produces a review.' },
+    { id: 'audit', label: 'Audit', detail: 'The store-auditor engine drives a headless-Chromium walk of the buy-intent journey via Playwright — loading the live storefront as a first-time customer and reading LCP, CLS, and TTFB along the path.' },
+    { id: 'sink', label: 'scan_* tables', kind: 'store', detail: 'Findings stream as they are found into the dashboard sink tables — scan_runs, scan_events, scan_sites — so the live scan fleet can show a review happening in real time.' },
+    { id: 'drive', label: 'Drive', kind: 'edge', detail: 'A sanitized transcript and the run record ship to Google Drive. The raw session JSONL is scrubbed first — it never leaves the VM in raw form.' },
+  ]}
+  edges={[
+    { from: 'queue', to: 'audit', label: 'oldest pending' },
+    { from: 'audit', to: 'sink', label: 'stream findings' },
+    { from: 'sink', to: 'drive', label: 'sanitized' },
+  ]}
+/>
+
+The sink tables — `scan_runs`, `scan_events`, `scan_sites` — are the same ones the
+[scan fleet](/blog/start-here-the-whole-system) dashboard reads. Scout is the agent
+that fills them.
+
+## Why the raw transcript stays on the VM
+
+Scout ships a transcript to Drive so a human can read what it did — but it ships a
+**sanitized** one. The raw session log (JSONL) can carry things you don't want
+sitting in shared storage, so the sanitization happens on the VM, and only the
+scrubbed version is uploaded. The raw JSONL never leaves the machine it was
+produced on.
+
+That boundary — sanitize at the edge, before anything crosses it — is why the
+Drive copy is safe to open. It is the same instinct that runs through the rest of
+the stack: the transcript *is* the telemetry, so moving it safely is a first-class
+concern, not an afterthought.
+
+## What Scout deliberately doesn't do
+
+Scout audits; it does not act. It has no write access to Jira and no access to a
+Shopify admin — it cannot change a store, file an issue, or send anything. Its
+whole output is evidence: findings in the dashboard tables and a transcript in
+Drive. Turning those findings into a lead is [Envoy](/blog/the-agent-fleet)'s job;
+fixing an owned store is [Medic](/blog/the-agent-fleet)'s. Scout just sees clearly
+and reports — the first stage the rest of the fleet builds on.
