@@ -23,8 +23,8 @@ import UseCaseDiagram from '../../components/UseCaseDiagram.astro';
 EarlBear's overnight work is done by a **fleet of agents** — codenamed, each with
 one job, all running from a single codebase. Two are live and working tonight; two
 are freshly scaffolded and coming online. This post is the roster: who they are,
-what each one does, and how they hand work to each other. Each agent has (or will
-have) its own post; this is the map that ties them together.
+what each one does, and how they hand work to each other. Each agent has its own
+post; this is the map that ties them together.
 
 ## One codebase, many agents
 
@@ -128,15 +128,17 @@ Queue-driven: pulls targets from `scan_requests`, walks each live storefront as 
 first-time buyer, streams findings to the dashboard tables, and ships a sanitized
 transcript to Drive. Audits only — no Jira or Shopify writes.
 
-**Medic** — the store healer. *Scaffold.* Scout's internal, higher-privilege twin:
-audits owned stores (`is_internal = true`) and remediates them through reversible
-A/B experiments — propose, experiment, promote the winner or roll back, verify. The
-only agent that can change a live store. Post to follow when it goes live.
+**[Medic](/blog/medic-the-store-healer)** — the store healer. *Scaffold.* Scout's
+internal, higher-privilege twin: audits owned stores (`is_internal = true`) and
+remediates them through reversible A/B experiments — propose, experiment, promote the
+winner or roll back, verify. The only agent that can change a live store. Post is the
+design; the deploy half is pending sign-off.
 
-**Envoy** — the outreach drafter. *Scaffold.* Turns Scout's public findings into
-qualified leads: discovers the business contact, drafts a compliant value-first
-pitch, and files a lead in Watson's Jira pipeline. Drafts and queues; never sends —
-a human reviews and sends every message. Post to follow when it goes live.
+**[Envoy](/blog/envoy-the-outreach-drafter)** — the outreach drafter. *Scaffold.*
+Turns Scout's public findings into qualified leads: discovers the business contact,
+drafts a compliant value-first pitch, and files a lead in Watson's Jira pipeline.
+Drafts and queues; never sends — a human reviews and sends every message. Post is the
+design; contact-discovery and compliance identity are still open.
 
 ## How a new agent joins
 
