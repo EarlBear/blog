@@ -69,6 +69,28 @@ const {
   warnings,
 } = computeFlowLayout(Astro.props);
 
+// Layout-blowout gate (blog-side): a diagram whose computed box is absurdly tall
+// relative to its width is almost always a layout failure, most often an explicit
+// shape that fights the graph (a branch shape on a cyclic graph stacks the nodes
+// into a ~5000-unit column, rendering a huge empty band). The engine's own gates
+// catch overlaps and clipped labels but NOT a valid-but-insane bounding box, so we
+// assert sanity here. The bounds sit far above every real diagram in the blog
+// (tallest legit ratio ~1.4, tallest ~1000u), so this only fires on a true blowout.
+// If a genuinely tall diagram ever trips it, split it or reconsider the shape,
+// rather than just raising the bound.
+const BLOWUP_MAX_RATIO = 4; // height may not exceed 4x width...
+const BLOWUP_MAX_H = 2500; // ...nor 2500 user units outright
+if (svgH > svgW * BLOWUP_MAX_RATIO || svgH > BLOWUP_MAX_H) {
+  const ratio = (svgH / svgW).toFixed(1);
+  throw new Error(
+    'FlowDiagram "' + title + '": layout blew up, computed box is ' +
+      Math.round(svgW) + 'x' + Math.round(svgH) + ' (height ' + ratio +
+      'x the width). This is almost always a shape/graph mismatch, e.g. a branch ' +
+      'shape on a graph that is really a loop. Drop the explicit shape prop to let ' +
+      'it auto-infer, or set the shape that matches the edges.'
+  );
+}
+
 // Surface the engine's non-fatal advisories exactly as before (build-time console).
 for (const w of warnings) console.warn(`[flow-diagram] warning: ${w}`);
 ---

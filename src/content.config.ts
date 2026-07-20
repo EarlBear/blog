@@ -37,6 +37,17 @@ const blog = defineCollection({
     // the internal/external split; the check-audience guard hook enforces the same
     // at authoring time. See docs/features/audience-split.md.
     audience: z.enum(['external', 'internal']),
+    // Optional back-reference to the design doc this post "powers" — the blog end
+    // of the plan→design→blog traceability chain. The value is a slug (kebab-case)
+    // whose design doc lives in the sibling earlbear-agentic-workflow repo; the
+    // committed docs/design-registry.json is the contract mapping slug → doc. This
+    // schema rule validates the SHAPE (a lowercase-kebab slug, so a sentence or typo
+    // fails the build); check-design-traceability.py enforces membership in the
+    // registry (blocking) and doc existence (advisory). See the design-registry.
+    design: z
+      .string()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'design must be a lowercase-kebab slug')
+      .optional(),
     draft: z.boolean().default(false),
   }),
 });

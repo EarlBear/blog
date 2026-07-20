@@ -1,0 +1,19 @@
+{
+  "_comment": "Registry for the `design:` frontmatter back-reference — the plan→design→blog traceability chain. Each blog post may declare `design: <slug>`; this file is the contract that says which slugs are valid and which design doc each one points at. The design docs live in a SIBLING repo (earlbear-agentic-workflow), so this committed registry is what the traceability check validates against — it works even when that repo is not checked out. Layers: (1) the zod schema validates the slug SHAPE at build; (2) check-design-traceability.py BLOCKS a post whose `design:` slug is not a key below; (3) the same check, with --check-docs, ADVISORILY verifies each `doc` path resolves to a real file when the sibling repo is present. Keep this in sync with the sibling design docs; a slug whose doc is renamed/removed there should be updated here. Origin: commit d7e50b1 'Add design: back-references to design-capturing posts'.",
+  "docRoot": "../earlbear-agentic-workflow/docs",
+  "slugs": {
+    "agent-reporting": "agent-reporting-design.md",
+    "collection-sync": "collection-sync-design.md",
+    "comments": "comments-design.md",
+    "database": "database-design.md",
+    "diagram-engine": "diagram-engine-design.md",
+    "drive-consolidation": "poc-drive-consolidation.md",
+    "local-cloud-arch": "local-cloud-arch-design.md",
+    "mart-identity": "mart-identity-design.md",
+    "pitch-deck": "pitch-deck-design.md",
+    "poc-e2e-telemetry": "poc-e2e-telemetry.md",
+    "scan-fleet": "scan-fleet-design.md",
+    "supabase-identity": "supabase-identity-design.md",
+    "transcript-sync": "transcript-sync-design.md"
+  }
+}

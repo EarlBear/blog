@@ -4,7 +4,6 @@ description: Cloudflare Access gates the door but renders no logout button once 
 pubDate: 2026-07-06
 tags: [engineering, security, internal]
 authors: [omar]
-design: internal-nav
 audience: internal
 expects: [comparison, flow]
 questions:
@@ -154,7 +153,7 @@ Click a step for what it does.
 
 <FlowDiagram
   title="Sign in, work, sign out — who does what"
-  shape="branch"
+  shape="loop"
   legend
   desc="Cloudflare Access owns the gate and the logout endpoint; the app owns the nav that shows your identity and offers the Sign-out link. Clicking Sign out clears the Access session for that host, so the next visit is gated again."
   nodes={[
@@ -165,11 +164,11 @@ Click a step for what it does.
     { id: 'regate', label: 'Next visit re-gated', kind: 'external', detail: 'With no session, the next request to the host is back to step one: 302 to sign-in. The loop is closed, and we verified it end to end on every host.' },
   ]}
   edges={[
-    { from: 'gate', to: 'nav', label: 'authenticated' },
+    { from: 'gate', to: 'nav' },
     { from: 'nav', to: 'signout' },
     { from: 'signout', to: 'cleared' },
     { from: 'cleared', to: 'regate' },
-    { from: 'regate', to: 'gate', label: 'unauthenticated' },
+    { from: 'regate', to: 'gate' },
   ]}
 />
 
