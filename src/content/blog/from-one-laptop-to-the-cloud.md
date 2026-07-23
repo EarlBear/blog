@@ -1,0 +1,90 @@
+---
+title: "From one laptop to the cloud without three systems"
+description: How the telemetry pipeline runs the same way on a laptop with no cloud account, in production on Supabase, and — eventually — at big-data scale, by keeping two layers portable so scaling is a port and not a rewrite.
+pubDate: 2026-07-04
+tags: [engineering, agents]
+authors: [omar]
+draft: true
+audience: internal
+design: local-cloud-arch
+questions:
+  - How do you run the same pipeline on a laptop with no cloud account and in production?
+  - What has to stay portable so that scaling up later is a port and not a rewrite?
+  - When do you actually reach for a distributed engine — and when do you not?
+  - How do you keep the raw data on the laptop across all of these regimes?
+---
+
+A system that runs on a laptop, in production, and at scale usually becomes three systems —
+three code paths, three sets of bugs, three things to keep in sync. We wanted one. The
+telemetry pipeline behind our agent dashboard runs on a laptop with no cloud account, in
+production on Supabase, and is built to scale to many machines later — and it is the same
+system in all three. Here is the shape that makes that true.
+
+## Local without the cloud
+
+The first temptation is to point local development at the shared production database. It is
+one environment, which sounds simpler. It is also a trap: it needs credentials, it lets
+local work mutate shared data, and it makes working offline impossible.
+
+So local runs its own Postgres — in a Docker container, applying the *same* migrations
+production applies. Same engine, same schema, same SQL; a different host. The dashboard
+reads either a build-time snapshot (no database at all) or the local container. Nothing but
+Docker required, no credentials, works on a plane. The parity is the whole point: local
+isn't a toy version of production, it's production's engine with production's SQL, pointed
+at a container instead of the cloud.
+
+There is a discipline that makes this hold, and it is worth being explicit about. The
+production database has features the local one doesn't — roles, row-level security, the
+things a multi-tenant cloud needs. If any of those sneak into the shared schema, the local
+database can't run it, and now you have two schemas again. So the migrations are split: the
+portable ones (tables, the aggregation logic) run in both places; the production-only ones
+(roles, security policies) run only in the cloud. The one function that computes the
+dashboard's numbers contains zero cloud-specific constructs — because it has to behave
+identically in both, and the only way to guarantee that is to keep it standard.
+
+## Scaling as a port, not a rewrite
+
+Today it is a handful of sessions on one laptop. It could become gigabytes across many
+machines. The wrong way to prepare for that is to adopt a distributed engine now, before
+we've hit the scale that justifies its operational cost. The right way is to keep the code
+*portable*, so the jump is a port.
+
+The pipeline is two layers, and each is kept portable on purpose. The first turns raw JSONL
+into normalized records — a pure function that imports nothing but the standard library. It
+is already the exact shape a distributed transform wants: give it one partition of files and
+it processes them. When we outgrow one machine, that function becomes the body of a
+`mapPartitions` or a Glue transform, unchanged. The second layer aggregates records into the
+dashboard's tables, and it is standard SQL. Standard SQL runs in Postgres today; it runs in
+a lakehouse or Spark SQL tomorrow, unchanged.
+
+Between single-node Postgres and full Spark there is a middle step — an in-process engine
+like DuckDB, which is roughly ten times faster than the dataframe libraries on medium data
+and runs the same SQL from laptop to cloud.[^duckdb] We do not use it yet, deliberately: it
+would be a second SQL dialect to keep identical, and at our size that is complexity without
+payoff. It is the on-ramp we take when the data volume asks for it, not before. "Design for
+scale" did not mean build for scale. It meant keep the two layers clean enough that scale is
+a port.
+
+## Raw stays on the laptop, everywhere
+
+One rule holds across all three regimes and is not negotiable: raw transcripts never leave
+the machine they were written on. Each machine extracts and sanitizes locally and ships only
+*derived* records to the shared database. Aggregation happens there, across machines, over
+data that was scrubbed before it moved. This is why the multi-machine story is not "sync the
+files to a central place" — the files are exactly what must not move. The security invariant
+isn't a setting we remember to enable; it's structural, because the raw file has no path off
+the edge.
+
+## What we actually committed to
+
+Not a distributed system. A single one, kept portable: local Docker Postgres and cloud
+Supabase running the same standard SQL, a pure row transform that ports to a bigger engine
+unchanged, and raw data that never leaves the edge. The bet is that the discipline of
+keeping those layers clean now is cheaper than the rewrite we'd otherwise face later — and
+that when scale finally arrives, it arrives as a port we already know how to do.
+
+[^duckdb]: DuckDB runs in-process with no server, is roughly an order of magnitude faster
+than dataframe libraries on medium data, and runs the same SQL from laptop to cloud, with
+MotherDuck adding hybrid execution — the 2026 medium-scale step between single-node Postgres
+and Spark. "DuckDB in Production 2026." *BirJob*, https://www.birjob.com/blog/duckdb-in-production-2026.
+Accessed 4 July 2026.
