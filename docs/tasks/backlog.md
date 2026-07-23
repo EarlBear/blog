@@ -15,7 +15,6 @@ Tasks must exist here (or in done.md) **before** being deleted from the live tas
 - [ ] Real author portraits to replace the shared Earl-mark avatar on author cards/pages
 - [ ] Revisit React (or other framework) integration in Astro via islands (`@astrojs/react`) — only if a post needs genuine client-side interactivity. Astro is HTML-first and ships zero JS by default; framework components are opt-in islands that pull in a renderer runtime, so weigh that cost against the blog's zero-JS baseline. Prefer plain `.astro` components or build-time SVG (see `UseCaseDiagram`) unless interactivity is required.
 - [ ] When GitHub Packages billing is restored: consider upstreaming the diagram actor glyphs (`src/components/diagram/actors.ts` — the external "customer" and "system" line marks the design system currently lacks) into `@earlbear/ui` as framework-agnostic SVG primitives, then consume them here via the vendored-assets sync.
-- [ ] [audit-finding] Nav links row (`src/components/Nav.astro` `.links`) overflows the viewport by ~14px at ≤390px width (horizontal page scroll on phones). Found while verifying diagram mobile-safety; fix belongs to the frontend-audit skill as a Tier-1 functional-equivalent change (wrap/scroll/condense the nav on narrow screens).
 
 ## Diagram system — deferred ideas
 
