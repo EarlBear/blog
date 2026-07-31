@@ -1,7 +1,7 @@
 # House voice
 
 The EarlBear blog voice, in one page. The `check-posts.py` hook enforces the hard
-rules (emoji, exclamation points) and warns on the soft ones (fluff,
+rule (no exclamation points in title/description) and warns on the soft ones (fluff,
 anthropomorphizing, hype); the **`design-post-review`** skill is the human judge
 and the place to fix a post against this standard. `new-post`/`enrich-post` defer
 here rather than restate it.
@@ -35,8 +35,10 @@ cut it.
   cutting-edge, state-of-the-art, game-changing, world-class, blazing-fast,
   robust and scalable.* Show the fact (the number, the behavior) and let the reader
   conclude it.
-- **Emoji and exclamation points** (hard-enforced in title/description; keep the
-  discipline in the body).
+- **Exclamation points** (hard-enforced in title/description; keep the discipline in
+  the body). Emoji are allowed — the agent-fleet posts lead their titles with one
+  (`🤖 Agent Watson: …`) — but reach for one only when it earns its place; the voice
+  is still restrained by default.
 
 ## Why a soft check, not a hard one
 

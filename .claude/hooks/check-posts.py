@@ -7,7 +7,7 @@ Every post in src/content/blog/ must have:
   - authors: a non-empty list of ids that exist in src/content/authors/
   - tags: lowercase
   - a kebab-case filename (it is the URL slug)
-  - no emoji and no exclamation points in title/description (brand voice)
+  - no exclamation points in title/description (brand voice)
 
 Soft voice advisories (WARN only — never block; see docs/features/house-voice.md
 and the design-post-review skill): anti-fluff / anti-anthropomorphizing / anti-hype
@@ -43,10 +43,6 @@ AUTHORS_DIR = Path("src/content/authors")
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\.mdx?$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-EMOJI_RE = re.compile(
-    "[\U0001F000-\U0001FAFF\U00002700-\U000027BF\U0001F1E6-\U0001F1FF"
-    "\U00002600-\U000026FF\U0000FE0F]"
-)
 
 
 def parse_frontmatter(text: str):
@@ -256,8 +252,6 @@ def check_post(path: Path, root: Path):
         val = str(fm.get(field, ""))
         if "!" in val:
             errs.append(f"{rel}: {field} contains an exclamation point (brand voice: none)")
-        if EMOJI_RE.search(val):
-            errs.append(f"{rel}: {field} contains emoji (brand voice: none)")
 
     draft = fm.get("draft")
     if draft not in (None, "true", "false"):
