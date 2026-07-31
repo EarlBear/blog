@@ -16,7 +16,8 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
 ## Steps
 
 1. **Gather the essentials** (ask only for what's missing):
-   - **Title** — sentence case, no emoji, no exclamation points.
+   - **Title** — sentence case, no exclamation points. Emoji are allowed (e.g. the
+     agent-fleet posts lead with `🤖 Agent <Name>: …`); use sparingly.
    - **Description** — one or two sentences; shown in listings, RSS, and social
      previews. Also sentence case.
    - **Questions this post answers** (REQUIRED, one or more) — the questions the
@@ -115,8 +116,8 @@ truth. As of now it requires `title`, `description`, `pubDate`, and **`questions
    - Every reference needs a definition and vice versa. Footnotes are GFM
      syntax and render automatically as a footnotes section at the end.
 
-6. **Voice check**: sentence case throughout, no emoji, no exclamation points,
-   specific over vague, tabular numerics for figures. The full quality standard —
+6. **Voice check**: sentence case throughout, no exclamation points (emoji allowed
+   but sparing), specific over vague, tabular numerics for figures. The full quality standard —
    anti-fluff, no anthropomorphizing, the design-post skeleton (requirements /
    personas / impact / use cases), and right-component usage — lives in the
    **`design-post-review`** skill; don't restate it here, run it in step 8.
