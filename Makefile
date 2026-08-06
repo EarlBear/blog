@@ -10,7 +10,7 @@
 
 .PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check anchor-ids-check check \
-        bench-diagram reconcile-comments clean
+        bench-diagram measure-layout reconcile-comments clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -163,6 +163,23 @@ check: tasks-check features-check posts-check diagrams-check visuals-check catal
 
 bench-diagram: ## A/B + perf harness for the use-case diagram → docs/diagram-bench.md
 	npm run bench:diagram
+
+# Builds, serves over HTTP, measures, tears the server down. The serving is part of
+# the target ON PURPOSE: the one time this was measured by hand, it was measured from
+# a file:// path, every number came back 0px, and a real mobile-overflow bug was closed
+# as "could not reproduce" (see docs/tasks/done.md). Making the correct setup the
+# default one-command path is most of the fix; scripts/measure-layout.mjs refuses an
+# unstyled page for when someone drives it by hand anyway.
+MEASURE_PATHS  ?= /,/blog/life-without-earlbear/
+MEASURE_WIDTHS ?= 320,375,480
+
+measure-layout: build ## Measure horizontal overflow of the BUILT site over HTTP (refuses to report numbers from an unstyled page)
+	@npx astro preview --port 4343 >/dev/null 2>&1 & \
+	 pid=$$!; \
+	 for i in $$(seq 1 60); do curl -sf http://localhost:4343/ >/dev/null 2>&1 && break; sleep 0.5; done; \
+	 node --experimental-websocket scripts/measure-layout.mjs http://localhost:4343 \
+	   --paths '$(MEASURE_PATHS)' --widths '$(MEASURE_WIDTHS)'; \
+	 rc=$$?; kill $$pid 2>/dev/null; exit $$rc
 
 ## --- comments -------------------------------------------------------------
 
