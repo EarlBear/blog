@@ -9,6 +9,10 @@ Every post in src/content/blog/ must have:
   - a kebab-case filename (it is the URL slug)
   - no exclamation points in title/description (brand voice)
 
+Collection-id collisions (see collection_id_collisions below): two files whose
+paths differ only by extension (foo.md / foo.mdx) resolve to the SAME content
+collection id, and Astro silently keeps one and drops the other.
+
 Soft voice advisories (WARN only — never block; see docs/features/house-voice.md
 and the design-post-review skill): anti-fluff / anti-anthropomorphizing / anti-hype
 patterns in the body. These print but do not fail, because voice is a judgment call.
@@ -259,6 +263,42 @@ def check_post(path: Path, root: Path):
     return errs
 
 
+def collection_id_collisions(root):
+    """Errors for post files that resolve to the SAME content-collection id.
+
+    src/content.config.ts loads posts with `glob({pattern: '**/*.{md,mdx}'})`,
+    and the glob loader derives each entry's id from the path relative to `base`
+    WITHOUT its extension. So `foo.md` and `foo.mdx` are two files with one id.
+
+    Astro does not treat that as an error. The loader prints
+        [WARN] [glob-loader] Duplicate id "foo". Later items with the same id
+        will overwrite earlier ones.
+    and the build SUCCEEDS — one post silently replaces the other, at a URL that
+    still resolves, so nothing 404s and nothing goes red. Git sees no conflict
+    either (the filenames differ), which is how PR #20 arrived proposing .md
+    files for posts that already existed as .mdx on main: it read as "adds two
+    posts" and would have shipped as "replaces two posts".
+
+    Scans the whole tree on every invocation, including hook mode where the edit
+    targets one file — a collision is a property of a PAIR, so checking only the
+    file just written cannot see it if the other half already existed. rglob (not
+    iterdir) because the loader's pattern is recursive; a post in a subdirectory
+    is a real entry and can collide with one too.
+    """
+    by_id = {}
+    for p in sorted((root / POSTS_DIR).rglob("*")):
+        if p.suffix not in (".md", ".mdx"):
+            continue
+        by_id.setdefault(p.relative_to(root / POSTS_DIR).with_suffix(""), []).append(p)
+    return [
+        f"{' + '.join(sorted(str(p.relative_to(root)) for p in paths))}: these files share "
+        f"the content-collection id {str(cid)!r} — Astro keeps only ONE and drops the "
+        f"rest with a warning, not an error. Delete or rename all but one."
+        for cid, paths in sorted(by_id.items())
+        if len(paths) > 1
+    ]
+
+
 def touched_post(payload):
     ti = payload.get("tool_input", {}) or {}
     fp = ti.get("file_path") or ti.get("notebook_path") or ""
@@ -296,7 +336,9 @@ def main() -> int:
             if p.suffix in (".md", ".mdx")
         )
 
-    errs, warns = [], []
+    # Not per-target: a collision involves two files, and in hook mode `targets`
+    # is only the one just edited. Always checked against the whole collection.
+    errs, warns = collection_id_collisions(root), []
     for post in targets:
         errs.extend(check_post(post, root))
         text = post.read_text(encoding="utf-8", errors="ignore")
