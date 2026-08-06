@@ -33,6 +33,13 @@
  * that fails to load leaves its <link> in the DOM and contributes NO entry to
  * document.styleSheets, so the mismatch is exact and needs no allowlist.
  *
+ * ...AND the page must have at least one working style source — a same-origin
+ * <link> or an inline <style> that parsed into rules. The inline half matters:
+ * /repo-map/ is a standalone artifact that skips BaseLayout and inlines the design
+ * tokens, and a linked-sheet-only rule refused it as "unstyled", discarding two
+ * real measurements. Refusing a good page is a milder failure than blessing a bad
+ * one, but it is still the tool being wrong about the thing it exists to know.
+ *
  * Cross-origin sheets (the Google Fonts link in BaseLayout) are counted but never
  * rule-inspected: reading .cssRules on them throws SecurityError by design, which
  * is not evidence of anything. Fonts also cannot cause the failure above — they
@@ -152,6 +159,27 @@ async function measure(client, url, width) {
     deviceScaleFactor: 2,
     mobile: true,
   });
+  // Confirm the URL actually EXISTS before measuring it. A 404 page is a real,
+  // fully-styled page that passes the stylesheet gate and reports a perfectly
+  // truthful 0px of overflow — for a page that isn't there. Caught the hard way:
+  // probing /blog/life-without-earlbear/ against the internal build (where that post
+  // does not exist) returned a confident "0 overflow, no offenders" that was used as
+  // a control for several minutes. Same failure family as the unstyled page: the run
+  // succeeds, nothing looks wrong, and the answer is about something else entirely.
+  // A HEAD is enough and costs one request; some static servers reject HEAD, so a
+  // 405 falls back to GET rather than being reported as a missing page.
+  let status = null;
+  try {
+    let res = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    if (res.status === 405 || res.status === 501) {
+      res = await fetch(url, { method: 'GET', redirect: 'follow' });
+    }
+    status = res.status;
+  } catch {
+    status = 0; // server unreachable — reported the same way, never measured
+  }
+  if (status !== 200) return { httpStatus: status, styled: false, notFound: true };
+
   await client.send('Page.navigate', { url });
 
   // Wait for LOAD + WEBFONTS, not a fixed sleep — and this is not a nicety.
@@ -188,6 +216,17 @@ async function measure(client, url, width) {
         .filter(s => { try { return s.cssRules.length > 0; } catch { return true; } })
         .map(s => s.href).filter(Boolean));
       const missing = sameOrigin.map(l => l.href).filter(h => !loaded.has(h));
+      // A page can be fully styled with no <link> at all. /repo-map/ is a standalone
+      // artifact that deliberately skips BaseLayout and inlines the design tokens in
+      // a <style> block; requiring a LINKED sheet refused it as "unstyled" and threw
+      // away two real measurements. The thing being tested is "does this page have
+      // working CSS", and an inline <style> that parsed into rules is exactly that.
+      // This does not soften the original gate: a page whose linked sheet 404s still
+      // has a non-empty missing[] and is still refused, inline styles or not.
+      const inlineSheets = [...document.styleSheets].filter(s => {
+        if (s.href) return false;
+        try { return s.cssRules.length > 0; } catch { return false; }
+      }).length;
 
       const doc = document.documentElement;
       const overflow = Math.max(0, doc.scrollWidth - doc.clientWidth);
@@ -197,19 +236,51 @@ async function measure(client, url, width) {
       // a wide table produces one over-wide <tr> per row, and six identical "tr"
       // lines crowd out the one line that names the actual culprit
       // (table.raci-grid). Collapsed to "tr ×6" the table stays visible.
+      // An element inside a scroll container is SUPPOSED to be wider than the
+      // viewport — that is what the container is for — and it contributes nothing
+      // to the page's own overflow. Listing it is worse than noise: it sent a real
+      // debugging session chasing a 528px <tbody> that was already correctly
+      // wrapped, while the actual culprit (a 1px-over flex legend) was invisible.
+      // So an offender must both exceed the viewport AND be unclipped by every
+      // ancestor. Measured on the right EDGE, not the width: a wide-but-clipped box
+      // is fine, a narrow box pushed past the edge is not.
+      const clipped = (el) => {
+        for (let n = el.parentElement; n; n = n.parentElement) {
+          if (getComputedStyle(n).overflowX !== 'visible') return true;
+        }
+        return false;
+      };
       const seen = new Map();
       for (const el of document.querySelectorAll('body *')) {
         const r = el.getBoundingClientRect();
-        if (r.width <= doc.clientWidth + 1) continue;
+        if (r.right <= doc.clientWidth + 0.5) continue;
+        if (clipped(el)) continue;
+        // classList, NOT className. On an SVG element className is an
+        // SVGAnimatedString, not a string, so a typeof-string check quietly skips
+        // the class and every SVG offender prints as a bare "svg" — no class, no
+        // id, nothing to grep for. That is precisely backwards: an inline chart is
+        // the HARDEST offender to locate by eye, and it was the one the tool
+        // stripped the label off. classList is a DOMTokenList on both HTML and SVG.
+        const cls = [...el.classList].slice(0, 2);
         const sel = el.tagName.toLowerCase() +
           (el.id ? '#' + el.id : '') +
-          (el.className && typeof el.className === 'string'
-            ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.')
-            : '');
+          (cls.length ? '.' + cls.join('.') : '');
+        // An offender with no id and no class ("svg", "div") names nothing you can
+        // grep for. Walk up to the nearest ancestor that IS identifiable and print
+        // it as context, so the report always hands back a search term.
+        let ctx = '';
+        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+          const ncls = [...n.classList].slice(0, 2);
+          if (n.id || ncls.length) {
+            ctx = ' in ' + n.tagName.toLowerCase() +
+              (n.id ? '#' + n.id : '') + (ncls.length ? '.' + ncls.join('.') : '');
+            break;
+          }
+        }
         let depth = 0; for (let n = el; (n = n.parentElement); ) depth++;
         const prev = seen.get(sel);
         if (prev) { prev.count++; prev.width = Math.max(prev.width, Math.round(r.width)); }
-        else seen.set(sel, { sel, width: Math.round(r.width), depth, count: 1 });
+        else seen.set(sel, { sel, ctx, width: Math.round(r.width), depth, count: 1 });
       }
       // Deepest first (the leaf that actually has the width), but ALWAYS keep the
       // outermost over-wide element too. The fix almost always goes on a container
@@ -224,7 +295,8 @@ async function measure(client, url, width) {
 
       return JSON.stringify({
         links: links.length, sameOrigin: sameOrigin.length,
-        missing, styled: missing.length === 0 && sameOrigin.length > 0,
+        missing, inlineSheets,
+        styled: missing.length === 0 && (sameOrigin.length > 0 || inlineSheets > 0),
         overflow, viewport: doc.clientWidth, offenders,
       });
     })()`,
@@ -269,15 +341,30 @@ async function main() {
       for (const width of WIDTHS) {
         const r = await measure(client, url, width);
 
+        if (r.notFound) {
+          unstyled++;
+          console.log(
+            `\n  ${path} @${width}px  NOT MEASURED — ` +
+              (r.httpStatus === 0
+                ? 'server did not respond'
+                : `HTTP ${r.httpStatus}, not 200`) +
+              '\n      A 404 page measures a truthful 0px of overflow for a page that\n' +
+              '      does not exist. Check the path, or the build you are serving.'
+          );
+          continue;
+        }
+
         if (!r.styled) {
           unstyled++;
           console.log(
             `\n  ${path} @${width}px  NOT MEASURED — page is unstyled\n` +
               `      ${r.sameOrigin} same-origin stylesheet(s) linked, ` +
-              `${r.sameOrigin - r.missing.length} loaded\n` +
+              `${r.sameOrigin - r.missing.length} loaded; ` +
+              `${r.inlineSheets} inline <style> block(s) with rules\n` +
               (r.missing.length
                 ? `      missing: ${r.missing.join('\n               ')}\n`
-                : '      no same-origin stylesheet is linked at all\n') +
+                : '      no stylesheet at all — neither a same-origin <link> nor an\n' +
+                  '      inline <style> that parsed into rules\n') +
               '      An unstyled page cannot overflow, so any number here would be a\n' +
               '      false all-clear. Fix the serve, then re-measure.'
           );
@@ -290,7 +377,7 @@ async function main() {
         if (r.overflow > 0) {
           for (const o of r.offenders) {
             console.log(
-              `      ${String(o.width).padStart(5)}px  ${o.sel}` +
+              `      ${String(o.width).padStart(5)}px  ${o.sel}${o.ctx || ''}` +
                 (o.count > 1 ? ` ×${o.count}` : '') +
                 (o.outermost ? '   ← outermost; the wrapper fix usually goes here' : '')
             );
