@@ -18,10 +18,63 @@ main {
 
 /* Shared content column for list/tag/about pages. */
 .container {
-  width: 100%;
+  /* NO `width: 100%` here — it was the site-wide 40px horizontal scroll.
+     Nothing in this project sets box-sizing: border-box, so the box is content-box:
+     `width: 100%` sized the CONTENT to the full parent (359px inside body's default
+     8px margins at a 375px viewport) and then ADDED 24px of padding on each side,
+     for a 407px box in a 375px viewport. Every page scrolled sideways by 40px.
+     Dropping the declaration lets width resolve to `auto`, which for a block box
+     means "fill the parent MINUS padding" — 359px total, no overflow.
+     Deliberately not `box-sizing: border-box`: with width:auto the two are identical
+     on mobile, but border-box would also shrink the desktop column from 760+48 to
+     760 total. Removing width:100% leaves every wide-viewport rendering byte-identical
+     and only changes the case that was broken. Verified with `make measure-layout`. */
   max-width: 760px;
   margin: 0 auto;
   padding: var(--space-16) var(--space-6) var(--space-20);
+}
+
+/* Any table wider than the reading column scrolls inside itself instead of pushing the
+   page sideways. The wrapper is injected around every content table by
+   integrations/rehype-table-scroll.mjs — see that file for why this can't be done from
+   markdown. `overscroll-behavior-x: contain` stops a horizontal flick inside the table
+   from turning into a browser back-navigation on trackpads and touch. */
+.table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Same containment as .cm-scroll, for the same reason — see the long note there.
+     This wrapper happens to behave already (measured: 978px of table contained in a
+     256px box on /blog/every-key-in-the-system/ with zero page overflow), but that is
+     an observation about today's markup, not a property anyone declared. .cm-scroll
+     looked equally fine right up until a table got wide enough, and then it moved the
+     whole page. Stating the containment makes "a wide table never widens the page"
+     something this rule guarantees rather than something we keep re-verifying. */
+  contain: layout;
+}
+
+/* A bare URL is one unbreakable word and will happily run off the screen — the largest
+   single cause of the 202px overflow on /blog/life-without-earlbear/ was a footnote
+   citation whose raw https:// link measured 521px in a 359px column. `anywhere` (not
+   `break-word`) because it also shrinks the element's min-content width, which is what
+   keeps a long URL from widening a table cell or a flex item. Scoped to prose links:
+   ordinary words fit and are never broken, so there is no visible change elsewhere. */
+.article a,
+.container a {
+  overflow-wrap: anywhere;
+}
+
+/* Inline code has exactly the same problem and is worse about it: an identifier like
+   a dotted config path or a shell flag string is one unbreakable token by definition,
+   and unlike a URL nobody thinks of it as long. Measured on the internal build at
+   320px, single <code> spans in body paragraphs ran 291px and 384px wide — each one
+   on its own enough to push the whole page sideways.
+   `:not(pre) > code` is the point of the selector: code inside a fenced block must
+   NOT wrap (that would scramble indentation and line numbering), and it doesn't need
+   to — .astro-code above already gives fenced blocks their own overflow-x: auto.
+   Inline code has no such container, so wrapping is the only option it has. */
+.article :not(pre) > code,
+.container :not(pre) > code {
+  overflow-wrap: anywhere;
 }
 
 /* Skip visible focus ring for mouse users, keep it for keyboard nav. */
@@ -109,10 +162,24 @@ a:focus:not(:focus-visible) {
  * comfortable cell spacing, a header underline, and horizontal scroll rather
  * than letting a wide table overflow the reading column.
  */
+/* NO `display: block; overflow-x: auto` HERE. That is the well-known way to make a
+   wide table scroll, it was here, and it was actively causing page overflow.
+   `display: block` takes the TABLE's own box out of the table formatting context,
+   but its <thead> keeps `display: table-header-group` and is still sized by the real
+   table layout — 587px. That header group then escapes the block's clip and lands in
+   the document's scroll area: measured on /blog/one-database-two-modes/ at 320px,
+   <body> scrollWidth was a clean 304 while <html> was 536. Deleting the <thead> in
+   the page dropped it to exactly 320.
+   It also defeats diagnosis, which is how it survived: the escaping <thead> genuinely
+   IS inside an `overflow-x: auto` ancestor, so measure-layout's "ignore clipped
+   elements" rule correctly skipped it and reported overflow with NO offender at all.
+   Three pages showed an unattributable 216px. The markup was lying, not the tool.
+   Scrolling is now the wrapper's job — integrations/rehype-table-scroll.mjs puts a
+   .table-scroll div around every markdown table, and component tables bring their own
+   (.cm-scroll, .raci-scroll). A wrapper clips honestly because it is a real block box
+   with no formatting context to break out of. */
 .prose table {
-  display: block;
   width: 100%;
-  overflow-x: auto;
   border-collapse: collapse;
   font-size: var(--fs-body);
   margin: var(--space-6) 0;
@@ -722,6 +789,21 @@ a:focus:not(:focus-visible) {
 }
 .comparison-matrix .cm-scroll {
   overflow-x: auto;
+  /* `contain: layout` is a bug fix, not an optimisation — do not drop it.
+     overflow-x: auto alone did NOT stop this wrapper from widening the PAGE. On the
+     internal build at 320px, six pages scrolled sideways into blank space (216px on
+     /blog/one-database-two-modes/, 345px on /blog/comments-that-anchor-to-fragments/)
+     while the wrapper itself was a correct 256px and clipped its 587px table
+     perfectly. The table's intrinsic width was propagating out through layout, so no
+     amount of clipping addressed it: overflow-x: clip, overflow: hidden on the
+     <figure>, display: flow-root, removing the border/radius/caption, and dropping
+     the table's width:100% were each measured and each changed nothing. Only
+     containment did — `layout` and `paint` both took it to 0, and `layout` is the one
+     that names the actual problem, so it is the one used.
+     Safe here: the only positioned descendant is the 1x1 clipped .cm-sr
+     screen-reader span, so becoming its containing block changes nothing visible.
+     Verified with `make measure-layout` plus a rendered screenshot of the matrix. */
+  contain: layout;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);

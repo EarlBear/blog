@@ -100,6 +100,20 @@ const kicker = tags[0] ?? 'Blog post';
   .article {
     /* Fill 65% of the viewport width, capped on ultra-wide so lines don't sprawl,
        and floored so it never gets narrower than the old reading measure. */
+    /* border-box is load-bearing, not tidying. Under the default content-box these
+       three declarations contradicted each other on a phone: at 375px, 65vw is 244px
+       so the min-width floor won at min(100%, reading) = 100% = 359px — and then 24px
+       of padding was ADDED to each side, for a 407px box in a 359px parent. Every post
+       page scrolled sideways. With border-box the floor means what it says (359px
+       TOTAL, fits exactly) and the intent is expressible at all.
+       Chosen over `min-width: calc(100% - var(--space-6) * 2)`, which would also work
+       and would leave desktop untouched, because that spelling silently re-breaks the
+       moment someone edits the padding on the line below — a drift with no failing
+       test. Cost, stated plainly: 65vw now includes the padding, so a post's box on a
+       wide screen is 48px narrower than before (at 1440px: 936px total / 888px of text,
+       vs 984px / 936px). The reading measure is unchanged in kind, slightly narrower in
+       px. Verified with `make measure-layout`. */
+    box-sizing: border-box;
     width: 65vw;
     max-width: 1500px;
     min-width: min(100%, var(--space-reading));
@@ -139,7 +153,19 @@ const kicker = tags[0] ?? 'Blog post';
     color: var(--color-accent);
   }
   h1 {
-    font-size: 40px;
+    /* Fluid, because a flat 40px was overflowing the page on a phone: at 320px the
+       reading column is 256px, and "experimentation" set at 40px semibold is wider
+       than that all by itself — /blog/self-healing-storefront-design/ pushed the page
+       13px sideways on its TITLE. 40px is also simply too large for a 256px column.
+       clamp keeps the desktop size exactly as it was (8vw passes 40px at 500px wide,
+       so every real desktop still gets the 40px cap) and scales down only where it
+       did not fit. */
+    font-size: clamp(28px, 8vw, 40px);
+    /* And a floor under that: clamp fixes the titles we have, this fixes the titles
+       we don't. One compound word longer than the column would silently move the
+       whole page again, and a heading that wraps mid-word is a far smaller problem
+       than a page that scrolls sideways. */
+    overflow-wrap: anywhere;
     font-weight: var(--fw-semibold);
     letter-spacing: var(--ls-tight);
     line-height: var(--lh-tight);

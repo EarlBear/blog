@@ -293,22 +293,64 @@ const links = [
   .links a:hover {
     color: var(--color-text-accent);
   }
+  /* PHONE NAV — two rows. Read the history before changing this.
+     The single-row version overflowed the page by 40px at 320px on the internal
+     build. That was found in a July audit, could not be reproduced (the repro was
+     measured over file://, where the stylesheet 404s and an unstyled page cannot
+     overflow — see scripts/measure-layout.mjs), and so was downgraded to a
+     "belt-and-suspenders" min-width:0 + overflow-x:auto on .links alone.
+     That guard did not work, in two separate ways, both confirmed by measurement:
+       1. It was on the wrong element. .usermenu is a SIBLING of .links, not a
+          child, so the sign-out cluster the guard's own comment named as the risk
+          was never inside the box being clipped. 47 internal pages still overflowed.
+       2. It made things worse where it did apply. Flex hands the shrink to whatever
+          can take it, and .links (min-width:0) was the only child that could — so
+          it absorbed ALL of it and measured 0px wide. The nav links were not merely
+          clipped, they were unreachable: a zero-width scroll container has nothing
+          to scroll to. The page stopped overflowing by deleting the navigation.
+     The fix is structural, not a clamp: give the links their own full-width row
+     instead of making them compete for space they cannot win. Row 1 is
+     brand + badge + sign-out, row 2 is the links, and nothing needs to shrink. */
   @media (max-width: 480px) {
     .brand-sub {
       display: none;
     }
+    .nav {
+      flex-wrap: wrap;
+      /* height→min-height: a fixed 64px would crop the second row outright. */
+      height: auto;
+      min-height: 64px;
+      padding: var(--space-3) var(--space-4);
+      column-gap: var(--space-3);
+      row-gap: var(--space-2);
+    }
+    /* The badge is a full-width-nav ornament: uppercase mono at 0.08em tracking
+       costs 93px of a 272px row just to say "internal". Same word, tighter. */
+    .internal-badge {
+      padding: 2px 7px;
+      letter-spacing: 0.03em;
+    }
+    /* order is what makes the two rows: everything else defaults to 0, so the
+       links sort last and the 100% basis then forces them onto a line of their own.
+       Without the order, DOM position would strand .usermenu on a third row. */
     .links {
+      order: 1;
+      flex: 1 0 100%;
+      /* margin-left:auto is the desktop right-alignment; on its own row it would
+         be a no-op at best and fight the basis at worst. */
+      margin-left: 0;
       gap: var(--space-4);
-      /* Belt-and-suspenders: at phone widths the links stay on one line but may
-         scroll within their own row rather than pushing the page — so the nav can
-         never cause a horizontal page scroll, even when the internal build adds the
-         live sign-out cluster (rendered client-side past the CF Access gate, so it
-         isn't visible to a local build/audit). Guards the ≤390px overflow the
-         frontend-audit flagged. See docs/tasks/ [audit-finding]. */
+      /* Still scrollable — but now as an overflow valve for MANY links on a narrow
+         screen, which is what a scroll container is for, rather than as the sole
+         absorber of a whole row's shrink. It has a full row of width to start from. */
       min-width: 0;
       overflow-x: auto;
       scrollbar-width: none;
       -webkit-overflow-scrolling: touch;
+    }
+    .usermenu {
+      margin-left: auto;
+      padding-left: 0;
     }
     .links::-webkit-scrollbar {
       display: none;

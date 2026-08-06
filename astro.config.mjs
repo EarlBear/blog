@@ -4,6 +4,7 @@ import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
 import { devAuthToken } from './integrations/dev-auth-token.ts';
 import { rehypeBlockIds } from './integrations/rehype-block-ids.mjs';
+import { rehypeTableScroll } from './integrations/rehype-table-scroll.mjs';
 
 // Which site this build is for, chosen by PUBLIC_AUDIENCE (set by the
 // build:internal / deploy:internal npm scripts). This picks the canonical
@@ -62,6 +63,8 @@ export default defineConfig({
     // internal comment layer can anchor a comment to a paragraph, not just a heading or
     // component. Harmless on the external build (just extra ids). See
     // integrations/rehype-block-ids.mjs + docs/comments-design.md (B3).
-    rehypePlugins: [rehypeBlockIds],
+    // Order matters: block-ids first, so anchor ids are derived from the untouched content tree
+    // and are not perturbed by the wrapper divs table-scroll introduces.
+    rehypePlugins: [rehypeBlockIds, rehypeTableScroll],
   },
 });

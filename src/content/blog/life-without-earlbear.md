@@ -253,7 +253,9 @@ mid-band figures from the table above.
 .rb-i { background: transparent; color: var(--color-text-muted); }
 .gantt { margin: var(--space-8) 0; }
 .gantt figcaption { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--color-text); margin-bottom: var(--space-3); }
-.gantt-legend { display: flex; gap: var(--space-5); font-size: var(--fs-xs); font-family: var(--font-mono); color: var(--color-text-secondary); margin-bottom: var(--space-4); }
+/* flex-wrap matches .raci-legend above; without it the three items are pinned to one
+   line and the last one lands 1px past the viewport at 320px. */
+.gantt-legend { display: flex; flex-wrap: wrap; gap: var(--space-5); font-size: var(--fs-xs); font-family: var(--font-mono); color: var(--color-text-secondary); margin-bottom: var(--space-4); }
 .gantt-legend span { display: inline-flex; align-items: center; gap: var(--space-2); }
 .gantt-legend .sw { width: 10px; height: 10px; border-radius: var(--radius-xs); display: inline-block; }
 .sw-recruit, .seg-recruit { background: var(--eb-data-1); }
