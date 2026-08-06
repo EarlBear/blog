@@ -299,6 +299,19 @@ const links = [
     }
     .links {
       gap: var(--space-4);
+      /* Belt-and-suspenders: at phone widths the links stay on one line but may
+         scroll within their own row rather than pushing the page — so the nav can
+         never cause a horizontal page scroll, even when the internal build adds the
+         live sign-out cluster (rendered client-side past the CF Access gate, so it
+         isn't visible to a local build/audit). Guards the ≤390px overflow the
+         frontend-audit flagged. See docs/tasks/ [audit-finding]. */
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .links::-webkit-scrollbar {
+      display: none;
     }
   }
 </style>
