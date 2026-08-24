@@ -122,10 +122,24 @@
     transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
   /* Pin the icon size — otherwise the diagrams' `svg { width: 100% }` rule blows
-     the button's icon up to fill the figure. */
-  .diagram-fs-btn svg {
+     the button's icon up to fill the figure.
+     `width` ALONE DOES NOT PIN IT. Every diagram also sets a min-width floor on its
+     descendant svgs (`.usecase-diagram svg { min-width: 320px }`, `.flow-diagram svg
+     { min-width: 280px }`, …) so a phone gets a scrollbar instead of unreadable
+     labels — and min-width beats width unconditionally, at any specificity. So this
+     15px icon rendered 320px wide: `make measure-layout` found it as the only
+     offender on /blog/self-healing-storefront/, 105px of page overflow at both 320px
+     and 375px. It is a touch-device bug specifically, because `@media (hover: none)`
+     below makes the button permanently visible there.
+     Both bounds are reset, not just min-width, so the same thing can't recur through
+     a max-width. `button.` is load-bearing: bare `.diagram-fs-btn svg` ties the
+     diagram rules on specificity (0,1,1) and would be decided by stylesheet ORDER —
+     the element tag makes it (0,1,2) and win outright. */
+  button.diagram-fs-btn svg {
     width: 15px;
     height: 15px;
+    min-width: 0;
+    max-width: none;
     display: block;
     flex: none;
   }

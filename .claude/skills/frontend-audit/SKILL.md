@@ -24,6 +24,8 @@ CI (org billing is off). It **proposes**; you approve.
 - **Measure the built site, not dev.** `npm run build && npm run preview` — dev
   ships unminified, HMR-injected, drafts-included output that misrepresents
   production. (Exception: auditing a *draft* page, which only exists in dev.)
+- **Never measure layout from `file://`, and never trust a 0px overflow you didn't
+  earn.** This is the one that already burned us — see *The overflow trap* below.
 - **Report what you dropped.** If you cap the audit (top pages only, one viewport,
   skipped a slow trace), say so. A silent cap reads as "all clear" when it isn't.
 
@@ -62,10 +64,12 @@ Collect findings across these dimensions; attach the **measured number** to each
 
 - **Performance:** FCP / LCP, main-thread long tasks, total transfer weight,
   render-blocking resources, unused CSS/JS.
-- **Mobile:** no horizontal overflow at ≤390px (scan for any element whose right
-  edge exceeds the viewport — the diagram bench and this skill both use a
-  `getBoundingClientRect().right > clientWidth` sweep), tap-target sizing, legible
-  text without zoom.
+- **Mobile:** no horizontal overflow at ≤390px. **Use `make measure-layout`** —
+  don't hand-roll the sweep. It builds, serves over HTTP, measures 320/375/480px,
+  names the offending elements innermost-first plus the outermost container, and
+  tears the server down. Override `MEASURE_PATHS` / `MEASURE_WIDTHS` for other
+  pages. See the overflow trap below for why the hand-rolled version is dangerous.
+  Also: tap-target sizing, legible text without zoom.
 - **Accessibility:** color contrast against the design tokens, image/SVG alt or
   `role="img"`+`<title>`, heading order, keyboard focus visibility, reduced-motion
   honored.
@@ -74,6 +78,44 @@ Collect findings across these dimensions; attach the **measured number** to each
 - **Bundle / requests:** font weights actually used vs. requested, number of
   network requests, anything shipped that the page doesn't need.
 
+### The overflow trap (read before measuring layout)
+
+On 2026-07-23 this exact audit measured the nav-overflow finding at **0px across
+320/360/375/390px**, on the homepage, a post page, and the internal build. The
+finding was closed as *could not reproduce* and the real fix was downgraded to a
+"belt-and-suspenders guard with no visible change".
+
+Every one of those numbers was wrong. The measurement was taken against a local
+`file://` build, and Astro links its stylesheet at an **absolute** path:
+
+```html
+<link rel="stylesheet" href="/_astro/_slug_.LxMPHa65.css">
+```
+
+Under `file://` a leading `/` resolves to the **filesystem root**, so the sheet
+404s and the page renders completely unstyled — a single column of full-width
+blocks, which cannot overflow. Every number was 0 because nothing had a width to
+exceed. Re-measured over HTTP against the same `dist/`: **83px** of overflow at
+320px on main, **291px** with the sign-out cluster present.
+
+Two things generalise from it, and both are built into `make measure-layout`:
+
+1. **An unstyled page cannot overflow, so 0px is what a broken measurement looks
+   like.** Nothing errors, nothing is empty — the run succeeds and answers 0. The
+   script therefore refuses to print numbers unless every same-origin
+   `<link rel="stylesheet">` produced a live sheet in `document.styleSheets`. That
+   catches the whole class, not just `file://`: wrong served directory, stale
+   hashed filename, a proxy 200ing an HTML error page for a `.css`, a CSP block.
+2. **Wait for webfonts, not a fixed sleep.** Found while building the script:
+   `/blog/life-without-earlbear/` @375px measured **202px** inside a multi-page
+   sweep and **40px** measured alone — same build, same width. Measured first, the
+   font was still in flight and the table laid out in the fallback; later in a
+   sweep it was warm and laid out in IBM Plex. A fixed sleep makes the answer
+   depend on page *order*. The script awaits `document.fonts.ready` + two frames.
+
+If you ever measure layout by hand, reproduce both properties or don't trust the
+result.
+
 ### Known finding (worked example)
 
 The nav links row (`src/components/Nav.astro` `.links`) overflows the viewport by
@@ -81,6 +123,10 @@ The nav links row (`src/components/Nav.astro` `.links`) overflows the viewport b
 `docs/tasks/backlog.md` as an `[audit-finding]`. It's a **Tier 1** fix
 (wrap / condense / scroll the nav on narrow screens — same links, same behavior),
 and a good first thing to offer to apply.
+
+(The ~14px figure above predates the correction; measured over HTTP the homepage
+overflows 83px @320px on main. Re-measure with `make measure-layout` rather than
+quoting it.)
 
 ## The report
 

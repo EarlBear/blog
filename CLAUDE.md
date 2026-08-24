@@ -40,8 +40,9 @@ Cloudflare CNAME → `earlbear.github.io`) and the org-only **internal** site at
 - **SVG assets** live in `public/vendor/`. The Earl monogram is inlined at build
   time by `src/components/EarlMark.astro` (reading `public/vendor/earl-mark.svg`)
   so `currentColor` tinting works.
-- **Brand voice**: sentence case, no emoji, no exclamation points, tabular
-  numerics (`.num`).
+- **Brand voice**: sentence case, no exclamation points, tabular
+  numerics (`.num`). Emoji are allowed (the agent-fleet posts lead their titles
+  with one, e.g. `🤖 Agent Watson: …`).
 - **A picture is worth a thousand words**: interleave visuals — never ship a wall
   of text. When a section describes a structure (a flow, a loop, a boundary, a
   decision, who-does-what), reach for a diagram before writing three more

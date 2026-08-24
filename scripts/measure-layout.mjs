@@ -1,0 +1,503 @@
+#!/usr/bin/env node
+/**
+ * measure-layout.mjs — horizontal-overflow measurement that REFUSES to report
+ * numbers from a page whose stylesheets did not load.
+ *
+ * WHY THIS EXISTS. On 2026-07-23 a mobile nav-overflow finding was closed as
+ * "could not reproduce — 0px overflow at 320/360/375/390px" and the real fix was
+ * downgraded to a belt-and-suspenders guard. The measurement was taken against a
+ * local `file://` build. Astro links its stylesheet at an ABSOLUTE path:
+ *
+ *     <link rel="stylesheet" href="/_astro/_slug_.LxMPHa65.css">
+ *
+ * Under `file://` a leading `/` resolves to the FILESYSTEM ROOT, so that request
+ * 404s and the page renders completely unstyled — and an unstyled page is a
+ * single column of full-width block elements, which trivially cannot overflow.
+ * Every number was 0 because nothing had a width to exceed. Re-measured over HTTP
+ * against the same `dist/`: the homepage overflowed 83px @320px on main, and 291px
+ * with a simulated sign-out cluster. The bug was always real; the tooling reported
+ * a clean bill of health with total confidence and no warning of any kind.
+ *
+ * That is the failure this guards: **a layout measurement of an unstyled page is
+ * not a measurement, it is a fabrication with the shape of one.** Nothing errors,
+ * nothing is empty, nothing looks wrong — the run succeeds and answers 0.
+ *
+ * WHAT IS ACTUALLY CHECKED, and why it is not "reject file://". Refusing the
+ * `file://` scheme alone would fix the one case we got burned by and miss the
+ * class. The same zero comes from serving the wrong directory, a stale hashed
+ * filename after a rebuild, a proxy that 200s an HTML error page for a .css, or a
+ * CSP that blocks the sheet. So the scheme check is a fast, specific early exit
+ * with a good message, and the REAL gate is applied to every page regardless of
+ * how it was loaded: every same-origin `<link rel="stylesheet">` must have
+ * produced a live sheet in `document.styleSheets` carrying rules. A stylesheet
+ * that fails to load leaves its <link> in the DOM and contributes NO entry to
+ * document.styleSheets, so the mismatch is exact and needs no allowlist.
+ *
+ * ...AND the page must have at least one working style source — a same-origin
+ * <link> or an inline <style> that parsed into rules. The inline half matters:
+ * /repo-map/ is a standalone artifact that skips BaseLayout and inlines the design
+ * tokens, and a linked-sheet-only rule refused it as "unstyled", discarding two
+ * real measurements. Refusing a good page is a milder failure than blessing a bad
+ * one, but it is still the tool being wrong about the thing it exists to know.
+ *
+ * Cross-origin sheets (the Google Fonts link in BaseLayout) are counted but never
+ * rule-inspected: reading .cssRules on them throws SecurityError by design, which
+ * is not evidence of anything. Fonts also cannot cause the failure above — they
+ * restyle text, they do not create the layout.
+ *
+ * TWO WAYS TO SAMPLE, AND ONLY ONE OF THEM IS HONEST. `--paths auto` enumerates
+ * every page in dist/ instead of a hand-listed few. This is not a convenience.
+ * The hand-listed default was `/,/blog/life-without-earlbear/` — two pages — and
+ * on 2026-08-06 a full sweep found the INTERNAL build (48 pages, 4x the external
+ * surface) had never been measured at all: 54 of its 96 measurements overflowed,
+ * on pages nobody had thought to list. A sample that is chosen by the same person
+ * who chose the fix tests the fix, not the site. Prefer auto; pass --paths only to
+ * narrow deliberately while debugging one page.
+ *
+ * AND IT CAN FAIL, WHICH IT COULD NOT BEFORE. Until --max-overflow existed this
+ * script exited 0 with any number of overflowing pages — findings were printed and
+ * that was all. So it could not be wired into `make check`: it would have passed,
+ * green and confident, across all 54 broken measurements. That is the same shape as
+ * the file:// bug in the paragraph above and as every layout bug it was built to
+ * catch — the failing path produces a well-formed success. Measuring without a
+ * threshold is not validation, it is note-taking.
+ *
+ * Usage:
+ *   make layout-check                         # the GATE: every page, both builds, 0px allowed
+ *   make measure-layout                       # exploratory: same sweep, reports without failing
+ *   node --experimental-websocket scripts/measure-layout.mjs http://localhost:4343/
+ *   ... --paths auto --widths 320,375,480 --max-overflow 0
+ *   ... --paths /,/blog/life-without-earlbear/   # narrow, for debugging one page
+ *
+ * Exit codes: 0 measured and within threshold, 1 could not measure honestly OR
+ * exceeded --max-overflow, 2 bad usage. Without --max-overflow, overflow findings
+ * are reported and not failed — that mode is a measuring instrument, not a gate.
+ */
+import { spawn } from 'node:child_process';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+const CHROME =
+  process.env.CHROME_BIN ||
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PORT = Number(process.env.CDP_PORT || 9334);
+
+if (typeof WebSocket === 'undefined') {
+  console.error(
+    'This script needs a global WebSocket. Run with:\n' +
+      '  node --experimental-websocket scripts/measure-layout.mjs <url>\n' +
+      '  (or `make measure-layout`, which sets it for you)'
+  );
+  process.exit(2);
+}
+
+// ---- args ------------------------------------------------------------------
+const argv = process.argv.slice(2);
+const flag = (name, fallback) => {
+  const i = argv.indexOf(`--${name}`);
+  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
+};
+// Single pass, so a positional that happens to repeat a flag's value (e.g. a path
+// of "320") can't be mis-attributed by an indexOf that finds the wrong occurrence.
+let base = null;
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i].startsWith('--')) i++; // skip the flag AND its value
+  else if (base === null) base = argv[i];
+}
+const BASE = base || process.env.PREVIEW_URL || 'http://localhost:4343';
+const WIDTHS = flag('widths', '320,375,480').split(',').map(Number).filter(Boolean);
+
+// --max-overflow N: fail the run if any page exceeds N px. Absent = report only.
+// The absence of this flag was the whole reason a measuring script could never be a
+// check; see the header. Parsed strictly, because `--max-overflow` with a typo'd
+// value silently becoming NaN would restore exactly the always-passes behaviour it
+// exists to end (NaN fails every comparison).
+const rawMax = flag('max-overflow', null);
+const MAX_OVERFLOW = rawMax === null ? null : Number(rawMax);
+if (rawMax !== null && !Number.isFinite(MAX_OVERFLOW)) {
+  console.error(`--max-overflow expects a number, got ${JSON.stringify(rawMax)}`);
+  process.exit(2);
+}
+
+// --paths auto: enumerate every page in dist/ rather than trusting a hand-listed
+// sample. Reads the BUILD, not the sitemap: the sitemap is a curated view (it can
+// exclude pages by config), while dist/**/index.html is precisely the set of pages
+// that will be served. /repo-map/ reaches the sweep this way and no other.
+const DIST = flag('dist', 'dist');
+const rawPaths = flag('paths', 'auto');
+let PATHS;
+if (rawPaths === 'auto') {
+  let files = [];
+  try {
+    files = readdirSync(DIST, { recursive: true, encoding: 'utf8' });
+  } catch {
+    files = [];
+  }
+  PATHS = files
+    .filter((f) => f === 'index.html' || f.endsWith('/index.html'))
+    .map((f) => '/' + f.replace(/(^|(?<=\/))index\.html$/, ''))
+    .sort();
+  if (PATHS.length === 0) {
+    console.error(
+      `--paths auto found no pages under ${DIST}\n\n` +
+        '  Nothing to measure means nothing can fail, which is the false all-clear\n' +
+        '  this script exists to refuse. Build first (make build / make build-internal),\n' +
+        '  or pass --dist if the output lives elsewhere.'
+    );
+    process.exit(1);
+  }
+} else {
+  PATHS = rawPaths.split(',').filter(Boolean);
+}
+
+// ---- the scheme early-exit -------------------------------------------------
+// Not the real gate (see the header) — just a faster, far clearer failure than
+// letting it through to "0 of N stylesheets loaded", which reads like a bug in
+// the site rather than a bug in how it was opened.
+if (/^file:/i.test(BASE)) {
+  console.error(
+    `refusing to measure ${BASE}\n\n` +
+      "  Astro links its stylesheet at an absolute path (/_astro/*.css). Under file://\n" +
+      '  that resolves to the filesystem root, 404s, and the page renders UNSTYLED —\n' +
+      '  where nothing has a width to exceed and every overflow measures 0px. This has\n' +
+      '  already closed one real bug as "could not reproduce" (docs/tasks/done.md).\n\n' +
+      '  Serve the build over HTTP instead:  make build && make preview\n' +
+      '  then point this at http://localhost:4343.'
+  );
+  process.exit(1);
+}
+
+// ---- tiny CDP client (same shape as scripts/diagram-bench.mjs) --------------
+function cdp(wsUrl) {
+  const ws = new WebSocket(wsUrl);
+  let id = 0;
+  const pending = new Map();
+  ws.addEventListener('message', (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.id && pending.has(m.id)) {
+      pending.get(m.id)(m);
+      pending.delete(m.id);
+    }
+  });
+  return {
+    ready: new Promise((r) => ws.addEventListener('open', r, { once: true })),
+    send: (method, params = {}) =>
+      new Promise((res) => {
+        const i = ++id;
+        pending.set(i, (m) => res(m.result));
+        ws.send(JSON.stringify({ id: i, method, params }));
+      }),
+    close: () => ws.close(),
+  };
+}
+
+async function findTarget(port) {
+  for (let i = 0; i < 40; i++) {
+    try {
+      const targets = await (await fetch(`http://localhost:${port}/json`)).json();
+      const page = targets.find((t) => t.type === 'page');
+      if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+    } catch {
+      /* not up yet */
+    }
+    await sleep(150);
+  }
+  throw new Error('Chrome DevTools endpoint never came up');
+}
+
+// ---- one page × one width --------------------------------------------------
+/**
+ * Returns { styled, links, sheets, missing[], overflow, offenders[] }.
+ *
+ * `styled` is computed IN THE PAGE and reported alongside the numbers rather than
+ * being thrown away, so a caller that ignores the exit code still cannot read the
+ * overflow without the evidence that it means something.
+ */
+async function measure(client, url, width) {
+  await client.send('Emulation.setDeviceMetricsOverride', {
+    width,
+    height: 844,
+    deviceScaleFactor: 2,
+    mobile: true,
+  });
+  // Confirm the URL actually EXISTS before measuring it. A 404 page is a real,
+  // fully-styled page that passes the stylesheet gate and reports a perfectly
+  // truthful 0px of overflow — for a page that isn't there. Caught the hard way:
+  // probing /blog/life-without-earlbear/ against the internal build (where that post
+  // does not exist) returned a confident "0 overflow, no offenders" that was used as
+  // a control for several minutes. Same failure family as the unstyled page: the run
+  // succeeds, nothing looks wrong, and the answer is about something else entirely.
+  // A HEAD is enough and costs one request; some static servers reject HEAD, so a
+  // 405 falls back to GET rather than being reported as a missing page.
+  let status = null;
+  try {
+    let res = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    if (res.status === 405 || res.status === 501) {
+      res = await fetch(url, { method: 'GET', redirect: 'follow' });
+    }
+    status = res.status;
+  } catch {
+    status = 0; // server unreachable — reported the same way, never measured
+  }
+  if (status !== 200) return { httpStatus: status, styled: false, notFound: true };
+
+  await client.send('Page.navigate', { url });
+
+  // Wait for LOAD + WEBFONTS, not a fixed sleep — and this is not a nicety.
+  // Caught while building this: /blog/life-without-earlbear/ @375px measured 202px
+  // of overflow inside a multi-page sweep and 40px when measured alone. Same build,
+  // same width, same tool. The sweep had already loaded another page, so IBM Plex
+  // was warm and the table laid out in it; measured first, the font was still in
+  // flight and the table laid out in the fallback — narrower, so less overflow.
+  // A fixed sleep makes that a coin flip decided by page ORDER, which is precisely
+  // the failure this script exists to refuse: a plausible number that is wrong.
+  // document.fonts.ready plus two frames makes it deterministic, and the timeout
+  // caps a font that never arrives rather than hanging the sweep.
+  await client.send('Runtime.evaluate', {
+    expression: `new Promise((res) => {
+      setTimeout(res, 5000);
+      const settle = () => document.fonts.ready.then(
+        () => requestAnimationFrame(() => requestAnimationFrame(res)));
+      if (document.readyState === 'complete') settle();
+      else addEventListener('load', settle, { once: true });
+    })`,
+    awaitPromise: true,
+  });
+
+  const { result } = await client.send('Runtime.evaluate', {
+    expression: `(() => {
+      const links = [...document.querySelectorAll('link[rel~="stylesheet"]')];
+      const sameOrigin = links.filter(l => {
+        try { return new URL(l.href, location.href).origin === location.origin; }
+        catch { return false; }
+      });
+      // A stylesheet that failed to load keeps its <link> and contributes no
+      // CSSStyleSheet, so comparing hrefs is exact — no allowlist, no heuristic.
+      const loaded = new Set([...document.styleSheets]
+        .filter(s => { try { return s.cssRules.length > 0; } catch { return true; } })
+        .map(s => s.href).filter(Boolean));
+      const missing = sameOrigin.map(l => l.href).filter(h => !loaded.has(h));
+      // A page can be fully styled with no <link> at all. /repo-map/ is a standalone
+      // artifact that deliberately skips BaseLayout and inlines the design tokens in
+      // a <style> block; requiring a LINKED sheet refused it as "unstyled" and threw
+      // away two real measurements. The thing being tested is "does this page have
+      // working CSS", and an inline <style> that parsed into rules is exactly that.
+      // This does not soften the original gate: a page whose linked sheet 404s still
+      // has a non-empty missing[] and is still refused, inline styles or not.
+      const inlineSheets = [...document.styleSheets].filter(s => {
+        if (s.href) return false;
+        try { return s.cssRules.length > 0; } catch { return false; }
+      }).length;
+
+      const doc = document.documentElement;
+      const overflow = Math.max(0, doc.scrollWidth - doc.clientWidth);
+
+      // Every element wider than the viewport, DEDUPED BY SELECTOR and innermost
+      // first. Deduping is what makes the list diagnostic rather than decorative:
+      // a wide table produces one over-wide <tr> per row, and six identical "tr"
+      // lines crowd out the one line that names the actual culprit
+      // (table.raci-grid). Collapsed to "tr ×6" the table stays visible.
+      // An element inside a scroll container is SUPPOSED to be wider than the
+      // viewport — that is what the container is for — and it contributes nothing
+      // to the page's own overflow. Listing it is worse than noise: it sent a real
+      // debugging session chasing a 528px <tbody> that was already correctly
+      // wrapped, while the actual culprit (a 1px-over flex legend) was invisible.
+      // So an offender must both exceed the viewport AND be unclipped by every
+      // ancestor. Measured on the right EDGE, not the width: a wide-but-clipped box
+      // is fine, a narrow box pushed past the edge is not.
+      const clipped = (el) => {
+        for (let n = el.parentElement; n; n = n.parentElement) {
+          if (getComputedStyle(n).overflowX !== 'visible') return true;
+        }
+        return false;
+      };
+      const seen = new Map();
+      for (const el of document.querySelectorAll('body *')) {
+        const r = el.getBoundingClientRect();
+        if (r.right <= doc.clientWidth + 0.5) continue;
+        if (clipped(el)) continue;
+        // classList, NOT className. On an SVG element className is an
+        // SVGAnimatedString, not a string, so a typeof-string check quietly skips
+        // the class and every SVG offender prints as a bare "svg" — no class, no
+        // id, nothing to grep for. That is precisely backwards: an inline chart is
+        // the HARDEST offender to locate by eye, and it was the one the tool
+        // stripped the label off. classList is a DOMTokenList on both HTML and SVG.
+        const cls = [...el.classList].slice(0, 2);
+        const sel = el.tagName.toLowerCase() +
+          (el.id ? '#' + el.id : '') +
+          (cls.length ? '.' + cls.join('.') : '');
+        // An offender with no id and no class ("svg", "div") names nothing you can
+        // grep for. Walk up to the nearest ancestor that IS identifiable and print
+        // it as context, so the report always hands back a search term.
+        let ctx = '';
+        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+          const ncls = [...n.classList].slice(0, 2);
+          if (n.id || ncls.length) {
+            ctx = ' in ' + n.tagName.toLowerCase() +
+              (n.id ? '#' + n.id : '') + (ncls.length ? '.' + ncls.join('.') : '');
+            break;
+          }
+        }
+        let depth = 0; for (let n = el; (n = n.parentElement); ) depth++;
+        const prev = seen.get(sel);
+        if (prev) { prev.count++; prev.width = Math.max(prev.width, Math.round(r.width)); }
+        else seen.set(sel, { sel, ctx, width: Math.round(r.width), depth, count: 1 });
+      }
+      // Deepest first (the leaf that actually has the width), but ALWAYS keep the
+      // outermost over-wide element too. The fix almost always goes on a container
+      // — an overflow-x wrapper around table.raci-grid — and pure deepest-first
+      // slicing buries that container under the eight <tr>s it contains.
+      const ranked = [...seen.values()].sort((a, b) => b.depth - a.depth);
+      const offenders = ranked.slice(0, 5);
+      const outermost = ranked[ranked.length - 1];
+      if (outermost && !offenders.includes(outermost)) {
+        offenders.push({ ...outermost, outermost: true });
+      }
+
+      return JSON.stringify({
+        links: links.length, sameOrigin: sameOrigin.length,
+        missing, inlineSheets,
+        styled: missing.length === 0 && (sameOrigin.length > 0 || inlineSheets > 0),
+        overflow, viewport: doc.clientWidth, offenders,
+      });
+    })()`,
+    returnByValue: true,
+  });
+  return JSON.parse(result.value);
+}
+
+// ---- main ------------------------------------------------------------------
+async function main() {
+  try {
+    const probe = await fetch(BASE);
+    if (!probe.ok) throw new Error(`HTTP ${probe.status}`);
+  } catch (e) {
+    console.error(
+      `cannot reach ${BASE} (${e.message})\n` +
+        '  Start the built site first:  make build && make preview'
+    );
+    process.exit(1);
+  }
+
+  const chrome = spawn(
+    CHROME,
+    [
+      '--headless=new',
+      '--disable-gpu',
+      `--remote-debugging-port=${PORT}`,
+      `--user-data-dir=${mkdtempSync(tmpdir() + '/measure-layout-')}`,
+      'about:blank',
+    ],
+    { stdio: 'ignore' }
+  );
+
+  let unstyled = 0;
+  let findings = 0;
+  const worst = []; // every overflowing measurement, for the --max-overflow verdict
+  try {
+    const client = cdp(await findTarget(PORT));
+    await client.ready;
+
+    for (const path of PATHS) {
+      const url = new URL(path, BASE).href;
+      for (const width of WIDTHS) {
+        const r = await measure(client, url, width);
+
+        if (r.notFound) {
+          unstyled++;
+          console.log(
+            `\n  ${path} @${width}px  NOT MEASURED — ` +
+              (r.httpStatus === 0
+                ? 'server did not respond'
+                : `HTTP ${r.httpStatus}, not 200`) +
+              '\n      A 404 page measures a truthful 0px of overflow for a page that\n' +
+              '      does not exist. Check the path, or the build you are serving.'
+          );
+          continue;
+        }
+
+        if (!r.styled) {
+          unstyled++;
+          console.log(
+            `\n  ${path} @${width}px  NOT MEASURED — page is unstyled\n` +
+              `      ${r.sameOrigin} same-origin stylesheet(s) linked, ` +
+              `${r.sameOrigin - r.missing.length} loaded; ` +
+              `${r.inlineSheets} inline <style> block(s) with rules\n` +
+              (r.missing.length
+                ? `      missing: ${r.missing.join('\n               ')}\n`
+                : '      no stylesheet at all — neither a same-origin <link> nor an\n' +
+                  '      inline <style> that parsed into rules\n') +
+              '      An unstyled page cannot overflow, so any number here would be a\n' +
+              '      false all-clear. Fix the serve, then re-measure.'
+          );
+          continue;
+        }
+
+        const verdict = r.overflow > 0 ? `OVERFLOW ${r.overflow}px` : 'ok';
+        if (r.overflow > 0) {
+          findings++;
+          worst.push({ path, width, overflow: r.overflow });
+        }
+        console.log(`\n  ${path} @${width}px (viewport ${r.viewport}px)  ${verdict}`);
+        if (r.overflow > 0) {
+          for (const o of r.offenders) {
+            console.log(
+              `      ${String(o.width).padStart(5)}px  ${o.sel}${o.ctx || ''}` +
+                (o.count > 1 ? ` ×${o.count}` : '') +
+                (o.outermost ? '   ← outermost; the wrapper fix usually goes here' : '')
+            );
+          }
+        }
+      }
+    }
+    client.close();
+  } finally {
+    chrome.kill();
+  }
+
+  console.log(
+    `\n  ${PATHS.length * WIDTHS.length} measurement(s) over ${PATHS.length} page(s)` +
+      (rawPaths === 'auto' ? ` (auto-enumerated from ${DIST}/)` : ' (hand-listed)') +
+      `: ${findings} with overflow, ${unstyled} refused as unstyled.`
+  );
+
+  // Unstyled/missing pages always fail: a partial sweep that exits 0 is exactly the
+  // "everything is fine" signal that caused this.
+  let bad = unstyled > 0;
+
+  if (MAX_OVERFLOW !== null) {
+    const over = worst.filter((w) => w.overflow > MAX_OVERFLOW);
+    if (over.length) {
+      bad = true;
+      console.log(
+        `\n  FAIL — ${over.length} measurement(s) over the ${MAX_OVERFLOW}px budget:`
+      );
+      for (const w of over.slice(0, 20)) {
+        console.log(`      ${String(w.overflow).padStart(5)}px  ${w.path} @${w.width}px`);
+      }
+      if (over.length > 20) console.log(`      … and ${over.length - 20} more`);
+      console.log(
+        '\n  A page that scrolls sideways renders every word correctly on a desktop,\n' +
+          '  which is why this needs a number and not a look. Re-run without\n' +
+          '  --max-overflow to see the offending elements per page.'
+      );
+    } else {
+      console.log(`  within the ${MAX_OVERFLOW}px overflow budget.`);
+    }
+  } else if (findings > 0) {
+    // Reporting mode still says so out loud. Silence here would let someone run the
+    // exploratory target, see a wall of output scroll past, and conclude green.
+    console.log(
+      '\n  (reporting mode — pass --max-overflow 0 to make these a failure,\n' +
+        '   or run `make layout-check`, which does.)'
+    );
+  }
+
+  process.exit(bad ? 1 : 0);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
