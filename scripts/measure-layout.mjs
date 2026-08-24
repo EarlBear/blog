@@ -45,16 +45,36 @@
  * is not evidence of anything. Fonts also cannot cause the failure above — they
  * restyle text, they do not create the layout.
  *
- * Usage:
- *   make measure-layout                       # builds + serves + measures key pages
- *   node --experimental-websocket scripts/measure-layout.mjs http://localhost:4343/
- *   ... --paths /,/blog/life-without-earlbear/ --widths 320,375,480
+ * TWO WAYS TO SAMPLE, AND ONLY ONE OF THEM IS HONEST. `--paths auto` enumerates
+ * every page in dist/ instead of a hand-listed few. This is not a convenience.
+ * The hand-listed default was `/,/blog/life-without-earlbear/` — two pages — and
+ * on 2026-08-06 a full sweep found the INTERNAL build (48 pages, 4x the external
+ * surface) had never been measured at all: 54 of its 96 measurements overflowed,
+ * on pages nobody had thought to list. A sample that is chosen by the same person
+ * who chose the fix tests the fix, not the site. Prefer auto; pass --paths only to
+ * narrow deliberately while debugging one page.
  *
- * Exit codes: 0 measured (overflow findings are reported, not failed — this is a
- * measuring instrument, not a gate), 1 could not measure honestly, 2 bad usage.
+ * AND IT CAN FAIL, WHICH IT COULD NOT BEFORE. Until --max-overflow existed this
+ * script exited 0 with any number of overflowing pages — findings were printed and
+ * that was all. So it could not be wired into `make check`: it would have passed,
+ * green and confident, across all 54 broken measurements. That is the same shape as
+ * the file:// bug in the paragraph above and as every layout bug it was built to
+ * catch — the failing path produces a well-formed success. Measuring without a
+ * threshold is not validation, it is note-taking.
+ *
+ * Usage:
+ *   make layout-check                         # the GATE: every page, both builds, 0px allowed
+ *   make measure-layout                       # exploratory: same sweep, reports without failing
+ *   node --experimental-websocket scripts/measure-layout.mjs http://localhost:4343/
+ *   ... --paths auto --widths 320,375,480 --max-overflow 0
+ *   ... --paths /,/blog/life-without-earlbear/   # narrow, for debugging one page
+ *
+ * Exit codes: 0 measured and within threshold, 1 could not measure honestly OR
+ * exceeded --max-overflow, 2 bad usage. Without --max-overflow, overflow findings
+ * are reported and not failed — that mode is a measuring instrument, not a gate.
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -86,8 +106,50 @@ for (let i = 0; i < argv.length; i++) {
   else if (base === null) base = argv[i];
 }
 const BASE = base || process.env.PREVIEW_URL || 'http://localhost:4343';
-const PATHS = flag('paths', '/').split(',').filter(Boolean);
 const WIDTHS = flag('widths', '320,375,480').split(',').map(Number).filter(Boolean);
+
+// --max-overflow N: fail the run if any page exceeds N px. Absent = report only.
+// The absence of this flag was the whole reason a measuring script could never be a
+// check; see the header. Parsed strictly, because `--max-overflow` with a typo'd
+// value silently becoming NaN would restore exactly the always-passes behaviour it
+// exists to end (NaN fails every comparison).
+const rawMax = flag('max-overflow', null);
+const MAX_OVERFLOW = rawMax === null ? null : Number(rawMax);
+if (rawMax !== null && !Number.isFinite(MAX_OVERFLOW)) {
+  console.error(`--max-overflow expects a number, got ${JSON.stringify(rawMax)}`);
+  process.exit(2);
+}
+
+// --paths auto: enumerate every page in dist/ rather than trusting a hand-listed
+// sample. Reads the BUILD, not the sitemap: the sitemap is a curated view (it can
+// exclude pages by config), while dist/**/index.html is precisely the set of pages
+// that will be served. /repo-map/ reaches the sweep this way and no other.
+const DIST = flag('dist', 'dist');
+const rawPaths = flag('paths', 'auto');
+let PATHS;
+if (rawPaths === 'auto') {
+  let files = [];
+  try {
+    files = readdirSync(DIST, { recursive: true, encoding: 'utf8' });
+  } catch {
+    files = [];
+  }
+  PATHS = files
+    .filter((f) => f === 'index.html' || f.endsWith('/index.html'))
+    .map((f) => '/' + f.replace(/(^|(?<=\/))index\.html$/, ''))
+    .sort();
+  if (PATHS.length === 0) {
+    console.error(
+      `--paths auto found no pages under ${DIST}\n\n` +
+        '  Nothing to measure means nothing can fail, which is the false all-clear\n' +
+        '  this script exists to refuse. Build first (make build / make build-internal),\n' +
+        '  or pass --dist if the output lives elsewhere.'
+    );
+    process.exit(1);
+  }
+} else {
+  PATHS = rawPaths.split(',').filter(Boolean);
+}
 
 // ---- the scheme early-exit -------------------------------------------------
 // Not the real gate (see the header) — just a faster, far clearer failure than
@@ -332,6 +394,7 @@ async function main() {
 
   let unstyled = 0;
   let findings = 0;
+  const worst = []; // every overflowing measurement, for the --max-overflow verdict
   try {
     const client = cdp(await findTarget(PORT));
     await client.ready;
@@ -372,7 +435,10 @@ async function main() {
         }
 
         const verdict = r.overflow > 0 ? `OVERFLOW ${r.overflow}px` : 'ok';
-        if (r.overflow > 0) findings++;
+        if (r.overflow > 0) {
+          findings++;
+          worst.push({ path, width, overflow: r.overflow });
+        }
         console.log(`\n  ${path} @${width}px (viewport ${r.viewport}px)  ${verdict}`);
         if (r.overflow > 0) {
           for (const o of r.offenders) {
@@ -391,12 +457,44 @@ async function main() {
   }
 
   console.log(
-    `\n  ${PATHS.length * WIDTHS.length} measurement(s): ` +
-      `${findings} with overflow, ${unstyled} refused as unstyled.`
+    `\n  ${PATHS.length * WIDTHS.length} measurement(s) over ${PATHS.length} page(s)` +
+      (rawPaths === 'auto' ? ` (auto-enumerated from ${DIST}/)` : ' (hand-listed)') +
+      `: ${findings} with overflow, ${unstyled} refused as unstyled.`
   );
-  // Unstyled pages are the one thing that fails the run: a partial sweep that
-  // exits 0 is exactly the "everything is fine" signal that caused this.
-  process.exit(unstyled > 0 ? 1 : 0);
+
+  // Unstyled/missing pages always fail: a partial sweep that exits 0 is exactly the
+  // "everything is fine" signal that caused this.
+  let bad = unstyled > 0;
+
+  if (MAX_OVERFLOW !== null) {
+    const over = worst.filter((w) => w.overflow > MAX_OVERFLOW);
+    if (over.length) {
+      bad = true;
+      console.log(
+        `\n  FAIL — ${over.length} measurement(s) over the ${MAX_OVERFLOW}px budget:`
+      );
+      for (const w of over.slice(0, 20)) {
+        console.log(`      ${String(w.overflow).padStart(5)}px  ${w.path} @${w.width}px`);
+      }
+      if (over.length > 20) console.log(`      … and ${over.length - 20} more`);
+      console.log(
+        '\n  A page that scrolls sideways renders every word correctly on a desktop,\n' +
+          '  which is why this needs a number and not a look. Re-run without\n' +
+          '  --max-overflow to see the offending elements per page.'
+      );
+    } else {
+      console.log(`  within the ${MAX_OVERFLOW}px overflow budget.`);
+    }
+  } else if (findings > 0) {
+    // Reporting mode still says so out loud. Silence here would let someone run the
+    // exploratory target, see a wall of output scroll past, and conclude green.
+    console.log(
+      '\n  (reporting mode — pass --max-overflow 0 to make these a failure,\n' +
+        '   or run `make layout-check`, which does.)'
+    );
+  }
+
+  process.exit(bad ? 1 : 0);
 }
 
 main().catch((e) => {
