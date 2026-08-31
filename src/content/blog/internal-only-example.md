@@ -10,7 +10,7 @@ questions:
   - Where does an internal post publish, and where does it never appear?
 ---
 
-*New here? [Start with the whole system](/blog/start-here-the-whole-system) — what EarlBear is and the stack this runs on.*
+*New here? [Start with the engineering arc](/blog/start-here-engineering) — what EarlBear is and the words the other posts assume.*
 
 This post is marked `audience: internal` in its frontmatter, so it belongs only
 to the internal blog at blog.internal.earlbear.com. It should never appear on the

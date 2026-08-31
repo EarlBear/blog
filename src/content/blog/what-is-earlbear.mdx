@@ -1,0 +1,85 @@
+---
+title: "What EarlBear is: a loop of AI agents that runs a storefront"
+description: "EarlBear does the work of a growth team as a loop of AI agents — one finds stores with revenue gaps, one pitches, one onboards, one runs A/B experiments and ships only the winners. This is the whole loop in one page, and where to read next."
+pubDate: 2026-07-13
+tags: [agents, growth]
+expects: [flow]
+authors: [omar]
+draft: false
+audience: external
+questions:
+  - What is EarlBear?
+  - What does a loop of AI agents actually do for an online store?
+  - How is that different from hiring a growth team?
+  - Where should I read next?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+EarlBear runs online storefronts the way a senior growth team would — finding the
+problems, building the fixes, testing them on real traffic, and keeping only what
+works — except it never clocks out. It is not a dashboard you log into and a set of
+recommendations you then have to act on. It is a **loop of AI agents** that does the
+work.
+
+Each agent has one job and hands off to the next. The last stage feeds the first, so
+the system gets better at finding stores by learning what actually lifted revenue on
+the ones it already runs.
+
+<FlowDiagram
+  title="EarlBear loop"
+  desc="Four agents in a cycle: scan finds stores with revenue gaps, outreach turns them into customers, onboarding gets a store ready, and review ships measured improvements — whose proven lift feeds the scan again."
+  nodes={[
+    { id: 'scan', label: 'Scan', detail: 'Pulls candidate stores from search, crawling, and backlink graphs, then scores each store’s revenue gaps into a ranked list of leads — each one carrying the specific gaps found on it.' },
+    { id: 'outreach', label: 'Outreach', detail: 'Builds a pitch from that store’s own gaps rather than a template, and follows up adaptively. Some owners say yes.' },
+    { id: 'onboard', label: 'Onboard', detail: 'A four-step intake — brand context, assets, validation, hand-off — that produces everything the build work needs on day one.' },
+    { id: 'review', label: 'Review', detail: 'Scores the live store into evidenced findings, turns each into an A/B-tested change, ships the winners, rolls back the rest, and feeds the proven lift back to the scan.' },
+  ]}
+  edges={[
+    { from: 'scan', to: 'outreach', label: 'leads' },
+    { from: 'outreach', to: 'onboard', label: 'customers' },
+    { from: 'onboard', to: 'review', label: 'onboarded' },
+    { from: 'review', to: 'scan', label: 'proven lift' },
+  ]}
+/>
+
+## What each stage does
+
+**Scan.** Most lead lists are a filter over a database someone else built. EarlBear's
+scan crawls the live store and audits it — page speed, the product page, the cart,
+the checkout path — and what comes out is not a company name but a store plus the
+specific revenue gaps found on it.
+
+**Outreach.** Because the scan produced evidence, the pitch can be about *this*
+store: here is what we found, here is what it is likely costing you. Nothing sends
+without a human approving it.
+
+**Onboard.** A short structured intake collects brand context, assets, and access,
+and validates them, so the first improvement can ship immediately rather than after
+three weeks of chasing logins.
+
+**Review.** This is the stage that never stops. The store is scored continuously,
+each finding becomes a hypothesis, each hypothesis becomes an experiment on a slice
+of traffic, and only changes that measurably beat the control stay live.
+
+## Why a loop, and not a tool
+
+A tool hands you a list. A loop closes it.
+
+The reason that distinction matters is cost. Running the loop by hand means hiring
+for every stage of it — the person who finds prospects, the one who writes the
+outreach, the one who runs onboarding, the analyst who designs the tests and reads
+the results. We priced that team out, role by role, with real 2026 salary bands, in
+[life without EarlBear](/blog/life-without-earlbear).
+
+The most interesting stage is the last one, because it is the one owners almost never
+run themselves: continuous A/B testing on a live store, with guardrails, without
+risking sales. [A storefront that heals
+itself](/blog/self-healing-storefront) walks through exactly how that works — how a
+finding becomes an experiment, what stops a bad variant, and how the result gets
+reported in dollars rather than percentages.
+
+## Where to go next
+
+[Start here](/blog/start-here) is the short tour of this blog: what to read, in what
+order, and what each post assumes you already know.

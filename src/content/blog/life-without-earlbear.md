@@ -14,6 +14,8 @@ questions:
   - What does the whole team cost per month, all-in — and how do you run that math for your own store?
 ---
 
+*New here? [Start with the short tour](/blog/start-here) — what EarlBear is and where to read next.*
+
 Say your store works. Traffic is real, orders arrive daily, and revenue has
 found a rhythm — call it 50,000 sessions a month converting at 2% on an $80
 average order, just under $1M a year.[^scenario] Then growth flattens, and the question

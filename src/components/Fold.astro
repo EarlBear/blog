@@ -1,0 +1,71 @@
+---
+/**
+ * Fold — a deep-linkable, collapsible *section* of a post.
+ *
+ * Distinct from <Accordion>, which takes a list of short items whose bodies are
+ * authored as HTML strings. A Fold wraps a whole slice of the MDX document —
+ * headings, prose, blockquotes, footnote references, other components — so an
+ * appendix of long reference entries (five competitor dossiers, a set of runbooks)
+ * collapses into a scannable list without any of the writing moving out of the post.
+ *
+ * Behaviour:
+ *  - Click / keyboard: native <details>/<summary>. Works with zero JavaScript.
+ *  - Deep link: the fold carries the `id`, so `…/post/#clay` targets it. A closed
+ *    <details> hides its content from the browser's own fragment scroll, so a small
+ *    progressive-enhancement script opens the fold that owns the fragment (the fold
+ *    itself, or any element inside it) and re-runs the scroll. Without the script
+ *    the link still lands on the post and the fold still opens on click — the
+ *    enhancement only saves the reader that click.
+ *
+ * The summary carries a real <h3>, so the folds keep the document outline they had
+ * as plain markdown headings (valid HTML: summary takes heading content).
+ */
+interface Props {
+  /** Fragment target, e.g. "clay" → `#clay`. Keep it short and stable — it is a URL. */
+  id: string;
+  /** The thing being folded, e.g. a company name. Rendered prominent. */
+  name: string;
+  /** The half-sentence that followed the em dash in the heading. Muted. */
+  note?: string;
+  /** Start expanded. Use sparingly — the point of a fold list is that it is short. */
+  open?: boolean;
+}
+const { id, name, note, open } = Astro.props;
+---
+
+<details class="eb-fold" id={id} open={open}>
+  <summary class="eb-fold-summary">
+    <h3 class="eb-fold-heading">
+      <span class="eb-fold-name">{name}</span>
+      {note && <span class="eb-fold-note">{note}</span>}
+    </h3>
+    <span class="eb-fold-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="eb-fold-body">
+    <slot />
+  </div>
+</details>
+
+{/* One listener per page, not per fold: every instance emits this, and the first
+    one to run claims the flag. Inline (no bundle) to match the other components. */}
+<script
+  is:inline
+  set:html={`(() => {
+  if (window.__ebFold) return;
+  window.__ebFold = 1;
+  const reveal = () => {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    if (!hash) return;
+    const target = document.getElementById(hash);
+    if (!target) return;
+    const fold = target.closest('details.eb-fold');
+    if (!fold || fold.open) return;
+    fold.open = true;
+    // The browser already tried to scroll while the body had no height, so the
+    // anchor is now in the wrong place. Redo it against the expanded fold.
+    target.scrollIntoView({ block: 'start' });
+  };
+  addEventListener('hashchange', reveal);
+  reveal();
+})();`}
+/>

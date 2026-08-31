@@ -1,0 +1,104 @@
+---
+title: "Start here: the engineering arc behind EarlBear"
+description: "The internal on-ramp. What EarlBear is, the one fact every engineering post leans on (the agents are Claude Code sessions, and their transcripts are the telemetry), the four words the other posts assume — mart, the scan fleet, the two-build split, the snapshot builder — and the order to read the arc in: database, then the door, then the backend, then identity, then locking down writes."
+pubDate: 2026-07-13
+tags: [engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What is EarlBear, in one paragraph?
+  - What do the other posts assume I already know?
+  - Which posts should I read, and in what order?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+Most posts on this blog are dispatches from inside a running system — they open in the
+middle of it, naming a *mart*, the *scan fleet*, or the *two-build split* as if you
+already had them. This post is the one that hands you those first. Read it, then the
+rest have somewhere to stand.
+
+## The company, in one paragraph
+
+EarlBear runs online storefronts the way a senior web team would — building, testing,
+and fixing them around the clock — except it never clocks out. It is a **loop of AI
+agents**: one scans ecommerce sites for growth problems and turns them into leads,
+another onboards a store, another runs A/B experiments and ships the conversion wins
+that hold up, and rolls back the ones that don't. [The agentic workflow that runs
+EarlBear](/blog/agentic-workflow-that-runs-earlbear) walks that loop stage by stage;
+[the EarlBear use cases](/blog/earlbear-use-cases) draw who touches it. The
+customer-facing version of this story lives on the public site,
+[blog.earlbear.com](https://blog.earlbear.com).
+
+## The fact the rest of the blog leans on
+
+**Those agents run as Claude Code sessions, and their session transcripts are the raw
+telemetry behind every number on our internal dashboards.**
+
+That single sentence explains why so much of this blog is about moving, sanitizing, and
+storing transcripts: they *are* the data. There is no separate instrumentation layer
+emitting neat events — the thing the agent wrote down while working is the thing the
+dashboard counts. [Mining our own Claude Code
+transcripts](/blog/mining-our-own-claude-code-transcripts) is the end-to-end version;
+[what we never collect](/blog/what-we-never-collect) is the boundary around it.
+
+## The words the other posts assume
+
+Keep these four in your pocket and the rest of the blog reads straight:
+
+- **mart** — a pre-aggregated rollup table (metrics per stage per day), built from the
+  agent-session transcripts, that feeds a panel on the internal dashboard. The dashboard
+  reads marts, not raw data.
+- **the scan fleet** — the live wall of Shopify sites EarlBear is scanning: which are
+  queued, which is scanning right now, what each one found. It's both a product surface
+  and a recurring example in the infra posts.
+- **the two-build split** — a *static* build reads the database at build time and ships
+  pure keyless JSON (public-safe), while a *live* build reads Supabase in the browser
+  with a real token. Same source, two artifacts.
+- **the snapshot builder** — the build-time process behind the static build: it reads
+  the database with a privileged key and writes the keyless JSON the public artifact
+  ships.
+
+## The arc, in order
+
+The blog tells one story if you read it in this order — each stage is a layer of the
+stack the sites actually run on, and [the stack this blog is written
+from](/blog/the-blog-stack) draws that stack in one diagram.
+
+<FlowDiagram
+  title="The reading arc"
+  shape="pipeline"
+  desc="Five stages of the engineering arc, in reading order: the database the metrics live in, the door that gates the page, the backend the browser talks to directly, the identity carried into the database, and the rules that lock down writes."
+  nodes={[
+    { id: 'db', label: 'Database', detail: 'Why the metrics live in Postgres, and how the same pipeline runs on a laptop and in the cloud. Read one-database-two-modes, then from-one-laptop-to-the-cloud.' },
+    { id: 'door', label: 'Door', detail: 'Cloudflare Access as the front gate — SSO we did not build. Read the-login-page-we-didnt-build.' },
+    { id: 'backend', label: 'Backend', detail: 'Supabase reached directly from the browser, with the tables as the API and no middle tier. Read supabase-as-an-api.' },
+    { id: 'identity', label: 'Identity', detail: 'Turning "logged in at Cloudflare" into "logged in to Postgres" — the mint step. Read who-are-you-to-supabase, then the-proxy-and-the-passport.' },
+    { id: 'writes', label: 'Writes', detail: 'Who is allowed to write, and gating every read behind an identity. Read the-two-marts-that-werent-there and every-key-in-the-system.' },
+  ]}
+  edges={[
+    { from: 'db', to: 'door' },
+    { from: 'door', to: 'backend' },
+    { from: 'backend', to: 'identity' },
+    { from: 'identity', to: 'writes' },
+  ]}
+/>
+
+1. **The database.** Why the metrics live in Postgres, and how the same pipeline runs on
+   a laptop and in the cloud — [one database, two modes](/blog/one-database-two-modes)
+   and [from one laptop to the cloud](/blog/from-one-laptop-to-the-cloud).
+2. **The door.** Cloudflare Access as the front gate —
+   [the login page we didn't build](/blog/the-login-page-we-didnt-build).
+3. **The backend.** Supabase reached directly, tables as the API —
+   [Supabase as our API](/blog/supabase-as-an-api).
+4. **Identity into the database.** Turning "logged in at Cloudflare" into "logged in to
+   Postgres" — [who are you, to Supabase](/blog/who-are-you-to-supabase) and
+   [the proxy and the passport](/blog/the-proxy-and-the-passport).
+5. **Locking down writes.** Who's allowed to write, and gating every read behind an
+   identity — [why every mart is identity-gated](/blog/the-two-marts-that-werent-there)
+   and [every key in the system](/blog/every-key-in-the-system).
+
+Start anywhere, but start knowing the shape: static sites, no backend, one database
+behind one door, with RLS as the only thing that says yes or no.

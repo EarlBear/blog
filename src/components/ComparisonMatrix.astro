@@ -18,6 +18,10 @@ export interface MatrixOption {
   label: string;
   /** Mark the winning option — its column is highlighted and badged. */
   chosen?: boolean;
+  /** Optional link for the column header — the thing the option names (a
+   *  product's home page, another post). An absolute URL opens in a new tab so
+   *  the reader keeps their place in the comparison. */
+  href?: string;
 }
 export interface MatrixCriterion {
   label: string;
@@ -54,6 +58,11 @@ const { title, desc, options, criteria } = Astro.props;
   }
 }
 
+// A stable id salt so two matrices on one page don't collide on the description
+// id (deterministic — no Math.random at build). Mirrors UseCaseDiagram.
+const salt = title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 8) || 'cm';
+const descId = `cm-desc-${salt}`;
+
 const MARK: Record<string, { glyph: string; label: string; cls: string }> = {
   yes: { glyph: '●', label: 'yes', cls: 'yes' },
   no: { glyph: '○', label: 'no', cls: 'no' },
@@ -63,8 +72,7 @@ const MARK: Record<string, { glyph: string; label: string; cls: string }> = {
 
 <figure class="comparison-matrix">
   <div class="cm-scroll">
-    <table>
-      {desc && <caption class="cm-caption">{desc}</caption>}
+    <table aria-describedby={desc ? descId : undefined}>
       <thead>
         <tr>
           <th scope="col" class="cm-corner">{title}</th>
@@ -72,7 +80,19 @@ const MARK: Record<string, { glyph: string; label: string; cls: string }> = {
             options.map((o) => (
               <th scope="col" class={o.chosen ? 'cm-option cm-option--chosen' : 'cm-option'}>
                 <span class="cm-option-inner">
-                  <span class="cm-option-label">{o.label}</span>
+                  {o.href ? (
+                    <a
+                      class="cm-option-label cm-option-link"
+                      href={o.href}
+                      {...(/^https?:/.test(o.href)
+                        ? { target: '_blank', rel: 'noopener noreferrer' }
+                        : {})}
+                    >
+                      {o.label}
+                    </a>
+                  ) : (
+                    <span class="cm-option-label">{o.label}</span>
+                  )}
                   {o.chosen && <span class="cm-chosen-badge">chosen</span>}
                 </span>
               </th>
@@ -107,4 +127,14 @@ const MARK: Record<string, { glyph: string; label: string; cls: string }> = {
       </tbody>
     </table>
   </div>
+  {/* The description sits OUTSIDE the scroll wrapper. As a <caption> it inherited
+      the table's width, so on any matrix wide enough to scroll (six columns is
+      enough) the summary ran off the right edge and could only be read by
+      scrolling the table sideways. Out here it wraps to the article column, and
+      aria-describedby keeps the association a <caption> was providing. */}
+  {desc && (
+    <figcaption class="cm-caption" id={descId}>
+      {desc}
+    </figcaption>
+  )}
 </figure>

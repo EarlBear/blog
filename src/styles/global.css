@@ -733,6 +733,107 @@ a:focus:not(:focus-visible) {
   margin-bottom: 0;
 }
 
+/* ============================================================================
+   Fold — src/components/Fold.astro. A collapsible, deep-linkable SECTION of a
+   post (not the Accordion's list of short items). Reads as a stack of document
+   headings with a hairline between them; the open one is tinted so the reader
+   can see where they are in the stack. Semantic tokens only.
+   ============================================================================ */
+.eb-fold {
+  border-top: 1px solid var(--color-border-subtle);
+  /* Deep-linked folds scroll to the top of the viewport, where the sticky site nav
+     sits. Clear the bar — same allowance DecisionTable rows use. */
+  scroll-margin-top: var(--space-16, 4rem);
+}
+.eb-fold:last-of-type {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.eb-fold-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-2);
+  cursor: pointer;
+  list-style: none;
+  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+.eb-fold-summary::-webkit-details-marker {
+  display: none;
+}
+.eb-fold-summary:hover {
+  background: var(--color-surface-sunken);
+}
+.eb-fold-summary:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.eb-fold[open] > .eb-fold-summary {
+  background: var(--color-surface-sunken);
+}
+/* The heading keeps its semantics inside <summary> (valid HTML), but not the
+   block spacing it would have as a standalone h3. */
+.eb-fold .eb-fold-heading {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-tight);
+}
+.eb-fold-name {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+}
+.eb-fold-note {
+  font-weight: var(--fw-regular);
+  color: var(--color-text-muted);
+}
+.eb-fold-note::before {
+  content: '\2014\a0';
+}
+.eb-fold-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(45deg);
+  transition: transform var(--dur-fast, 120ms) var(--ease-standard, ease);
+  flex: none;
+  align-self: center;
+}
+.eb-fold[open] > .eb-fold-summary .eb-fold-chevron {
+  transform: rotate(-135deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .eb-fold-summary,
+  .eb-fold-chevron {
+    transition: none;
+  }
+}
+.eb-fold-body {
+  padding: 0 var(--space-2) var(--space-6);
+}
+/* A link can target a block INSIDE a fold (the comment layer stamps an id on every
+   paragraph). The fold's script opens the fold and scrolls to that block, so the
+   block needs the same clearance under the sticky nav that the fold itself gets. */
+.eb-fold-body [id] {
+  scroll-margin-top: var(--space-16, 4rem);
+}
+.eb-fold-body > :first-child {
+  margin-top: var(--space-5);
+}
+.eb-fold-body > :last-child {
+  margin-bottom: 0;
+}
+/* Narrow: the note earns its own line, and the dash that joined it to the name
+   would be left dangling at the start of it. */
+@media (max-width: 560px) {
+  .eb-fold-note {
+    display: block;
+  }
+  .eb-fold-note::before {
+    content: none;
+  }
+}
+
 /* FlowDiagram legend — an optional key for the special node kinds. */
 .flow-diagram .flow-legend {
   list-style: none;
@@ -812,10 +913,15 @@ a:focus:not(:focus-visible) {
   border-collapse: collapse;
   width: 100%;
   font-size: var(--fs-body);
+  /* Prose tables carry a vertical margin; inside the bordered scroll box that
+     margin became a band of dead space above the header and below the last row.
+     The figure owns the spacing here, not the table. */
+  margin: 0;
 }
+/* The description, rendered as a <figcaption> below the scroll wrapper rather
+   than a <caption> inside the table — see the note in ComparisonMatrix.astro. */
 .comparison-matrix .cm-caption {
-  caption-side: bottom;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) 0 0;
   font-size: var(--fs-sm);
   color: var(--color-text-muted);
   text-align: left;
@@ -838,11 +944,15 @@ a:focus:not(:focus-visible) {
 .comparison-matrix thead th {
   background: var(--color-surface-sunken);
   vertical-align: middle;
+  /* The header band carries more per cell than a data row (a label, sometimes a
+     badge, sometimes a wrapped two-word product name), so it gets a step more
+     vertical room than the --space-3 every other cell uses. */
+  padding-block: var(--space-4);
 }
 .comparison-matrix thead th.cm-option {
   /* Reserve room for the optional badge row so a chosen header is the same height
      as a plain one — the badge never inflates the header band. */
-  height: calc(var(--fs-body) * var(--lh-tight) + var(--fs-xs) + var(--space-1) + 2 * var(--space-3));
+  height: calc(var(--fs-body) * var(--lh-tight) + var(--fs-xs) + var(--space-1) + 2 * var(--space-4));
 }
 /* Option header columns + their data cells center their content (labels and the
    ●/○/◐ marks) under the column; only the left-hand criterion column stays
@@ -851,16 +961,52 @@ a:focus:not(:focus-visible) {
 .comparison-matrix td.cm-cell {
   text-align: center;
 }
+/* The corner cell holds the table's title as an uppercase eyebrow. Left to the
+   auto table algorithm it collapses to the narrowest column — a six-word title
+   then wraps to six near-empty lines and drags the whole header band taller than
+   the table needs. A floor width keeps it to two or three lines; the leading is
+   loosened because uppercase tracking needs more room between lines than the
+   tight default gives it. */
 .comparison-matrix .cm-corner {
   font-size: var(--fs-eyebrow);
   font-weight: var(--fw-semibold);
   letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
   color: var(--color-text-muted);
+  min-width: 168px;
+  line-height: 1.45;
 }
 .comparison-matrix .cm-option {
   font-weight: var(--fw-semibold);
   min-width: 120px;
+}
+/* A linked option header (href on the option) — the column name doubles as a
+   link to the thing it names. Styled as the label first and a link second: it
+   keeps the header's weight and color and takes a hairline underline in the
+   border tone, so a row of linked headers reads as headers that happen to be
+   clickable rather than a row of blue link text. The underline is always
+   present — an affordance a reader shouldn't have to hover to discover — and
+   only picks up the accent on hover. */
+.comparison-matrix .cm-option-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+  transition: color var(--dur-fast) var(--ease-standard),
+    text-decoration-color var(--dur-fast) var(--ease-standard);
+}
+.comparison-matrix .cm-option-link:hover {
+  color: var(--color-text-accent);
+  text-decoration-color: currentColor;
+}
+.comparison-matrix .cm-option-link:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+.comparison-matrix .cm-option-label {
+  line-height: var(--lh-tight);
 }
 /* Chosen column: a continuous accent tint from the header down through every
    cell, framed with subtle side borders so it reads as one defined, intentional
@@ -906,6 +1052,43 @@ a:focus:not(:focus-visible) {
 .comparison-matrix .cm-criterion {
   font-weight: var(--fw-medium);
   color: var(--color-text);
+}
+/* Pinned row-label column. Once a matrix is wide enough to scroll — six columns
+   is enough at article width, two is enough on a phone — the column you are
+   reading scrolls away from the criterion that names it, and the marks stop
+   meaning anything. Sticking the first column keeps the question in view while
+   the answers move under it. On a matrix that already fits, there is nothing to
+   scroll and this is inert.
+   Two details it depends on: an opaque background on each sticky cell (they sit
+   ON TOP of the scrolling columns, and a transparent cell lets those show
+   through), and a box-shadow rather than a border-right for the pinned edge —
+   this table is `border-collapse: collapse`, where borders belong to the table
+   and don't reliably travel with a sticky cell. */
+.comparison-matrix .cm-corner,
+.comparison-matrix .cm-criterion {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: 1px 0 0 var(--color-border-subtle);
+}
+.comparison-matrix .cm-corner {
+  background: var(--color-surface-sunken);
+  z-index: 2;
+}
+.comparison-matrix .cm-criterion {
+  background: var(--color-canvas);
+}
+/* On a phone the scrollport is ~320px, and a pinned column sized for a desktop
+   corner title ate ~70% of it — the value column beside it got clipped mid-word.
+   Narrow viewports trade a taller, more-wrapped label for a readable answer next
+   to it. Corner and row labels are the same table column, so this width governs
+   both. */
+@media (max-width: 640px) {
+  .comparison-matrix .cm-corner,
+  .comparison-matrix .cm-criterion {
+    min-width: 112px;
+    max-width: 38vw;
+  }
 }
 /* Marks (● ○ ◐) render on the same line box as text cells so dot-rows and
    value-rows share one vertical rhythm; the mark is centered in its own line. */

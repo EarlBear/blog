@@ -1,0 +1,80 @@
+---
+title: "The stack this blog is written from"
+description: "Every surface we run — this blog, the metrics dashboard, the scan fleet, the pitch deck — is a static site with no backend of its own, talking directly to one Supabase Postgres. Cloudflare Access is the door, Row-Level Security is the room, and a mint step is the bridge between them. Plus the two-audiences-one-repo split that decides which posts you are reading right now."
+pubDate: 2026-07-13
+tags: [engineering]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What is this blog, and what does it run on?
+  - Why does a zero-JS static site need a database, Cloudflare, and RLS?
+  - How does one repo build two different sites?
+---
+
+import FlowDiagram from '../../components/FlowDiagram.astro';
+
+*New here? [Start with the engineering arc](/blog/start-here-engineering) — what EarlBear is and the stack this runs on.*
+
+This blog is a **static [Astro](https://astro.build) site** that ships *zero*
+client-side JavaScript — the pages are HTML built ahead of time. [Hello from the
+den](/blog/hello-world) covers how the blog itself is built. The same static-site
+approach runs our other surfaces too: the internal metrics dashboard, the live scan
+fleet, the pitch deck. They're all HTML and a little JavaScript on a CDN, with **no
+backend of their own.**
+
+Which raises the obvious question the rest of the blog answers: if there's no backend,
+where do the live numbers come from?
+
+## The stack at a glance
+
+They come straight from the database. A static page in the browser talks **directly to
+one Supabase Postgres** — no API tier in between. Two things make that safe rather than
+reckless: **Cloudflare Access** gates who can load the page at all, and **Row-Level
+Security (RLS)** inside Postgres decides what any given request is allowed to read or
+write. There is no middle tier to trust, because there is no middle tier — the database
+*is* the API, and RLS is the contract.
+
+<FlowDiagram
+  title="The whole stack, one request"
+  shape="pipeline"
+  legend
+  desc="A static site with no backend: the browser is gated at the door by Cloudflare Access, then talks directly to one Supabase Postgres, where Row-Level Security is the only thing deciding what each request may read or write. Each layer is the subject of its own post."
+  nodes={[
+    { id: 'browser', label: 'static site', kind: 'external', detail: 'Zero-JS Astro pages (dashboard, scan fleet, deck, this blog) — HTML + a little JS on a CDN. No backend of its own. See hello-world and from-one-laptop-to-the-cloud.' },
+    { id: 'access', label: 'Cloudflare Access', kind: 'edge', detail: 'The door. Google SSO restricted to @earlbear.com; an unauthenticated request never reaches the page. Gates the page load, NOT the API calls that follow. See the-login-page-we-didnt-build.' },
+    { id: 'supabase', label: 'Supabase Postgres', kind: 'store', detail: 'The backend. The browser reads and writes it directly — the tables are the API. See supabase-as-an-api.' },
+    { id: 'rls', label: 'RLS', kind: 'store', detail: 'The contract. Row-Level Security in Postgres decides what each request may read/write, based on a minted @earlbear.com identity. See who-are-you-to-supabase and the-proxy-and-the-passport.' },
+  ]}
+  edges={[
+    { from: 'browser', to: 'access', label: 'load page' },
+    { from: 'access', to: 'supabase', label: 'direct call' },
+    { from: 'supabase', to: 'rls', label: 'enforced by' },
+  ]}
+/>
+
+That division of labor — **Access is a door, RLS is the room** — is the thesis the auth
+posts keep returning to. Access proves *you're an EarlBear employee at the front door*;
+it does nothing about the API calls the page makes afterward. So the database needs its
+own gate, and that gate is identity carried into RLS. The bridge between them is a
+**mint step**: a tiny function turns your Cloudflare login into a short-lived token
+carrying your `@earlbear.com` identity, and the browser sends that token on every
+Supabase call so RLS can see who you are. [Who are you, to
+Supabase](/blog/who-are-you-to-supabase) and [the proxy and the
+passport](/blog/the-proxy-and-the-passport) are the whole story of that step.
+
+## Two audiences, one repo
+
+This blog builds **two sites from one repo**. The **external** site
+(`blog.earlbear.com`) is public — customer-facing storytelling. The **internal** site
+(`blog.internal.earlbear.com`, behind Cloudflare Access) is engineering dispatches like
+this one. Every post declares its audience in frontmatter, and the build ships only the
+matching set. [How the audience split works](/blog/internal-only-example) walks through
+it — and, being internal itself, proves it.
+
+A related idea — the **two-build split** — shows up in the data posts: a *static* build
+reads the database at build time and ships pure keyless JSON (public-safe), while a
+*live* build reads Supabase in the browser with a real token. Same source, two
+artifacts. The audience split decides *which posts* an artifact contains; the two-build
+split decides *how much of the database* it carries.

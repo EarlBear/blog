@@ -32,6 +32,18 @@ const siteName = internal ? 'EarlBear blog (internal)' : 'EarlBear blog';
 const fullTitle = title === siteName ? title : `${title} · ${siteName}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL('/favicon.svg', Astro.site);
+// Internal-site theme, injected only on the internal build (see the head).
+const INTERNAL_THEME_CSS = `
+  html[data-audience='internal'] {
+    --color-accent:        var(--eb-info);   /* teal 500 */
+    --color-accent-hover:  #235d66;          /* teal 600 */
+    --color-accent-press:  #1c4a52;          /* teal 700 */
+    --color-accent-soft:   var(--eb-info-bg);
+    --color-border-focus:  var(--eb-info);
+    --color-text-accent:   #235d66;
+  }
+`;
+
 ---
 
 <!doctype html>
@@ -48,20 +60,12 @@ const ogImage = new URL('/favicon.svg', Astro.site);
         internal blog is unmistakable at a glance. Semantic-token override only —
         references design-system primitives, no raw hex, no dark mode. Scoped to
         [data-audience="internal"] so it is inert on the external build. */}
-    {internal && (
-      <style is:global>
-        {`
-          html[data-audience='internal'] {
-            --color-accent:        var(--eb-info);        /* teal 500 */
-            --color-accent-hover:  #235d66;                /* teal 600 */
-            --color-accent-press:  #1c4a52;                /* teal 700 */
-            --color-accent-soft:   var(--eb-info-bg);
-            --color-border-focus:  var(--eb-info);
-            --color-text-accent:   #235d66;
-          }
-        `}
-      </style>
-    )}
+    {/* set:html, not a `{`...`}` child: inside a JSX expression a <style> tag's
+        children are raw text, so the braces and backticks were emitted verbatim
+        into the page and the whole rule block was invalid CSS — the internal teal
+        never applied. `is:global` is likewise a compiler directive that does
+        nothing here (this style is never scoped), so it is gone too. */}
+    {internal && <style set:html={INTERNAL_THEME_CSS} />}
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 

@@ -32,7 +32,11 @@ WORD_THRESHOLD = 280
 # these are authored as raw block HTML like <div>/<input>/<table>, see
 # life-without-earlbear.md).
 VISUAL_RE = re.compile(
-    r"<FlowDiagram|<UseCaseDiagram|<Accordion|<figure|<img|<svg"  # components / media
+    # Every visual component in src/components/ — keep in sync with the
+    # enrich-post catalog when a new diagram primitive is added.
+    r"<FlowDiagram|<UseCaseDiagram|<SequenceDiagram|<DataModel|<ComparisonMatrix"
+    r"|<DecisionTable|<Requirements|<Personas|<UseCases|<BarChart|<Mockup"
+    r"|<Walkthrough|<Accordion|<figure|<img|<svg"  # components / media
     r"|<div|<table|<input|<canvas"  # embedded HTML widgets / charts
     r"|^\s*\|.*\|",  # a markdown table row
     re.M,
