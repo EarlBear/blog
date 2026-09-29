@@ -1,0 +1,131 @@
+---
+title: "How our growth notebook fits together"
+description: "Before we pitch a store, we write down what we know: the company, the problem it faces, the fixes that work, and the tests that prove them. This is the map of that notebook — the kinds of pages in it, and how each kind links to the next — so a strategist can walk from a company to the pitch without a database."
+pubDate: 2026-09-29
+tags: [growth, meta, internal]
+expects: [flow]
+authors: [omar]
+draft: true
+audience: internal
+questions:
+  - What kinds of pages are in our growth notebook?
+  - How does a page about a company connect to the work we would sell it?
+  - Why is it a notebook of linked pages rather than a database?
+  - How does the notebook keep itself honest as it grows?
+---
+
+import DataModel from '../../components/DataModel.astro';
+
+We keep one notebook of everything we learn about growing an online store. It is
+a folder of plain pages, each on one thing, linked by name. This post is the map
+of that notebook: the kinds of pages in it and how they connect, so that a person
+preparing a first call can walk from "who is this company" to "what would we sell
+them, and why would it work" by following links.
+
+## Why a notebook
+
+We tried a database first. It held facts well, but nobody preparing a call wanted
+to read one. A notebook reads the way a strategist thinks: open the company, see
+the problem it faces, click through to the fixes for that problem, and see which
+tests showed a fix working somewhere else. Every sentence on a page says where it
+came from — a job posting, the company's own site, a published test — and a
+sentence that is our own judgment says so ("our call").
+
+The notebook is also the shared memory for our agents. They read from it, and
+they write the drafts a person then reviews.
+
+## The kinds of pages
+
+There are about a dozen kinds of page, each in its own folder, and each with the
+same outline every time, so a reader always knows where to look.
+
+| Kind | One page per | What it answers |
+|---|---|---|
+| Companies | business we look at | Who they are, how they grow, who runs growth, how they measure it |
+| Company audits | company | What it is trying to grow, what is broken on the way, and what would fix it |
+| Prospects | company we pursue | Why them, where they stand with us, what we have said, what would move them on |
+| Concepts | problem or method | Who it affects, what it means for us, how to measure it |
+| Metrics | number a business is judged on | What it measures and how |
+| Techniques | way to raise conversion | Where it lives, what it moves, how to test it, what goes wrong |
+| Experiments | change being tested | The hypothesis, who ran it and what each found, where it worked and where it did not |
+| Case studies | one company, one situation | What they did and what it shows |
+| Learnings | lesson that held across companies | What backs it, what cuts against it, what it means for us |
+| Blogs | source we read | Whose it is and how far to trust it |
+| Tools | piece of software | What it is used for, who uses it, what it costs |
+| Business strategy | question about us | Who we are, whom we sell to, how we price |
+| Agents | agent, built or planned | What it does, where it runs, whether it is built |
+
+## How the kinds link
+
+The kinds are not a filing system; they are a chain. A company faces a problem
+(a concept). A technique fixes that problem. An experiment tests the technique,
+and the companies that ran it are rows on the experiment's page. When several
+experiments and case studies agree, the lesson gets its own page, and lessons
+shape both the techniques we recommend and the strategy we sell by. The audit is
+where that chain meets one company: it names the problem and recommends the
+techniques.
+
+<DataModel
+  title="How the kinds of page link"
+  desc="A company faces concepts, is audited, and is pursued as a prospect. Techniques fix concepts and are tested by experiments. Experiments and case studies back learnings. Learnings shape techniques and business strategy. Blogs are the source of experiments and learnings. Business strategy judges prospects. Audits recommend techniques. Metrics measure concepts."
+  columns={4}
+  entities={[
+    { id: 'company', label: 'Company' },
+    { id: 'audit', label: 'Company audit' },
+    { id: 'prospect', label: 'Prospect' },
+    { id: 'strategy', label: 'Business strategy' },
+    { id: 'concept', label: 'Concept' },
+    { id: 'technique', label: 'Technique' },
+    { id: 'experiment', label: 'Experiment' },
+    { id: 'learning', label: 'Learning' },
+    { id: 'metric', label: 'Metric' },
+    { id: 'casestudy', label: 'Case study' },
+    { id: 'blog', label: 'Blog' },
+    { id: 'tool', label: 'Tool' },
+  ]}
+  relations={[
+    { from: 'company', to: 'audit', label: 'is audited in', card: 'one-to-zero-or-many' },
+    { from: 'company', to: 'prospect', label: 'is pursued on', card: 'one-to-zero-or-one' },
+    { from: 'strategy', to: 'prospect', label: 'judges', card: 'many-to-many' },
+    { from: 'concept', to: 'company', label: 'is faced by', card: 'many-to-many' },
+    { from: 'audit', to: 'technique', label: 'recommends', card: 'many-to-many' },
+    { from: 'technique', to: 'concept', label: 'fixes', card: 'many-to-many' },
+    { from: 'technique', to: 'experiment', label: 'is tested by', card: 'one-to-zero-or-many' },
+    { from: 'experiment', to: 'learning', label: 'backs', card: 'many-to-many' },
+    { from: 'casestudy', to: 'learning', label: 'backs', card: 'many-to-many' },
+    { from: 'learning', to: 'strategy', label: 'shapes', card: 'many-to-many' },
+    { from: 'metric', to: 'concept', label: 'measures', card: 'many-to-many' },
+    { from: 'blog', to: 'experiment', label: 'is the source of', card: 'many-to-many' },
+    { from: 'technique', to: 'tool', label: 'is done with', card: 'many-to-many' },
+  ]}
+/>
+
+Two small rules make the chain work. First, **an experiment is one page per
+change, not one per company**: "show delivery dates on the product page" is one
+page, and every company that tested it is a row with what it found. That is what
+lets a pitch say "this worked in these settings and not in those" instead of
+quoting one lucky test. Second, **a lesson is titled as the lesson** — the page
+name is the claim — so the list of learnings reads as what we believe.
+
+## Walking it before a call
+
+A strategist preparing a first call starts on the prospect page, opens the
+company, and reads the audit. The audit names the company's biggest problem and
+links the concept page, which links the techniques that fix it, which link the
+experiments that tested them. Four clicks go from "who are they" to "here is a
+fix, and here is where it has worked before". Nothing in that walk is a query;
+it is reading.
+
+## Keeping it honest as it grows
+
+A notebook that grows goes stale in quiet ways: two pages that disagree, a fact a
+newer source has overtaken, a page nothing links to. So every page is generated
+from a record that carries its sources, and a set of checks runs over the whole
+notebook: every link lands, every quoted sentence is really in the source it
+cites, every diagram draws. A second pass has fresh agents read the notebook the
+way a strategist would, ask it questions, and report what they could not answer
+from the pages alone. What they report becomes the next work.
+
+The page that describes the notebook's shape — the one this post is drawn from —
+is itself generated from the same tables the renderer uses, so the map cannot
+drift from the territory.
