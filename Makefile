@@ -9,7 +9,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check anchor-ids-check check \
+        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check site-address-check anchor-ids-check check \
         bench-diagram measure-layout layout-check reconcile-comments clean
 
 help: ## List available targets
@@ -157,7 +157,12 @@ secrets-check: ## Fail if any tracked .env* holds a plaintext value (structural 
 anchor-ids-check: build-internal ## Fail if any commentable diagram element (node/edge/row) in the built dist/ lacks its stable anchor id
 	@python3 .claude/hooks/check-anchor-ids.py --check dist
 
-check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check anchor-ids-check layout-check ## Run all governance checks
+# Under `make check` the domain repo next door is required (EB_REQUIRE_SIBLINGS=1): a missing
+# neighbour fails rather than skipping. Run the script on its own to skip that side.
+site-address-check: ## Fail if the site addresses in public/CNAME, astro.config.mjs and the domain repo's domains.yaml disagree
+	@EB_REQUIRE_SIBLINGS=1 python3 scripts/check-site-address.py
+
+check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check site-address-check anchor-ids-check layout-check ## Run all governance checks
 
 ## --- measure --------------------------------------------------------------
 
