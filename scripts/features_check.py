@@ -31,7 +31,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-MARKETPLACE = "earlbear-claude-plugins"
+# The plugin moved to the personal marketplace (marketplace #273). Look there
+# first, then in the old EarlBear marketplace, so a machine that has not
+# reinstalled yet keeps working.
+MARKETPLACES = ("oeid-claude-plugins", "earlbear-claude-plugins")
+MARKETPLACE = MARKETPLACES[0]
 PLUGIN = "decision-tracking-manager"
 CLI = "reconcile-anchors.py"
 
@@ -42,10 +46,8 @@ def find_plugin_cli() -> Path | None:
     """Discover the newest installed cache dir for the plugin and return its CLI.
 
     Cache layout: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/hooks/<CLI>
-    Versions sort naturally; pick the highest that actually contains the CLI."""
-    base = Path.home() / ".claude" / "plugins" / "cache" / MARKETPLACE / PLUGIN
-    if not base.is_dir():
-        return None
+    Marketplaces are tried in MARKETPLACES order; within one, versions sort
+    naturally and the highest that actually contains the CLI wins."""
 
     def version_key(p: Path):
         parts = []
@@ -53,13 +55,17 @@ def find_plugin_cli() -> Path | None:
             parts.append(int(chunk) if chunk.isdigit() else -1)
         return parts
 
-    candidates = sorted(
-        (d for d in base.iterdir() if d.is_dir()), key=version_key, reverse=True
-    )
-    for d in candidates:
-        cli = d / "hooks" / CLI
-        if cli.is_file():
-            return cli
+    for marketplace in MARKETPLACES:
+        base = Path.home() / ".claude" / "plugins" / "cache" / marketplace / PLUGIN
+        if not base.is_dir():
+            continue
+        candidates = sorted(
+            (d for d in base.iterdir() if d.is_dir()), key=version_key, reverse=True
+        )
+        for d in candidates:
+            cli = d / "hooks" / CLI
+            if cli.is_file():
+                return cli
     return None
 
 
@@ -68,7 +74,8 @@ def main(argv: list[str]) -> int:
     if cli is None:
         sys.stderr.write(
             f"✘ {PLUGIN} plugin not installed — the docs/features anchor engine now\n"
-            f"  ships in that plugin. Install it, then re-run:\n"
+            f"  ships in that plugin (looked in: {', '.join(MARKETPLACES)}).\n"
+            f"  Install it, then re-run:\n"
             f"    claude plugin install {PLUGIN}@{MARKETPLACE} --scope user\n"
             f"  (it is auto-installed for this repo via .claude/settings.json's\n"
             f"   check-plugins.sh on the next Claude session.)\n"
