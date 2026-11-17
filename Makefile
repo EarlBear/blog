@@ -9,7 +9,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
-        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check site-address-check anchor-ids-check check \
+        regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check site-address-check plugin-marker-test anchor-ids-check check \
         bench-diagram measure-layout layout-check reconcile-comments clean
 
 help: ## List available targets
@@ -166,7 +166,10 @@ EB_REQUIRE_SIBLINGS ?= 1
 site-address-check: ## Fail if the site addresses in public/CNAME, astro.config.mjs and the domain repo's domains.yaml disagree
 	@EB_REQUIRE_SIBLINGS=$(EB_REQUIRE_SIBLINGS) python3 scripts/check-site-address.py
 
-check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check site-address-check anchor-ids-check layout-check ## Run all governance checks
+plugin-marker-test: ## The plugin-check hook in .claude/settings.json runs once, and skips under the new or the old marker name
+	@bash scripts/test-plugin-check-marker.sh
+
+check: tasks-check features-check posts-check diagrams-check visuals-check catalog-check expects-check secrets-check site-address-check plugin-marker-test anchor-ids-check layout-check ## Run all governance checks
 
 ## --- measure --------------------------------------------------------------
 
