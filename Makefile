@@ -8,7 +8,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
+.PHONY: help install install-hooks scan secret-scan-ci collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check site-address-check plugin-marker-test anchor-ids-check check \
         bench-diagram measure-layout layout-check reconcile-comments clean
 
@@ -26,6 +26,13 @@ install-hooks: ## Wire git hooks (secret scan + concurrent-change capture) — r
 
 scan: ## Full gitleaks secret scan of the working tree + history
 	gitleaks detect --source . --verbose
+
+# The GitHub check (.github/workflows/secret-scan.yml) runs this target. BASE is the commit just
+# before the new ones; on the Mac it defaults to origin/main, so it scans what this branch adds.
+# Findings are redacted, so a found secret never lands in the GitHub run log.
+secret-scan-ci: ## Scan the commits after BASE for secrets, as the GitHub check does (BASE defaults to origin/main)
+	@command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks is not installed: brew install gitleaks"; exit 1; }
+	gitleaks git --redact --verbose --log-opts="$(or $(BASE),origin/main)..HEAD" .
 
 # The internal deploy (`make deploy-internal`) auths wrangler with a scoped
 # CLOUDFLARE_API_TOKEN (Account:Cloudflare Pages:Edit), stored dotenvx-ENCRYPTED in
