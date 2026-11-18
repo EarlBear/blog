@@ -6,6 +6,7 @@ name: env-check
 #
 # Needs a person's sign-off: on a pull request GitHub runs the PR's own copy of this file, the
 # Makefile and .claude/hooks/check-env-encrypted.py, so a PR that changes them can weaken its own check.
+# `-f Makefile` stops a GNUmakefile or makefile added by the PR from being read in its place.
 on:
   pull_request:
   push:
@@ -29,4 +30,4 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: No tracked .env file holds a plain-text value
-        run: make secrets-check
+        run: make -f Makefile secrets-check

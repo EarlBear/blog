@@ -3,7 +3,8 @@
 # Static Astro site with two audiences: the EXTERNAL site (blog.earlbear.com,
 # GitHub Pages / gh-pages branch, public) and the INTERNAL site
 # (blog.internal.earlbear.com, Cloudflare Pages, CF Access-gated). One repo, two
-# builds selected by PUBLIC_AUDIENCE — see CLAUDE.md. No CI (org billing disabled).
+# builds selected by PUBLIC_AUDIENCE — see CLAUDE.md. Deploys are local; the only CI is the
+# secret-scan and env-check GitHub checks (.github/workflows/).
 # Design system is vendored. Run `make` with no args (or `make help`) for targets.
 
 .DEFAULT_GOAL := help
