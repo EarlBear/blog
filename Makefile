@@ -3,12 +3,13 @@
 # Static Astro site with two audiences: the EXTERNAL site (blog.earlbear.com,
 # GitHub Pages / gh-pages branch, public) and the INTERNAL site
 # (blog.internal.earlbear.com, Cloudflare Pages, CF Access-gated). One repo, two
-# builds selected by PUBLIC_AUDIENCE — see CLAUDE.md. No CI (org billing disabled).
+# builds selected by PUBLIC_AUDIENCE — see CLAUDE.md. Deploys are local; the only CI is the
+# secret-scan and env-check GitHub checks (.github/workflows/).
 # Design system is vendored. Run `make` with no args (or `make help`) for targets.
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-hooks scan collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
+.PHONY: help install install-hooks scan secret-scan-ci collect-secret encrypt decrypt key-backup key-restore key-status signing-key-status secrets-check dev dev-internal build build-internal preview deploy deploy-internal wire-comment-secrets audience-check sync-assets \
         regen-favicon tasks-check features-check features-seed posts-check diagrams-check visuals-check catalog-check expects-check repo-map-check site-address-check plugin-marker-test anchor-ids-check check \
         bench-diagram measure-layout layout-check reconcile-comments clean
 
@@ -26,6 +27,17 @@ install-hooks: ## Wire git hooks (secret scan + concurrent-change capture) — r
 
 scan: ## Full gitleaks secret scan of the working tree + history
 	gitleaks detect --source . --verbose
+
+# The GitHub check (.github/workflows/secret-scan.yml) runs this target; scripts/secret-scan-ci.sh
+# does the scan and says at its top what it scans and what it can't stop. BASE=all scans every
+# commit. Only a BASE typed on the command line counts, so a BASE left in the shell's environment
+# can't change what is scanned. It reaches the script unexpanded, as an environment value, never as
+# make or shell text. (make passes every variable typed on the command line to each recipe's
+# environment, expanding it on the way; unexport stops that for BASE.)
+unexport BASE
+secret-scan-ci: export SECRET_SCAN_BASE = $(if $(filter command line,$(origin BASE)),$(value BASE))
+secret-scan-ci: ## Scan the commits after BASE for secrets, as the GitHub check does (BASE defaults to origin/main)
+	@sh scripts/secret-scan-ci.sh "$$SECRET_SCAN_BASE"
 
 # The internal deploy (`make deploy-internal`) auths wrangler with a scoped
 # CLOUDFLARE_API_TOKEN (Account:Cloudflare Pages:Edit), stored dotenvx-ENCRYPTED in

@@ -1,0 +1,33 @@
+name: env-check
+
+# Checks that no tracked .env* file holds a plain-text value, the same check the pre-commit hook
+# runs (`make secrets-check`). It needs no key: it reads only the `encrypted:` prefix.
+# Kept apart from secret-scan.yml so that file stays the same, byte for byte, in every EarlBear repo.
+#
+# Needs a person's sign-off: on a pull request GitHub runs the PR's own copy of this file, the
+# Makefile and .claude/hooks/check-env-encrypted.py, so a PR that changes them can weaken its own check.
+# `-f Makefile` stops a GNUmakefile or makefile added by the PR from being read in its place.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: env-check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: No tracked .env file holds a plain-text value
+        run: make -f Makefile secrets-check

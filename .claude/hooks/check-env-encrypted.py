@@ -55,13 +55,14 @@ def _is_ok_value(key: str, raw: str) -> bool:
     return False  # a plaintext value in a committed .env* → not allowed
 
 
-def _tracked_env_files(root: Path) -> list[str]:
+def _tracked_env_files(root: Path) -> "list[str] | None":
+    """The tracked .env* files, or None when git can't list them (so the caller fails, not passes)."""
     try:
         out = subprocess.run(
             ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
         ).stdout
     except Exception:
-        return []
+        return None
     return [p for p in out.splitlines() if ENV_GLOB_RE.search(p)]
 
 
@@ -128,6 +129,9 @@ def main() -> int:
     # --check / CLI: the whole tracked set (make check).
     if "--check" in args or sys.stdin.isatty():
         files = _tracked_env_files(root)
+        if files is None:
+            print("check-env-encrypted: FAIL — git could not list the tracked files, so nothing was checked")
+            return 1
         errs = violations(root, files)
         if errs:
             print("check-env-encrypted: FAIL")
@@ -147,6 +151,9 @@ def main() -> int:
     if not ENV_GLOB_RE.search(touched.replace("\\", "/")):
         return 0
     files = _tracked_env_files(root)
+    if files is None:
+        sys.stderr.write("check-env-encrypted: git could not list the tracked files, so nothing was checked.\n")
+        return 2
     errs = violations(root, files)
     if errs:
         sys.stderr.write(
